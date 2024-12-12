@@ -43,17 +43,12 @@ func DefaultTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 		return nil, fmt.Errorf("could not find default application credentials")
 	}
 
-	audience := creds.Audience
-	if audience == "" {
-		audience = "https://auth.datum.net"
-	}
-
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
 		Transport: &wrappedRoundTripper{
 			Transport: http.DefaultTransport,
 			AdditionalFields: map[string]string{
 				"client_id": "jwt-client",
-				"audience":  audience,
+				"audience":  "datum-api",
 			},
 		},
 	})
@@ -88,7 +83,6 @@ func readCredentialsFile(_ context.Context, filename string) (*credentialsFile, 
 
 type credentialsFile struct {
 	TokenURL string `json:"token_url"`
-	Audience string `json:"audience"`
 
 	PrivateKey          string `json:"private_key"`
 	ServiceAccountEmail string `json:"service_account_email"`
