@@ -63,7 +63,7 @@ func updateKubeconfigCmd() *cobra.Command {
 				Exec: &api.ExecConfig{
 					InstallHint:        execPluginInstallHint,
 					Command:            "datumctl",
-					Args:               []string{"auth", "get-token", "--format=client.authentication.k8s.io/v1"},
+					Args:               []string{"auth", "get-token", "--output=client.authentication.k8s.io/v1"},
 					APIVersion:         "client.authentication.k8s.io/v1",
 					ProvideClusterInfo: true,
 					InteractiveMode:    "IfAvailable",
