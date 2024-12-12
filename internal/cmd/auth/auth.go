@@ -6,3 +6,9 @@ var Command = &cobra.Command{
 	Use:   "auth",
 	Short: "Authenticate with Datum Cloud",
 }
+
+func init() {
+	Command.AddCommand(
+		getTokenCmd(),
+	)
+}
