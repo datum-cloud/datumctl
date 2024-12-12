@@ -45,7 +45,7 @@ func updateKubeconfigCmd() *cobra.Command {
 				return fmt.Errorf("unable to load kubeconfig from %s: %v", kubeconfigPath, err)
 			}
 
-			clusterName := "datum-cloud"
+			clusterName := "datum"
 			if projectName != "" {
 				clusterName += "-project-" + projectName
 			}
@@ -56,10 +56,10 @@ func updateKubeconfigCmd() *cobra.Command {
 
 			cfg.Contexts[clusterName] = &api.Context{
 				Cluster:  clusterName,
-				AuthInfo: "datum-cloud-user",
+				AuthInfo: "datum-user",
 			}
 			cfg.CurrentContext = clusterName
-			cfg.AuthInfos["datum-cloud-user"] = &api.AuthInfo{
+			cfg.AuthInfos["datum-user"] = &api.AuthInfo{
 				Exec: &api.ExecConfig{
 					InstallHint:        execPluginInstallHint,
 					Command:            "datumctl",
