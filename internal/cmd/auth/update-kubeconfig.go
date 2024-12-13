@@ -34,7 +34,7 @@ func updateKubeconfigCmd() *cobra.Command {
 			}
 
 			if projectName != "" {
-				serverURL.Path = "/control-plane/v1alpha/projects/" + projectName
+				serverURL.Path = "/apis/resourcemanager.datumapis.com/v1alpha/projects/" + projectName + "/control-plane"
 			}
 
 			// Load existing config
