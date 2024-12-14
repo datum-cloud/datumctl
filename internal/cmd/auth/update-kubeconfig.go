@@ -12,7 +12,7 @@ import (
 )
 
 func updateKubeconfigCmd() *cobra.Command {
-	var kubeconfig, baseURL, projectName string
+	var kubeconfig, baseURL, projectName, organizationName string
 
 	cmd := &cobra.Command{
 		Use:   "update-kubeconfig",
@@ -33,8 +33,14 @@ func updateKubeconfigCmd() *cobra.Command {
 				return fmt.Errorf("failed to parse base URL option: %w", err)
 			}
 
+			if organizationName == "" {
+				return errors.New("the `--organization` flag is required")
+			}
+
 			if projectName != "" {
 				serverURL.Path = "/apis/resourcemanager.datumapis.com/v1alpha/projects/" + projectName + "/control-plane"
+			} else {
+				serverURL.Path = "/apis/resourcemanager.datumapis.com/v1alpha/organizations/" + organizationName + "/control-plane"
 			}
 
 			// Load existing config
@@ -48,6 +54,8 @@ func updateKubeconfigCmd() *cobra.Command {
 			clusterName := "datum"
 			if projectName != "" {
 				clusterName += "-project-" + projectName
+			} else {
+				clusterName += "-organization-" + organizationName
 			}
 
 			cfg.Clusters[clusterName] = &api.Cluster{
@@ -83,6 +91,7 @@ func updateKubeconfigCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the kubeconfig file")
 	cmd.Flags().StringVar(&baseURL, "base-url", "https://api.datum.net", "The base URL of the Datum Cloud API")
 	cmd.Flags().StringVar(&projectName, "project", "", "Configure kubectl to access a specific project's control plane instead of the core control plane.")
+	cmd.Flags().StringVar(&organizationName, "organization", "", "The organization name that is being connected to.")
 	return cmd
 }
 
