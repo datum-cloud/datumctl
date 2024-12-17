@@ -33,8 +33,8 @@ func updateKubeconfigCmd() *cobra.Command {
 				return fmt.Errorf("failed to parse base URL option: %w", err)
 			}
 
-			if organizationName == "" {
-				return errors.New("the `--organization` flag is required")
+			if organizationName == "" && projectName == "" {
+				return errors.New("the `--organization` or `--project` flag is required")
 			}
 
 			if projectName != "" {

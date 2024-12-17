@@ -15,6 +15,7 @@
 		"ghcr.io/devcontainers/features/docker-in-docker": {},
 		"ghcr.io/dhoeric/features/act": {},
 	},
+	"postCreateCommand": ".devcontainer/post-create.sh",
 	"customizations": {
 		"vscode": {
 			"extensions": [
