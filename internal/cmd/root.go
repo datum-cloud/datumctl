@@ -14,8 +14,8 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(
-		auth.Command,
-		organizations.Command,
+		auth.Command(),
+		organizations.Command(),
 	)
 }
 

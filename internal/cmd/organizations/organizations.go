@@ -4,13 +4,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Command = &cobra.Command{
-	Use:   "organizations",
-	Short: "Manage organizations",
-}
+func Command() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "organizations",
+		Short: "Manage organizations",
+	}
 
-func init() {
-	Command.AddCommand(
+	cmd.AddCommand(
 		listOrgsCommand(),
 	)
+
+	return cmd
 }

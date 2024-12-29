@@ -1,15 +1,16 @@
 package organizations
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
 
+	resourcemanagerv1alpha "buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go/datum/os/resourcemanager/v1alpha"
+	"buf.build/go/protoyaml"
+	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"go.datum.net/datumctl/internal/keyring"
+	"go.datum.net/datumctl/internal/resourcemanager"
 )
 
 type listResponse struct {
@@ -26,7 +27,7 @@ type listResponse struct {
 }
 
 func listOrgsCommand() *cobra.Command {
-	var hostname string
+	var hostname, outputFormat string
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -37,40 +38,50 @@ func listOrgsCommand() *cobra.Command {
 				return fmt.Errorf("failed to get token from keyring: %w", err)
 			}
 
-			url := fmt.Sprintf("https://%s/query", hostname)
+			organizationsAPI := &resourcemanager.OrganizationsAPI{
+				PAT:      token,
+				Hostname: hostname,
+			}
 
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, strings.NewReader(getAllOrganizationsRequest))
+			listOrgs, err := organizationsAPI.ListOrganizations(cmd.Context(), &resourcemanagerv1alpha.ListOrganizationsRequest{})
 			if err != nil {
-				return fmt.Errorf("failed to create request: %w", err)
+				return fmt.Errorf("failed to list organizations: %w", err)
 			}
 
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+token)
-
-			client := http.DefaultClient
-			resp, err := client.Do(req)
-			if err != nil {
-				return fmt.Errorf("failed to make request: %w", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return fmt.Errorf("unexpected status code %d from token endpoint", resp.StatusCode)
-			}
-
-			var r listResponse
-			if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-				return fmt.Errorf("failed to decode JSON response: %w", err)
-			}
-
-			fmt.Printf("%-20s\t%-20s\n", "NAME", "RESOURCE ID")
-
-			if len(r.Data.Organizations.Edges) == 0 {
-				fmt.Printf("No organizations found")
-			} else {
-				for _, org := range r.Data.Organizations.Edges {
-					fmt.Printf("%-20s\t%-20s\n", org.Node.Name, org.Node.UserEntityID)
+			// TODO: We should look at abstracting the formatting here into a library
+			//       that can be used by multiple commands needing to offer multiple
+			//       output formats from a command.
+			switch outputFormat {
+			case "yaml":
+				marshaller := &protoyaml.MarshalOptions{
+					Indent:          2,
+					EmitUnpopulated: false,
 				}
+				output, err := marshaller.Marshal(listOrgs)
+				if err != nil {
+					return fmt.Errorf("failed to list organizations: %w", err)
+				}
+				fmt.Print(string(output))
+			case "json":
+				marshaller := &protojson.MarshalOptions{
+					Indent:    "  ",
+					Multiline: true,
+				}
+				output, err := marshaller.Marshal(listOrgs)
+				if err != nil {
+					return fmt.Errorf("failed to list organizations: %w", err)
+				}
+				fmt.Print(string(output))
+			case "table":
+				orgTable := table.New("DISPLAY NAME", "RESOURCE ID")
+				if len(listOrgs.Organizations) == 0 {
+					fmt.Printf("No organizations found")
+				} else {
+					for _, org := range listOrgs.Organizations {
+						orgTable.AddRow(org.DisplayName, org.OrganizationId)
+					}
+				}
+				orgTable.Print()
 			}
 
 			return nil
@@ -78,11 +89,7 @@ func listOrgsCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&hostname, "hostname", "api.datum.net", "The hostname of the Datum Cloud instance to authenticate with")
+	cmd.Flags().StringVar(&outputFormat, "output", "table", "Specify the output format to use. Supported options: table, json, yaml")
 
 	return cmd
 }
-
-const getAllOrganizationsRequest = `{
-  "operationName": "GetAllOrganizations",
-  "query": "query GetAllOrganizations {organizations {edges {node {name userEntityID}}}}"
-}`
