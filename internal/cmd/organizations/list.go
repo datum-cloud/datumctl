@@ -13,19 +13,6 @@ import (
 	"go.datum.net/datumctl/internal/resourcemanager"
 )
 
-type listResponse struct {
-	Data struct {
-		Organizations struct {
-			Edges []struct {
-				Node struct {
-					Name         string `json:"name"`
-					UserEntityID string `json:"userEntityID"`
-				} `json:"node"`
-			} `json:"edges"`
-		} `json:"organizations"`
-	} `json:"data"`
-}
-
 func listOrgsCommand() *cobra.Command {
 	var hostname, outputFormat string
 
