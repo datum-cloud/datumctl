@@ -54,8 +54,7 @@ func listOrgsCommand() *cobra.Command {
 			switch outputFormat {
 			case "yaml":
 				marshaller := &protoyaml.MarshalOptions{
-					Indent:          2,
-					EmitUnpopulated: false,
+					Indent: 2,
 				}
 				output, err := marshaller.Marshal(listOrgs)
 				if err != nil {
@@ -63,11 +62,7 @@ func listOrgsCommand() *cobra.Command {
 				}
 				fmt.Print(string(output))
 			case "json":
-				marshaller := &protojson.MarshalOptions{
-					Indent:    "  ",
-					Multiline: true,
-				}
-				output, err := marshaller.Marshal(listOrgs)
+				output, err := protojson.Marshal(listOrgs)
 				if err != nil {
 					return fmt.Errorf("failed to list organizations: %w", err)
 				}
