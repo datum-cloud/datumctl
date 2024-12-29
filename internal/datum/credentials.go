@@ -12,6 +12,8 @@ import (
 	"golang.org/x/oauth2/jwt"
 )
 
+var ErrDefaultCredentialsNotFound = fmt.Errorf("could not find default application credentials")
+
 func DefaultTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	var creds *credentialsFile
 	var err error
@@ -40,7 +42,7 @@ func DefaultTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	}
 
 	if creds == nil {
-		return nil, fmt.Errorf("could not find default application credentials")
+		return nil, ErrDefaultCredentialsNotFound
 	}
 
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{

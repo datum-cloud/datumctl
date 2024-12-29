@@ -9,7 +9,9 @@ var Command = &cobra.Command{
 
 func init() {
 	Command.AddCommand(
+		activateAPITokenCmd(),
 		getTokenCmd(),
+		logoutCmd(),
 		updateKubeconfigCmd(),
 	)
 }

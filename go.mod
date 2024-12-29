@@ -4,15 +4,20 @@ go 1.23.1
 
 require (
 	github.com/spf13/cobra v1.8.1
+	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/oauth2 v0.24.0
+	golang.org/x/term v0.27.0
 	k8s.io/apimachinery v0.32.0
 	k8s.io/client-go v0.32.0
 )
 
 require (
+	al.essio.dev/pkg/shellescape v1.5.1 // indirect
+	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -24,7 +29,6 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/net v0.32.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
