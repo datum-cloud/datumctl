@@ -33,10 +33,6 @@ func updateKubeconfigCmd() *cobra.Command {
 				return fmt.Errorf("failed to parse base URL option: %w", err)
 			}
 
-			if organizationName == "" && projectName == "" {
-				return errors.New("the `--organization` or `--project` flag is required")
-			}
-
 			if projectName != "" {
 				serverURL.Path = "/apis/resourcemanager.datumapis.com/v1alpha/projects/" + projectName + "/control-plane"
 			} else {
@@ -92,6 +88,9 @@ func updateKubeconfigCmd() *cobra.Command {
 	cmd.Flags().StringVar(&baseURL, "base-url", "https://api.datum.net", "The base URL of the Datum Cloud API")
 	cmd.Flags().StringVar(&projectName, "project", "", "Configure kubectl to access a specific project's control plane instead of the core control plane.")
 	cmd.Flags().StringVar(&organizationName, "organization", "", "The organization name that is being connected to.")
+
+	cmd.MarkFlagsOneRequired("project", "organization")
+	cmd.MarkFlagsMutuallyExclusive("project", "organization")
 	return cmd
 }
 
