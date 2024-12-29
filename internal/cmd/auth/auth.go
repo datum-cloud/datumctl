@@ -2,16 +2,18 @@ package auth
 
 import "github.com/spf13/cobra"
 
-var Command = &cobra.Command{
-	Use:   "auth",
-	Short: "Authenticate with Datum Cloud",
-}
+func Command() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Authenticate with Datum Cloud",
+	}
 
-func init() {
-	Command.AddCommand(
+	cmd.AddCommand(
 		activateAPITokenCmd(),
 		getTokenCmd(),
 		logoutCmd(),
 		updateKubeconfigCmd(),
 	)
+
+	return cmd
 }
