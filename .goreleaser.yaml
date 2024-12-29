@@ -1,0 +1,88 @@
+# For more information on configuring GoReleaser, refer to the documentation:
+# https://goreleaser.com
+#
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        format: zip
+
+nfpms:
+  - vendor: Datum Technology, Inc
+    homepage: https://www.datum.net/
+    maintainer: support@datum.net
+    license: Apache 2.0
+    provides:
+    - datumctl
+    recommends:
+    - kubectl
+    formats:
+      - apk
+      - deb
+      - rpm
+      - termux.deb
+      - archlinux
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release: {}
+
+sboms:
+  - artifacts: archive
+
+brews:
+- commit_author:
+    name: Datum Release Bot
+    email: releases@datum.net
+  commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+  directory: Formula
+  homepage: "https://www.datum.net/"
+  description: "A network cloud, built on open source."
+  license: "Apache 2.0"
+  repository:
+    owner: datum-cloud
+    name: homebrew-tap
+    branch: main
+
+krews:
+- commit_author:
+    name: goreleaserbot
+    email: bot@goreleaser.com
+  commit_msg_template: "Krew plugin update for {{ .ProjectName }} version {{ .Tag }}"
+  homepage: "https://www.datum.net/"
+  description: "Software to create fast and easy drum rolls."
+  short_description: "Software to create fast and easy drum rolls."
+  # TODO: Remove once we configure pushing to a different repo
+  skip_upload: true
