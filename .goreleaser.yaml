@@ -63,8 +63,7 @@ sboms:
   - artifacts: archive
 
 brews:
-- name: cli
-  commit_author:
+- commit_author:
     name: Datum Release Bot
     email: releases@datum.net
   commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"

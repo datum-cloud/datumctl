@@ -16,8 +16,8 @@ $ brew tap datum-cloud/tap
 ==> Tapping datum-cloud/tap
 ...
 
-$ brew install datum-cloud/tap/cli
-==> Fetching datum-cloud/tap/cli
+$ brew install datum-cloud/tap/datumctl
+==> Fetching datum-cloud/tap/datumctl
 ```
 
 ### Manually
