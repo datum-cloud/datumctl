@@ -10,11 +10,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type ClIPrinter struct {
-	Writer       io.Writer
-	TableColumns []string
-}
-
 func CLIPrint(w io.Writer, format string, data proto.Message, headers []any, rowData [][]any) error {
 	switch format {
 	case "yaml":
