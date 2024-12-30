@@ -4,13 +4,22 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	resourcemanagerv1alpha "buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go/datum/os/resourcemanager/v1alpha"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestCLIPrint(t *testing.T) {
+
+	testOrgProto := &resourcemanagerv1alpha.Organization{
+		DisplayName:    "Test Organization",
+		OrganizationId: "1234",
+	}
+
 	tests := []struct {
 		name       string
 		format     string
-		data       interface{}
+		data       proto.Message
 		headers    []any
 		rowData    [][]any
 		wantErr    bool
@@ -19,16 +28,16 @@ func TestCLIPrint(t *testing.T) {
 		{
 			name:       "Print YAML",
 			format:     "yaml",
-			data:       map[string]string{"key": "value"},
+			data:       testOrgProto,
 			wantErr:    false,
-			wantOutput: "key: value\n",
+			wantOutput: "organizationId: \"1234\"\ndisplayName: Test Organization\n",
 		},
 		{
 			name:       "Print JSON",
 			format:     "json",
-			data:       map[string]string{"key": "value"},
+			data:       testOrgProto,
 			wantErr:    false,
-			wantOutput: "{\n  \"key\": \"value\"\n}",
+			wantOutput: "{\"organizationId\":\"1234\",\"displayName\":\"Test Organization\"}",
 		},
 		{
 			name:    "Print Table",
@@ -40,7 +49,7 @@ func TestCLIPrint(t *testing.T) {
 		{
 			name:    "Unsupported Format",
 			format:  "unsupported",
-			data:    map[string]string{"key": "value"},
+			data:    testOrgProto,
 			wantErr: true,
 		},
 		{
@@ -68,7 +77,7 @@ func TestCLIPrint(t *testing.T) {
 					}
 				} else {
 					if gotOutput := buf.String(); gotOutput != tt.wantOutput {
-						t.Errorf("CLIPrint() output = %v, want %v", gotOutput, tt.wantOutput)
+						t.Errorf("CLIPrint() output = \n%v, want \n%v", gotOutput, tt.wantOutput)
 					}
 				}
 			}

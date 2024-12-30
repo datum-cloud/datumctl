@@ -1,15 +1,21 @@
 package output
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
+	"buf.build/go/protoyaml"
 	"github.com/rodaine/table"
-	"gopkg.in/yaml.v3"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
-func CLIPrint(w io.Writer, format string, data interface{}, headers []any, rowData [][]any) error {
+type ClIPrinter struct {
+	Writer       io.Writer
+	TableColumns []string
+}
+
+func CLIPrint(w io.Writer, format string, data proto.Message, headers []any, rowData [][]any) error {
 	switch format {
 	case "yaml":
 		return printYAML(w, data)
@@ -25,8 +31,12 @@ func CLIPrint(w io.Writer, format string, data interface{}, headers []any, rowDa
 	}
 }
 
-func printYAML(w io.Writer, data interface{}) error {
-	output, err := yaml.Marshal(data)
+func printYAML(w io.Writer, data proto.Message) error {
+	marshaller := protoyaml.MarshalOptions{
+		Indent: 2,
+	}
+
+	output, err := marshaller.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal data to YAML: %w", err)
 	}
@@ -34,8 +44,9 @@ func printYAML(w io.Writer, data interface{}) error {
 	return nil
 }
 
-func printJSON(w io.Writer, data interface{}) error {
-	output, err := json.MarshalIndent(data, "", "  ")
+func printJSON(w io.Writer, data proto.Message) error {
+
+	output, err := protojson.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal data to JSON: %w", err)
 	}
