@@ -25,7 +25,7 @@ type tokenResponse struct {
 func (s *apiTokenSource) Token() (*oauth2.Token, error) {
 	client := http.DefaultClient
 
-	url := fmt.Sprintf("https://%s/oauth/token/exchange", s.Hostname)
+	url := fmt.Sprintf("https://%s/datum-os/oauth/token/exchange", s.Hostname)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {

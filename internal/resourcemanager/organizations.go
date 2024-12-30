@@ -42,7 +42,7 @@ func (r *OrganizationsAPI) ListOrganizations(ctx context.Context, req *resourcem
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		fmt.Sprintf("https://%s/query", r.Hostname),
+		fmt.Sprintf("https://%s/datum-os/query", r.Hostname),
 		strings.NewReader(getAllOrganizationsRequest),
 	)
 	if err != nil {

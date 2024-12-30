@@ -3,7 +3,6 @@ package auth
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -12,7 +11,7 @@ import (
 )
 
 func updateKubeconfigCmd() *cobra.Command {
-	var kubeconfig, baseURL, projectName, organizationName string
+	var kubeconfig, hostname, projectName, organizationName string
 
 	cmd := &cobra.Command{
 		Use:   "update-kubeconfig",
@@ -28,15 +27,11 @@ func updateKubeconfigCmd() *cobra.Command {
 				kubeconfigPath = clientcmd.RecommendedHomeFile
 			}
 
-			serverURL, err := url.Parse(baseURL)
-			if err != nil {
-				return fmt.Errorf("failed to parse base URL option: %w", err)
-			}
-
+			var path string
 			if projectName != "" {
-				serverURL.Path = "/apis/resourcemanager.datumapis.com/v1alpha/projects/" + projectName + "/control-plane"
+				path = "/apis/resourcemanager.datumapis.com/v1alpha/projects/" + projectName + "/control-plane"
 			} else {
-				serverURL.Path = "/apis/resourcemanager.datumapis.com/v1alpha/organizations/" + organizationName + "/control-plane"
+				path = "/apis/resourcemanager.datumapis.com/v1alpha/organizations/" + organizationName + "/control-plane"
 			}
 
 			// Load existing config
@@ -55,7 +50,7 @@ func updateKubeconfigCmd() *cobra.Command {
 			}
 
 			cfg.Clusters[clusterName] = &api.Cluster{
-				Server: serverURL.String(),
+				Server: fmt.Sprintf("https://%s%s", hostname, path),
 			}
 
 			cfg.Contexts[clusterName] = &api.Context{
@@ -65,9 +60,14 @@ func updateKubeconfigCmd() *cobra.Command {
 			cfg.CurrentContext = clusterName
 			cfg.AuthInfos["datum-user"] = &api.AuthInfo{
 				Exec: &api.ExecConfig{
-					InstallHint:        execPluginInstallHint,
-					Command:            "datumctl",
-					Args:               []string{"auth", "get-token", "--output=client.authentication.k8s.io/v1"},
+					InstallHint: execPluginInstallHint,
+					Command:     "datumctl",
+					Args: []string{
+						"auth",
+						"get-token",
+						fmt.Sprintf("--hostname=%s", hostname),
+						"--output=client.authentication.k8s.io/v1",
+					},
 					APIVersion:         "client.authentication.k8s.io/v1",
 					ProvideClusterInfo: true,
 					InteractiveMode:    "IfAvailable",
@@ -85,7 +85,7 @@ func updateKubeconfigCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the kubeconfig file")
-	cmd.Flags().StringVar(&baseURL, "base-url", "https://api.datum.net", "The base URL of the Datum Cloud API")
+	cmd.Flags().StringVar(&hostname, "hostname", "api.datum.net", "The hostname of the Datum Cloud instance to authenticate with")
 	cmd.Flags().StringVar(&projectName, "project", "", "Configure kubectl to access a specific project's control plane instead of the core control plane.")
 	cmd.Flags().StringVar(&organizationName, "organization", "", "The organization name that is being connected to.")
 
