@@ -45,7 +45,6 @@ func printYAML(w io.Writer, data proto.Message) error {
 }
 
 func printJSON(w io.Writer, data proto.Message) error {
-
 	output, err := protojson.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal data to JSON: %w", err)
