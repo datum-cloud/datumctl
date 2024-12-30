@@ -34,8 +34,12 @@ func listOrgsCommand() *cobra.Command {
 				return fmt.Errorf("failed to list organizations: %w", err)
 			}
 
-			outTableHeaders, outTableData := getListOrganizationsTableOutputData(listOrgs)
-			output.CLIPrint(os.Stdout, outputFormat, listOrgs, outTableHeaders, outTableData)
+			headers := []any{"DISPLAY NAME", "RESOURCE ID"}
+			var rowData [][]any
+			for _, org := range listOrgs.Organizations {
+				rowData = append(rowData, []any{org.DisplayName, org.OrganizationId})
+			}
+			output.CLIPrint(os.Stdout, outputFormat, listOrgs, headers, rowData)
 
 			return nil
 		},
@@ -45,13 +49,4 @@ func listOrgsCommand() *cobra.Command {
 	cmd.Flags().StringVar(&outputFormat, "output", "table", "Specify the output format to use. Supported options: table, json, yaml")
 
 	return cmd
-}
-
-func getListOrganizationsTableOutputData(listOrgs *resourcemanagerv1alpha.ListOrganizationsResponse) ([]any, [][]any) {
-	headers := []any{"DISPLAY NAME", "RESOURCE ID"}
-	var rowData [][]any
-	for _, org := range listOrgs.Organizations {
-		rowData = append(rowData, []any{org.DisplayName, org.OrganizationId})
-	}
-	return headers, rowData
 }
