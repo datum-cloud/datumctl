@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -29,14 +30,13 @@ func TestCLIPrint(t *testing.T) {
 			wantErr:    false,
 			wantOutput: "{\n  \"key\": \"value\"\n}",
 		},
-		// {
-		// 	name:       "Print Table",
-		// 	format:     "table",
-		// 	headers:    []any{"Header1", "Header2"},
-		// 	rowData:    [][]any{{"Row1Col1", "Row1Col2"}, {"Row2Col1", "Row2Col2"}},
-		// 	wantErr:    false,
-		// 	wantOutput: "Header1              Header2\n[Row1Col1  Row1Col2]     \n[Row2Col1  Row2Col2]  \n",
-		// },
+		{
+			name:    "Print Table",
+			format:  "table",
+			headers: []any{"Header1", "Header2"},
+			rowData: [][]any{{"Row1Col1", "Row1Col2"}, {"Row2Col1", "Row2Col2"}},
+			wantErr: false,
+		},
 		{
 			name:    "Unsupported Format",
 			format:  "unsupported",
@@ -61,8 +61,15 @@ func TestCLIPrint(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				if gotOutput := buf.String(); gotOutput != tt.wantOutput {
-					t.Errorf("CLIPrint() output = %v, want %v", gotOutput, tt.wantOutput)
+				if tt.format == "table" {
+					out := buf.String()
+					if !strings.Contains(out, tt.headers[0].(string)) || !strings.Contains(out, tt.headers[1].(string)) {
+						t.Errorf("CLIPrint() output = %v, does not have correct headers", out)
+					}
+				} else {
+					if gotOutput := buf.String(); gotOutput != tt.wantOutput {
+						t.Errorf("CLIPrint() output = %v, want %v", gotOutput, tt.wantOutput)
+					}
 				}
 			}
 		})
