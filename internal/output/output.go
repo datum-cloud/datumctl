@@ -10,17 +10,23 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func CLIPrint(w io.Writer, format string, data proto.Message, headers []any, rowData [][]any) error {
+type TableFormatterFunc func() (ColumnFormatter, RowFormatterFunc)
+type RowFormatterFunc func() RowFormatter
+type RowFormatter [][]any
+type ColumnFormatter []any
+
+func CLIPrint(w io.Writer, format string, data proto.Message, tableFormatterFunc TableFormatterFunc) error {
 	switch format {
 	case "yaml":
 		return printYAML(w, data)
 	case "json":
 		return printJSON(w, data)
 	case "table":
-		if headers == nil || rowData == nil {
-			return fmt.Errorf("headers and rowData must be provided for table output")
+		headers, rowDataFunc := tableFormatterFunc()
+		if headers == nil {
+			return fmt.Errorf("headers must be provided for table output")
 		}
-		return printTable(w, headers, rowData)
+		return printTable(w, headers, rowDataFunc())
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}
@@ -48,7 +54,7 @@ func printJSON(w io.Writer, data proto.Message) error {
 	return nil
 }
 
-func printTable(w io.Writer, headers []any, rowData [][]any) error {
+func printTable(w io.Writer, headers ColumnFormatter, rowData [][]any) error {
 	t := table.New(headers...)
 	t.WithWriter(w)
 	for _, row := range rowData {

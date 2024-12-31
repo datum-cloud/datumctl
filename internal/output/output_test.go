@@ -63,7 +63,11 @@ func TestCLIPrint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 
-			err := CLIPrint(&buf, tt.format, tt.data, tt.headers, tt.rowData)
+			err := CLIPrint(&buf, tt.format, tt.data, func() (ColumnFormatter, RowFormatterFunc) {
+				return tt.headers, func() RowFormatter {
+					return tt.rowData
+				}
+			})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CLIPrint() error = %v, wantErr %v", err, tt.wantErr)
 				return

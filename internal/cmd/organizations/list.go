@@ -34,13 +34,15 @@ func listOrgsCommand() *cobra.Command {
 				return fmt.Errorf("failed to list organizations: %w", err)
 			}
 
-			headers := []any{"DISPLAY NAME", "RESOURCE ID"}
-			var rowData [][]any
-			for _, org := range listOrgs.Organizations {
-				rowData = append(rowData, []any{org.DisplayName, org.OrganizationId})
-			}
-			output.CLIPrint(os.Stdout, outputFormat, listOrgs, headers, rowData)
-
+			output.CLIPrint(os.Stdout, outputFormat, listOrgs, func() (output.ColumnFormatter, output.RowFormatterFunc) {
+				return output.ColumnFormatter{"DISPLAY NAME", "RESOURCE ID"}, func() output.RowFormatter {
+					var rowData output.RowFormatter
+					for _, org := range listOrgs.Organizations {
+						rowData = append(rowData, []any{org.DisplayName, org.OrganizationId})
+					}
+					return rowData
+				}
+			})
 			return nil
 		},
 	}
