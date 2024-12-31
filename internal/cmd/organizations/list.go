@@ -34,7 +34,7 @@ func listOrgsCommand() *cobra.Command {
 				return fmt.Errorf("failed to list organizations: %w", err)
 			}
 
-			output.CLIPrint(os.Stdout, outputFormat, listOrgs, func() (output.ColumnFormatter, output.RowFormatterFunc) {
+			if err := output.CLIPrint(os.Stdout, outputFormat, listOrgs, func() (output.ColumnFormatter, output.RowFormatterFunc) {
 				return output.ColumnFormatter{"DISPLAY NAME", "RESOURCE ID"}, func() output.RowFormatter {
 					var rowData output.RowFormatter
 					for _, org := range listOrgs.Organizations {
@@ -42,7 +42,9 @@ func listOrgsCommand() *cobra.Command {
 					}
 					return rowData
 				}
-			})
+			}); err != nil {
+				return fmt.Errorf("a problem occured while printing organizations list: %w", err)
+			}
 			return nil
 		},
 	}
