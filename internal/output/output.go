@@ -58,7 +58,7 @@ func printTable(w io.Writer, headers ColumnFormatter, rowData [][]any) error {
 	t := table.New(headers...)
 	t.WithWriter(w)
 	for _, row := range rowData {
-		t.AddRow(row)
+		t.AddRow(row...)
 	}
 	t.Print()
 	return nil
