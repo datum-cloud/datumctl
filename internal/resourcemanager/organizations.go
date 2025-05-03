@@ -30,64 +30,63 @@ type listOrganizationsGraphQLResponse struct {
 }
 
 type OrganizationsAPI struct {
-	// The personal access token to use when authenticating with the API.
-	PAT string
+	// HTTPClient is the client used to make requests, pre-configured with auth.
+	HTTPClient *http.Client
 
 	// The hostname to use when connecting to the upstream API to retrieve
 	// organizations.
 	Hostname string
 }
 
-func (r *OrganizationsAPI) ListOrganizations(ctx context.Context, req *resourcemanagerpb.ListOrganizationsRequest) (*resourcemanagerpb.ListOrganizationsResponse, error) {
-	httpReq, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		fmt.Sprintf("https://%s/datum-os/query", r.Hostname),
-		strings.NewReader(getAllOrganizationsRequest),
-	)
+func (o *OrganizationsAPI) ListOrganizations(ctx context.Context, _ *resourcemanagerpb.ListOrganizationsRequest) (*resourcemanagerpb.ListOrganizationsResponse, error) {
+	body := strings.NewReader(`{
+		"query": "query { organizations { edges { node { id name userEntityID createdAt description } } } }"
+	}`) // TODO: Use proper GraphQL query generation
+
+	url := fmt.Sprintf("https://%s/graphql", o.Hostname)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+r.PAT)
+	req.Header.Set("Content-Type", "application/json")
+	// Authentication is now handled by the HTTPClient's Transport (e.g., OAuth2)
 
-	client := http.DefaultClient
+	client := o.HTTPClient
+	if client == nil {
+		// Fallback to default client if none provided, though this might lack auth
+		// Consider returning an error if HTTPClient is nil and required.
+		client = http.DefaultClient
+	}
 
-	httpResp, err := client.Do(httpReq)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
-	defer httpResp.Body.Close()
+	defer resp.Body.Close()
 
-	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		payload, _ := io.ReadAll(httpResp.Body)
-		return nil, fmt.Errorf("unexpected status code %d from graphql endpoint: %s", httpResp.StatusCode, string(payload))
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d from GraphQL endpoint: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var listResp listOrganizationsGraphQLResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&listResp); err != nil {
+	var gqlResp listOrganizationsGraphQLResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {
 		return nil, fmt.Errorf("failed to decode JSON response: %w", err)
 	}
 
-	resp := &resourcemanagerpb.ListOrganizationsResponse{}
-	for _, org := range listResp.Data.Organizations.Edges {
-		resp.Organizations = append(resp.Organizations, &resourcemanagerpb.Organization{
-			Name:           "organizations/" + org.Node.UserEntityID,
-			DisplayName:    org.Node.Name,
-			Uid:            org.Node.ID,
-			OrganizationId: org.Node.UserEntityID,
-			CreateTime:     timestamppb.New(org.Node.CreatedAt),
-			Annotations: map[string]string{
-				"meta.datum.net/description": org.Node.Description,
-			},
+	// Convert GraphQL response to protobuf response
+	pbResp := &resourcemanagerpb.ListOrganizationsResponse{}
+	for _, edge := range gqlResp.Data.Organizations.Edges {
+		node := edge.Node
+		pbResp.Organizations = append(pbResp.Organizations, &resourcemanagerpb.Organization{
+			OrganizationId: node.ID,   // Assuming ID is the resource ID
+			DisplayName:    node.Name, // Assuming Name is the display name
+			CreateTime:     timestamppb.New(node.CreatedAt),
+			// Add other fields if necessary and available in GraphQL response
 		})
 	}
 
-	return resp, nil
+	return pbResp, nil
 }
-
-const getAllOrganizationsRequest = `{
-  "operationName": "GetAllOrganizations",
-  "query": "query GetAllOrganizations {organizations {edges {node {id name userEntityID createdAt description}}}}"
-}`

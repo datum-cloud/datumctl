@@ -6,30 +6,51 @@ import (
 
 	resourcemanagerv1alpha "buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go/datum/os/resourcemanager/v1alpha"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 
-	"go.datum.net/datumctl/internal/keyring"
+	"go.datum.net/datumctl/internal/authutil"
+	// "go.datum.net/datumctl/internal/keyring" // No longer needed directly here
 	"go.datum.net/datumctl/internal/output"
 	"go.datum.net/datumctl/internal/resourcemanager"
 )
 
 func listOrgsCommand() *cobra.Command {
-	var hostname, outputFormat string
+	var outputFormat string
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List organizations for the authenticated user",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			token, err := keyring.Get("datumctl", "datumctl")
+			ctx := cmd.Context()
+
+			// Get OIDC token source
+			tknSrc, err := authutil.GetTokenSource(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get token from keyring: %w", err)
+				return fmt.Errorf("failed to get token source: %w", err)
+			}
+
+			// Use oauth2.NewClient with the token source
+			httpClient := oauth2.NewClient(ctx, tknSrc)
+
+			// Get active credentials to find the correct API hostname
+			creds, _, err := authutil.GetActiveCredentials()
+			if err != nil {
+				return fmt.Errorf("failed to get active credentials: %w", err)
+			}
+
+			// Derive API hostname from the stored auth hostname
+			apiHostname, err := authutil.DeriveAPIHostname(creds.Hostname)
+			if err != nil {
+				// Error during derivation, return the error directly
+				return fmt.Errorf("failed to derive API hostname from stored credentials: %w", err)
 			}
 
 			organizationsAPI := &resourcemanager.OrganizationsAPI{
-				PAT:      token,
-				Hostname: hostname,
+				HTTPClient: httpClient,  // Use the OIDC http client
+				Hostname:   apiHostname, // Use derived hostname
 			}
 
-			listOrgs, err := organizationsAPI.ListOrganizations(cmd.Context(), &resourcemanagerv1alpha.ListOrganizationsRequest{})
+			listOrgs, err := organizationsAPI.ListOrganizations(ctx, &resourcemanagerv1alpha.ListOrganizationsRequest{})
 			if err != nil {
 				return fmt.Errorf("failed to list organizations: %w", err)
 			}
@@ -49,7 +70,6 @@ func listOrgsCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&hostname, "hostname", "api.datum.net", "The hostname of the Datum Cloud instance to authenticate with")
 	cmd.Flags().StringVar(&outputFormat, "output", "table", "Specify the output format to use. Supported options: table, json, yaml")
 
 	return cmd
