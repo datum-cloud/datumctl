@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc" // OIDC discovery
 	"github.com/pkg/browser"
@@ -20,27 +21,39 @@ import (
 )
 
 const (
-	clientID     = "318312457737145427" // Hardcoded Client ID
-	redirectPath = "/datumctl/auth/callback"
-	listenAddr   = "localhost:8085"
+	stagingClientID = "320166351379434897" // Client ID for staging
+	redirectPath    = "/datumctl/auth/callback"
+	listenAddr      = "localhost:8085"
 )
 
 var (
-	hostname string // Variable to store hostname flag
-	verbose  bool   // Variable to store verbose flag
+	hostname     string // Variable to store hostname flag
+	clientIDFlag string // Variable to store client-id flag
+	verbose      bool   // Variable to store verbose flag
 )
 
 var LoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with Datum Cloud via OAuth2 PKCE flow",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runLoginFlow(cmd.Context(), hostname, verbose)
+		var actualClientID string
+		if clientIDFlag != "" {
+			actualClientID = clientIDFlag
+		} else if strings.HasSuffix(hostname, ".staging.env.datum.net") {
+			actualClientID = stagingClientID
+		} else {
+			// Return an error if no client ID could be determined
+			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
+		}
+		return runLoginFlow(cmd.Context(), hostname, actualClientID, verbose)
 	},
 }
 
 func init() {
 	// Add the hostname flag
 	LoginCmd.Flags().StringVar(&hostname, "hostname", "auth.datum.net", "Hostname of the Datum Cloud authentication server")
+	// Add the client-id flag
+	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
 	// Add the verbose flag
 	LoginCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Print the full ID token claims after successful login")
 }
@@ -72,9 +85,9 @@ func generateRandomState(length int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// runLoginFlow now accepts context, hostname, and verbose flag
-func runLoginFlow(ctx context.Context, authHostname string, verbose bool) error {
-	fmt.Printf("Starting login process for %s...\n", authHostname)
+// runLoginFlow now accepts context, hostname, clientID, and verbose flag
+func runLoginFlow(ctx context.Context, authHostname string, clientID string, verbose bool) error {
+	fmt.Printf("Starting login process for %s (Client ID: %s)...\n", authHostname, clientID)
 
 	providerURL := fmt.Sprintf("https://%s", authHostname)
 	provider, err := oidc.NewProvider(ctx, providerURL)
@@ -221,7 +234,7 @@ func runLoginFlow(ctx context.Context, authHostname string, verbose bool) error 
 		return fmt.Errorf("id_token not found in token response")
 	}
 
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(ctx, idTokenString) // Use hardcoded clientID
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(ctx, idTokenString) // Use passed-in clientID
 	if err != nil {
 		return fmt.Errorf("failed to verify ID token: %w", err)
 	}
