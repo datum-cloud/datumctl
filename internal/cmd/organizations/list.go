@@ -2,16 +2,18 @@ package organizations
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 
-	resourcemanagerv1alpha "buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go/datum/os/resourcemanager/v1alpha"
+	iamrmv1alpha "buf.build/gen/go/datum-cloud/iam/protocolbuffers/go/datum/resourcemanager/v1alpha"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 
 	"go.datum.net/datumctl/internal/authutil"
-	// "go.datum.net/datumctl/internal/keyring" // No longer needed directly here
 	"go.datum.net/datumctl/internal/output"
-	"go.datum.net/datumctl/internal/resourcemanager"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func listOrgsCommand() *cobra.Command {
@@ -45,21 +47,43 @@ func listOrgsCommand() *cobra.Command {
 				return fmt.Errorf("failed to derive API hostname from stored credentials: %w", err)
 			}
 
-			organizationsAPI := &resourcemanager.OrganizationsAPI{
-				HTTPClient: httpClient,  // Use the OIDC http client
-				Hostname:   apiHostname, // Use derived hostname
-			}
-
-			listOrgs, err := organizationsAPI.ListOrganizations(ctx, &resourcemanagerv1alpha.ListOrganizationsRequest{})
+			url := fmt.Sprintf("https://%s/datum-os/iam/v1alpha/organizations:search", apiHostname)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
 			if err != nil {
-				return fmt.Errorf("failed to list organizations: %w", err)
+				return fmt.Errorf("failed to create request: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("failed to execute request to list organizations: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("failed to list organizations, status code: %d, body: %s", resp.StatusCode, string(bodyBytes))
 			}
 
-			if err := output.CLIPrint(os.Stdout, outputFormat, listOrgs, func() (output.ColumnFormatter, output.RowFormatterFunc) {
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read response body: %w", err)
+			}
+
+			var searchRespProto iamrmv1alpha.SearchOrganizationsResponse
+			// Using UnmarshalOptions to be more resilient, e.g. if API adds new fields not yet in client's proto.
+			unmarshalOpts := protojson.UnmarshalOptions{
+				DiscardUnknown: true,
+			}
+			if err := unmarshalOpts.Unmarshal(bodyBytes, &searchRespProto); err != nil {
+				return fmt.Errorf("failed to decode organizations list response into protobuf: %w", err)
+			}
+
+			if err := output.CLIPrint(os.Stdout, outputFormat, &searchRespProto, func() (output.ColumnFormatter, output.RowFormatterFunc) {
 				return output.ColumnFormatter{"DISPLAY NAME", "RESOURCE ID"}, func() output.RowFormatter {
 					var rowData output.RowFormatter
-					for _, org := range listOrgs.Organizations {
-						rowData = append(rowData, []any{org.DisplayName, org.OrganizationId})
+					for _, org := range searchRespProto.GetOrganizations() {
+						rowData = append(rowData, []any{org.GetDisplayName(), org.GetOrganizationId()})
 					}
 					return rowData
 				}

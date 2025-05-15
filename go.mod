@@ -4,6 +4,7 @@ go 1.23.1
 
 require (
 	buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go v1.36.1-20241220153950-69c59230c8e9.1
+	buf.build/gen/go/datum-cloud/iam/protocolbuffers/go v1.36.6-20250514212923-1f8eeff5190d.1
 	buf.build/go/protoyaml v0.3.1
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -11,8 +12,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/oauth2 v0.28.0
-	golang.org/x/term v0.30.0
-	google.golang.org/protobuf v1.36.1
+	google.golang.org/protobuf v1.36.6
 	k8s.io/apimachinery v0.32.0
 	k8s.io/client-go v0.32.0
 )
@@ -45,6 +45,7 @@ require (
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
 	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
 	google.golang.org/genproto v0.0.0-20241223144023-3abc09e42ca8 // indirect
