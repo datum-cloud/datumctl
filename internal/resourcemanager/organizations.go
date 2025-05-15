@@ -1,92 +1,81 @@
+// Package resourcemanager provides a client and methods for interacting
+// with the Datum resource manager API.
 package resourcemanager
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
-	resourcemanagerpb "buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go/datum/os/resourcemanager/v1alpha"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	iamrmv1alpha "buf.build/gen/go/datum-cloud/iam/protocolbuffers/go/datum/resourcemanager/v1alpha"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
-type listOrganizationsGraphQLResponse struct {
-	Data struct {
-		Organizations struct {
-			Edges []struct {
-				Node struct {
-					ID           string    `json:"id"`
-					Name         string    `json:"name"`
-					UserEntityID string    `json:"userEntityID"`
-					CreatedAt    time.Time `json:"createdAt"`
-					Description  string    `json:"description"`
-				} `json:"node"`
-			} `json:"edges"`
-		} `json:"organizations"`
-	} `json:"data"`
-}
-
-type OrganizationsAPI struct {
-	// HTTPClient is the client used to make requests, pre-configured with auth.
+// Client provides methods for interacting with the Datum resource manager API.
+// It handles the underlying HTTP requests and authentication.
+type Client struct {
+	// HTTPClient is the `*http.Client` to use for making API requests.
+	// This client should be pre-configured with any necessary authentication,
+	// such as an OAuth2 token source.
 	HTTPClient *http.Client
 
-	// The hostname to use when connecting to the upstream API to retrieve
-	// organizations.
-	Hostname string
+	// APIHostname is the hostname of the Datum resource manager API
+	// (e.g., "api.example.com").
+	APIHostname string
 }
 
-func (o *OrganizationsAPI) ListOrganizations(ctx context.Context, _ *resourcemanagerpb.ListOrganizationsRequest) (*resourcemanagerpb.ListOrganizationsResponse, error) {
-	body := strings.NewReader(`{
-		"query": "query { organizations { edges { node { id name userEntityID createdAt description } } } }"
-	}`) // TODO: Use proper GraphQL query generation
+// NewClient creates and returns a new Client for interacting with the
+// Datum resource manager API. It requires an HTTP client, which should be
+// pre-configured for authentication (e.g., with an OAuth2 token source),
+// and the API hostname.
+func NewClient(httpClient *http.Client, apiHostname string) *Client {
+	return &Client{
+		HTTPClient:  httpClient,
+		APIHostname: apiHostname,
+	}
+}
 
-	url := fmt.Sprintf("https://%s/graphql", o.Hostname)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+// ListOrganizations retrieves a list of organizations accessible by the authenticated user
+// from the Datum IAM resource manager API. It makes a POST request to the
+// /datum-os/iam/v1alpha/organizations:search endpoint.
+//
+// The provided context.Context can be used for request cancellation or timeouts.
+// It returns a SearchOrganizationsResponse containing the organizations or an
+// error if the API request fails or the response cannot be processed.
+func (c *Client) ListOrganizations(ctx context.Context) (*iamrmv1alpha.SearchOrganizationsResponse, error) {
+	url := fmt.Sprintf("https://%s/datum-os/iam/v1alpha/organizations:search", c.APIHostname)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
-	// Authentication is now handled by the HTTPClient's Transport (e.g., OAuth2)
 
-	client := o.HTTPClient
-	if client == nil {
-		// Fallback to default client if none provided, though this might lack auth
-		// Consider returning an error if HTTPClient is nil and required.
-		client = http.DefaultClient
-	}
-
-	resp, err := client.Do(req)
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
+		return nil, fmt.Errorf("failed to execute request to list organizations: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d from GraphQL endpoint: %s", resp.StatusCode, string(bodyBytes))
+		return nil, fmt.Errorf("failed to list organizations, status code: %d, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var gqlResp listOrganizationsGraphQLResponse
-	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {
-		return nil, fmt.Errorf("failed to decode JSON response: %w", err)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Convert GraphQL response to protobuf response
-	pbResp := &resourcemanagerpb.ListOrganizationsResponse{}
-	for _, edge := range gqlResp.Data.Organizations.Edges {
-		node := edge.Node
-		pbResp.Organizations = append(pbResp.Organizations, &resourcemanagerpb.Organization{
-			OrganizationId: node.ID,   // Assuming ID is the resource ID
-			DisplayName:    node.Name, // Assuming Name is the display name
-			CreateTime:     timestamppb.New(node.CreatedAt),
-			// Add other fields if necessary and available in GraphQL response
-		})
+	var searchRespProto iamrmv1alpha.SearchOrganizationsResponse
+	// Using UnmarshalOptions to be more resilient, e.g. if API adds new fields not yet in client's proto.
+	unmarshalOpts := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+	if err := unmarshalOpts.Unmarshal(bodyBytes, &searchRespProto); err != nil {
+		return nil, fmt.Errorf("failed to decode organizations list response into protobuf: %w", err)
 	}
 
-	return pbResp, nil
+	return &searchRespProto, nil
 }

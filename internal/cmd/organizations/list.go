@@ -2,18 +2,14 @@ package organizations
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"strings"
 
-	iamrmv1alpha "buf.build/gen/go/datum-cloud/iam/protocolbuffers/go/datum/resourcemanager/v1alpha"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/output"
-	"google.golang.org/protobuf/encoding/protojson"
+	"go.datum.net/datumctl/internal/resourcemanager"
 )
 
 func listOrgsCommand() *cobra.Command {
@@ -47,39 +43,16 @@ func listOrgsCommand() *cobra.Command {
 				return fmt.Errorf("failed to derive API hostname from stored credentials: %w", err)
 			}
 
-			url := fmt.Sprintf("https://%s/datum-os/iam/v1alpha/organizations:search", apiHostname)
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
+			// Create a new resource manager client
+			rmClient := resourcemanager.NewClient(httpClient, apiHostname)
+
+			// List organizations using the client
+			searchRespProto, err := rmClient.ListOrganizations(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to create request: %w", err)
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := httpClient.Do(req)
-			if err != nil {
-				return fmt.Errorf("failed to execute request to list organizations: %w", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				bodyBytes, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("failed to list organizations, status code: %d, body: %s", resp.StatusCode, string(bodyBytes))
+				return fmt.Errorf("failed to list organizations: %w", err)
 			}
 
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("failed to read response body: %w", err)
-			}
-
-			var searchRespProto iamrmv1alpha.SearchOrganizationsResponse
-			// Using UnmarshalOptions to be more resilient, e.g. if API adds new fields not yet in client's proto.
-			unmarshalOpts := protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			}
-			if err := unmarshalOpts.Unmarshal(bodyBytes, &searchRespProto); err != nil {
-				return fmt.Errorf("failed to decode organizations list response into protobuf: %w", err)
-			}
-
-			if err := output.CLIPrint(os.Stdout, outputFormat, &searchRespProto, func() (output.ColumnFormatter, output.RowFormatterFunc) {
+			if err := output.CLIPrint(os.Stdout, outputFormat, searchRespProto, func() (output.ColumnFormatter, output.RowFormatterFunc) {
 				return output.ColumnFormatter{"DISPLAY NAME", "RESOURCE ID"}, func() output.RowFormatter {
 					var rowData output.RowFormatter
 					for _, org := range searchRespProto.GetOrganizations() {

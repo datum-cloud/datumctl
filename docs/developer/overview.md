@@ -19,7 +19,7 @@ built using Go and the [Cobra](https://cobra.dev/) library for CLI structure.
     OIDC login flow, secure credential storage (keyring), token management
     (retrieval, refresh), and kubeconfig updates.
 *   **API Interaction (`internal/resourcemanager`, etc.):** Contains logic for
-    communicating with Datum Cloud APIs (e.g., GraphQL for listing
+    communicating with Datum Cloud APIs (e.g., REST for listing
     organizations). Uses standard Go HTTP clients, typically configured with
     OAuth2 transports managed by `authutil`.
 *   **Command Structure (`internal/cmd`, `main.go`):** Defines the CLI commands,
