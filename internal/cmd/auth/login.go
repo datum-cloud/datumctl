@@ -87,7 +87,7 @@ func generateRandomState(length int) (string, error) {
 
 // runLoginFlow now accepts context, hostname, clientID, and verbose flag
 func runLoginFlow(ctx context.Context, authHostname string, clientID string, verbose bool) error {
-	fmt.Printf("Starting login process for %s (Client ID: %s)...\n", authHostname, clientID)
+	fmt.Printf("Starting login process for %s ...\n", authHostname)
 
 	providerURL := fmt.Sprintf("https://%s", authHostname)
 	provider, err := oidc.NewProvider(ctx, providerURL)
