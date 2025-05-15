@@ -27,8 +27,6 @@ following common Go practices.
 *   **`internal/resourcemanager/`**: (Example) Likely contains clients and logic
     for interacting with specific Datum Cloud API resource types (like
     Organizations).
-*   **`internal/datum/`**: (Potentially legacy or shared API types) May contain
-    shared types or client logic. Needs review based on current usage.
 
 ## Main entrypoint
 
