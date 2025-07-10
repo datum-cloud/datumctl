@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	stagingClientID = "320166351379434897" // Client ID for staging
+	stagingClientID = "325848904128073754" // Client ID for staging
 	redirectPath    = "/datumctl/auth/callback"
 	listenAddr      = "localhost:8085"
 )
