@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io"
 
-	"buf.build/go/protoyaml"
 	"github.com/rodaine/table"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
 
 type TableFormatterFunc func() (ColumnFormatter, RowFormatterFunc)
@@ -15,7 +15,8 @@ type RowFormatterFunc func() RowFormatter
 type RowFormatter [][]any
 type ColumnFormatter []any
 
-func CLIPrint(w io.Writer, format string, data proto.Message, tableFormatterFunc TableFormatterFunc) error {
+// CLIPrint outputs a Kubernetes runtime.Object in the specified format using kubectl-compatible marshalling
+func CLIPrint(w io.Writer, format string, data runtime.Object, tableFormatterFunc TableFormatterFunc) error {
 	switch format {
 	case "yaml":
 		return printYAML(w, data)
@@ -32,26 +33,20 @@ func CLIPrint(w io.Writer, format string, data proto.Message, tableFormatterFunc
 	}
 }
 
-func printYAML(w io.Writer, data proto.Message) error {
-	marshaller := protoyaml.MarshalOptions{
-		Indent: 2,
-	}
+func printYAML(w io.Writer, data runtime.Object) error {
+	// Create a YAML serializer using the default Kubernetes scheme
+	// This uses the same approach as kubectl for marshalling objects
+	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, clientgoscheme.Scheme, clientgoscheme.Scheme)
 
-	output, err := marshaller.Marshal(data)
-	if err != nil {
-		return fmt.Errorf("failed to marshal data to YAML: %w", err)
-	}
-	fmt.Fprint(w, string(output))
-	return nil
+	return serializer.Encode(data, w)
 }
 
-func printJSON(w io.Writer, data proto.Message) error {
-	output, err := protojson.Marshal(data)
-	if err != nil {
-		return fmt.Errorf("failed to marshal data to JSON: %w", err)
-	}
-	fmt.Fprint(w, string(output))
-	return nil
+func printJSON(w io.Writer, data runtime.Object) error {
+	// Create a JSON serializer using the default Kubernetes scheme
+	// This uses the same approach as kubectl for marshalling objects
+	serializer := json.NewSerializer(json.DefaultMetaFactory, clientgoscheme.Scheme, clientgoscheme.Scheme, false)
+
+	return serializer.Encode(data, w)
 }
 
 func printTable(w io.Writer, headers ColumnFormatter, rowData [][]any) error {

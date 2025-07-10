@@ -28,6 +28,7 @@ const (
 
 var (
 	hostname     string // Variable to store hostname flag
+	apiHostname  string // Variable to store api-hostname flag
 	clientIDFlag string // Variable to store client-id flag
 	verbose      bool   // Variable to store verbose flag
 )
@@ -45,13 +46,15 @@ var LoginCmd = &cobra.Command{
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
 		}
-		return runLoginFlow(cmd.Context(), hostname, actualClientID, verbose)
+		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, verbose)
 	},
 }
 
 func init() {
 	// Add the hostname flag
 	LoginCmd.Flags().StringVar(&hostname, "hostname", "auth.datum.net", "Hostname of the Datum Cloud authentication server")
+	// Add the api-hostname flag
+	LoginCmd.Flags().StringVar(&apiHostname, "api-hostname", "", "Hostname of the Datum Cloud API server (if not specified, will be derived from auth hostname)")
 	// Add the client-id flag
 	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
 	// Add the verbose flag
@@ -85,9 +88,25 @@ func generateRandomState(length int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// runLoginFlow now accepts context, hostname, clientID, and verbose flag
-func runLoginFlow(ctx context.Context, authHostname string, clientID string, verbose bool) error {
+// runLoginFlow now accepts context, hostname, apiHostname, clientID, and verbose flag
+func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, clientID string, verbose bool) error {
 	fmt.Printf("Starting login process for %s ...\n", authHostname)
+
+	// Determine the final API hostname to use
+	var finalAPIHostname string
+	if apiHostname != "" {
+		// Use the explicitly provided API hostname
+		finalAPIHostname = apiHostname
+		fmt.Printf("Using specified API hostname: %s\n", finalAPIHostname)
+	} else {
+		// Derive API hostname from auth hostname
+		derivedAPI, err := authutil.DeriveAPIHostname(authHostname)
+		if err != nil {
+			return fmt.Errorf("failed to derive API hostname from auth hostname '%s': %w", authHostname, err)
+		}
+		finalAPIHostname = derivedAPI
+		fmt.Printf("Derived API hostname: %s\n", finalAPIHostname)
+	}
 
 	providerURL := fmt.Sprintf("https://%s", authHostname)
 	provider, err := oidc.NewProvider(ctx, providerURL)
@@ -265,13 +284,15 @@ func runLoginFlow(ctx context.Context, authHostname string, clientID string, ver
 
 	creds := authutil.StoredCredentials{
 		Hostname:         authHostname,
+		APIHostname:      finalAPIHostname,
 		ClientID:         clientID,
 		EndpointAuthURL:  provider.Endpoint().AuthURL,
 		EndpointTokenURL: provider.Endpoint().TokenURL,
 		Scopes:           scopes,
 		Token:            token,
-		UserName:         claims.Name,  // Store name
-		UserEmail:        claims.Email, // Store email
+		UserName:         claims.Name,    // Store name
+		UserEmail:        claims.Email,   // Store email
+		Subject:          claims.Subject, // Store subject (sub claim)
 	}
 
 	credsJSON, err := json.Marshal(creds)

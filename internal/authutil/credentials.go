@@ -28,6 +28,7 @@ var ErrNoActiveUser = errors.New("no active user set. Please login first")
 // StoredCredentials holds all necessary information for a single authenticated session.
 type StoredCredentials struct {
 	Hostname         string        `json:"hostname"`           // The auth server hostname used (e.g., auth.datum.net)
+	APIHostname      string        `json:"api_hostname"`       // The API server hostname (e.g., api.datum.net)
 	ClientID         string        `json:"client_id"`          // The OAuth2 Client ID used
 	EndpointAuthURL  string        `json:"endpoint_auth_url"`  // Discovered OIDC Authorization Endpoint URL
 	EndpointTokenURL string        `json:"endpoint_token_url"` // Discovered OIDC Token Endpoint URL
@@ -35,6 +36,7 @@ type StoredCredentials struct {
 	Token            *oauth2.Token `json:"token"`              // The retrieved OAuth2 token (includes refresh token, expiry)
 	UserName         string        `json:"user_name"`          // User's Name (e.g., from 'name' claim)
 	UserEmail        string        `json:"user_email"`         // User's Email (e.g., from 'email' claim)
+	Subject          string        `json:"subject"`            // User's Subject ID (sub claim from JWT)
 }
 
 // GetActiveCredentials retrieves the StoredCredentials for the currently active user.
@@ -106,6 +108,54 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	// Create a TokenSource with the stored token
 	// The oauth2 library handles refresh using the context, config, and refresh token.
 	return conf.TokenSource(ctx, creds.Token), nil
+}
+
+// GetUserIDFromToken extracts the user ID (sub claim) from the stored credentials.
+func GetUserIDFromToken(ctx context.Context) (string, error) {
+	creds, _, err := GetActiveCredentials()
+	if err != nil {
+		return "", err
+	}
+
+	if creds.Subject == "" {
+		return "", errors.New("subject (user ID) not found in stored credentials")
+	}
+
+	return creds.Subject, nil
+}
+
+// GetActiveUserKey retrieves the key for the currently active user (e.g., email@example.com).
+func GetActiveUserKey() (string, error) {
+	activeUserKey, err := keyring.Get(ServiceName, ActiveUserKey)
+	if err != nil {
+		if errors.Is(err, keyring.ErrNotFound) {
+			return "", ErrNoActiveUser
+		}
+		return "", fmt.Errorf("failed to get active user from keyring: %w", err)
+	}
+
+	if activeUserKey == "" {
+		return "", ErrNoActiveUser
+	}
+
+	return activeUserKey, nil
+}
+
+// GetAPIHostname returns the API hostname from stored credentials.
+// If no API hostname is stored, it attempts to derive it from the auth hostname.
+func GetAPIHostname() (string, error) {
+	creds, _, err := GetActiveCredentials()
+	if err != nil {
+		return "", err
+	}
+
+	// If API hostname is explicitly stored, use it
+	if creds.APIHostname != "" {
+		return creds.APIHostname, nil
+	}
+
+	// Fall back to deriving from auth hostname
+	return DeriveAPIHostname(creds.Hostname)
 }
 
 // DeriveAPIHostname attempts to convert an authentication hostname (e.g., auth.datum.net)
