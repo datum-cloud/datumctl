@@ -5,39 +5,57 @@ import (
 	"strings"
 	"testing"
 
-	resourcemanagerv1alpha "buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go/datum/os/resourcemanager/v1alpha"
-	"google.golang.org/protobuf/proto"
+	resourcemanagerv1alpha1 "go.miloapis.com/milo/pkg/apis/resourcemanager/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestCLIPrint(t *testing.T) {
-
-	testOrgProto := &resourcemanagerv1alpha.Organization{
-		DisplayName:    "Test Organization",
-		OrganizationId: "1234",
+	testOrgK8s := &resourcemanagerv1alpha1.Organization{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "resourcemanager.miloapis.com/v1alpha1",
+			Kind:       "Organization",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "1234",
+		},
+		Spec: resourcemanagerv1alpha1.OrganizationSpec{
+			Type: "Business",
+		},
 	}
 
 	tests := []struct {
 		name       string
 		format     string
-		data       proto.Message
+		data       runtime.Object
 		headers    []any
 		rowData    [][]any
 		wantErr    bool
-		wantOutput string
+		wantOutput []string
 	}{
 		{
-			name:       "Print YAML",
-			format:     "yaml",
-			data:       testOrgProto,
-			wantErr:    false,
-			wantOutput: "organizationId: \"1234\"\ndisplayName: Test Organization\n",
+			name:    "Print YAML",
+			format:  "yaml",
+			data:    testOrgK8s,
+			wantErr: false,
+			wantOutput: []string{
+				"apiVersion: resourcemanager.miloapis.com/v1alpha1",
+				"kind: Organization",
+				`name: "1234"`,
+				"type: Business",
+			},
 		},
 		{
-			name:       "Print JSON",
-			format:     "json",
-			data:       testOrgProto,
-			wantErr:    false,
-			wantOutput: "{\"organizationId\":\"1234\",\"displayName\":\"Test Organization\"}",
+			name:    "Print JSON",
+			format:  "json",
+			data:    testOrgK8s,
+			wantErr: false,
+			wantOutput: []string{
+				`"apiVersion":"resourcemanager.miloapis.com/v1alpha1"`,
+				`"kind":"Organization"`,
+				`"name":"1234"`,
+				`"type":"Business"`,
+			},
 		},
 		{
 			name:    "Print Table",
@@ -49,7 +67,7 @@ func TestCLIPrint(t *testing.T) {
 		{
 			name:    "Unsupported Format",
 			format:  "unsupported",
-			data:    testOrgProto,
+			data:    testOrgK8s,
 			wantErr: true,
 		},
 		{
@@ -74,14 +92,16 @@ func TestCLIPrint(t *testing.T) {
 			}
 
 			if !tt.wantErr {
+				out := buf.String()
 				if tt.format == "table" {
-					out := buf.String()
 					if !strings.Contains(out, tt.headers[0].(string)) || !strings.Contains(out, tt.headers[1].(string)) {
 						t.Errorf("CLIPrint() output = %v, does not have correct headers", out)
 					}
 				} else {
-					if gotOutput := buf.String(); gotOutput != tt.wantOutput {
-						t.Errorf("CLIPrint() output = \n%v, want \n%v", gotOutput, tt.wantOutput)
+					for _, want := range tt.wantOutput {
+						if !strings.Contains(out, want) {
+							t.Errorf("CLIPrint() output = \n%v, want to contain \n%v", out, want)
+						}
 					}
 				}
 			}
