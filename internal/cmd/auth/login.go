@@ -22,6 +22,7 @@ import (
 
 const (
 	stagingClientID = "325848904128073754" // Client ID for staging
+	prodClientID    = "328728232771788043" // Client ID for prod
 	redirectPath    = "/datumctl/auth/callback"
 	listenAddr      = "localhost:8085"
 )
@@ -41,6 +42,8 @@ var LoginCmd = &cobra.Command{
 			actualClientID = clientIDFlag
 		} else if strings.HasSuffix(hostname, ".staging.env.datum.net") {
 			actualClientID = stagingClientID
+		} else if strings.HasSuffix(hostname, ".datum.net") {
+			actualClientID = prodClientID
 		} else {
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
