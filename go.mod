@@ -10,7 +10,7 @@ require (
 	github.com/rodaine/table v1.3.0
 	github.com/spf13/cobra v1.8.1
 	github.com/zalando/go-keyring v0.2.6
-	go.miloapis.com/milo v0.0.0-20250710191109-fef54cb30bb6
+	go.miloapis.com/milo v0.0.0-20250711174448-db7176e7774a
 	golang.org/x/oauth2 v0.28.0
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.32.1
