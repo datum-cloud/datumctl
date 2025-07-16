@@ -8,7 +8,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rodaine/table v1.3.0
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.9.1
 	github.com/zalando/go-keyring v0.2.6
 	go.miloapis.com/milo v0.0.0-20250711174448-db7176e7774a
 	golang.org/x/oauth2 v0.28.0
