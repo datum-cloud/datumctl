@@ -2,14 +2,22 @@ package auth
 
 import "github.com/spf13/cobra"
 
-var Command = &cobra.Command{
-	Use:   "auth",
-	Short: "Authenticate with Datum Cloud",
-}
+// Command creates the base "auth" command and adds subcommands for login,
+// logout, token retrieval, etc.
+func Command() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "auth",
+		Short: "Authenticate with Datum Cloud",
+	}
 
-func init() {
-	Command.AddCommand(
-		getTokenCmd(),
+	cmd.AddCommand(
+		getTokenCmd,
+		LoginCmd,
+		listCmd,
+		logoutCmd,
+		switchCmd,
 		updateKubeconfigCmd(),
 	)
+
+	return cmd
 }
