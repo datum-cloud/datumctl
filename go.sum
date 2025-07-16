@@ -123,6 +123,8 @@ github.com/zalando/go-keyring v0.2.6 h1:r7Yc3+H+Ux0+M72zacZoItR3UDxeWfKTcabvkI8u
 github.com/zalando/go-keyring v0.2.6/go.mod h1:2TCrxYrbUNYfNS/Kgy/LSrkSQzZ5UPVH85RwfczwvcI=
 go.miloapis.com/milo v0.0.0-20250710191109-fef54cb30bb6 h1:g3Ur91+zR00RzTAcTxDe4zsUbl7UxpqR/yg7hhQyoWw=
 go.miloapis.com/milo v0.0.0-20250710191109-fef54cb30bb6/go.mod h1:hh74+itTatDKu88z8rOItbrn3g98jei7ecaMKjJpFds=
+go.miloapis.com/milo v0.0.0-20250711174448-db7176e7774a h1:LCH8o4GRxuYKCWYd9FGjSP9YjFBxSXmej8MJSkuIkjs=
+go.miloapis.com/milo v0.0.0-20250711174448-db7176e7774a/go.mod h1:hh74+itTatDKu88z8rOItbrn3g98jei7ecaMKjJpFds=
 go.uber.org/multierr v1.11.0 h1:blXXJkSxSSfBVBlC76pxqeO+LN3aDfLQo+309xJstO0=
 go.uber.org/multierr v1.11.0/go.mod h1:20+QtiLqy0Nd6FdQB9TLXag12DsQkrbs3htMFfDN80Y=
 go.uber.org/zap v1.27.0 h1:aJMhYGrd5QSmlpLMr2MftRKl7t8J8PTZPA732ud/XR8=
