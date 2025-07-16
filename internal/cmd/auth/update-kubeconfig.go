@@ -1,22 +1,19 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 
 	"go.datum.net/datumctl/internal/authutil"
-	"go.datum.net/datumctl/internal/keyring"
 )
 
 func updateKubeconfigCmd() *cobra.Command {
-	var kubeconfig, projectName, organizationName string
+	var kubeconfig, projectName, organizationName, hostname string
 
 	cmd := &cobra.Command{
 		Use:   "update-kubeconfig",
@@ -32,35 +29,28 @@ func updateKubeconfigCmd() *cobra.Command {
 				kubeconfigPath = clientcmd.RecommendedHomeFile
 			}
 
-			// --- Get hostname from stored credentials ---
-			activeUserKey, err := keyring.Get(authutil.ServiceName, authutil.ActiveUserKey)
-			if err != nil {
-				if errors.Is(err, keyring.ErrNotFound) {
-					return errors.New("no active user found. Please login using 'datumctl auth login'")
+			var apiHostname string
+			var activeUserKey string
+
+			// Use override hostname if provided, otherwise get from stored credentials
+			if hostname != "" {
+				apiHostname = hostname
+			} else {
+				var err error
+				apiHostname, err = authutil.GetAPIHostname()
+				if err != nil {
+					return fmt.Errorf("failed to get API hostname: %w", err)
 				}
-				return fmt.Errorf("failed to get active user from keyring: %w", err)
-			}
 
-			credsJSON, err := keyring.Get(authutil.ServiceName, activeUserKey)
-			if err != nil {
-				return fmt.Errorf("failed to get credentials for user '%s' from keyring: %w", activeUserKey, err)
-			}
-
-			var storedCreds authutil.StoredCredentials
-			if err := json.Unmarshal([]byte(credsJSON), &storedCreds); err != nil {
-				return fmt.Errorf("failed to parse stored credentials for user '%s': %w", activeUserKey, err)
-			}
-
-			authHostname := storedCreds.Hostname // Get auth hostname from credentials
-			if authHostname == "" {
-				return fmt.Errorf("hostname not found in stored credentials for user '%s'", activeUserKey)
-			}
-
-			// Derive API hostname from auth hostname (replace 'auth.' with 'api.')
-			apiHostname := strings.Replace(authHostname, "auth.", "api.", 1)
-			if apiHostname == authHostname { // Check if replacement occurred
-				// Consider logging a warning or handling cases where 'auth.' prefix isn't present
-				fmt.Printf("Warning: Could not derive API hostname from auth hostname '%s'. Using it directly.\n", authHostname)
+				activeUserKey, err = authutil.GetActiveUserKey()
+				if err != nil {
+					// We only expect an error here if the user is not logged in.
+					if errors.Is(err, authutil.ErrNoActiveUser) {
+						return errors.New("no active user found. Please login using 'datumctl auth login'")
+					}
+					// For other errors, provide more context.
+					return fmt.Errorf("failed to get active user for kubeconfig message: %w", err)
+				}
 			}
 
 			// --- Get executable path ---
@@ -73,9 +63,9 @@ func updateKubeconfigCmd() *cobra.Command {
 
 			var path string
 			if projectName != "" {
-				path = "/apis/resourcemanager.datumapis.com/v1alpha/projects/" + projectName + "/control-plane"
+				path = "/apis/resourcemanager.miloapis.com/v1alpha1/projects/" + projectName + "/control-plane"
 			} else {
-				path = "/apis/resourcemanager.datumapis.com/v1alpha/organizations/" + organizationName + "/control-plane"
+				path = "/apis/resourcemanager.miloapis.com/v1alpha1/organizations/" + organizationName + "/control-plane"
 			}
 
 			// Load existing config
@@ -122,7 +112,12 @@ func updateKubeconfigCmd() *cobra.Command {
 				return fmt.Errorf("failed to write updated kubeconfig: %v", err)
 			}
 
-			fmt.Printf("Successfully updated kubeconfig at %s for user %s (API Server: %s)\n", kubeconfigPath, activeUserKey, apiHostname) // Update print message
+			// Construct success message
+			userInfo := activeUserKey
+			if userInfo == "" {
+				userInfo = "custom hostname override"
+			}
+			fmt.Printf("Successfully updated kubeconfig at %s for user %s (API Server: %s)\n", kubeconfigPath, userInfo, apiHostname)
 			return nil
 		},
 	}
@@ -130,6 +125,7 @@ func updateKubeconfigCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the kubeconfig file")
 	cmd.Flags().StringVar(&projectName, "project", "", "Configure kubectl to access a specific project's control plane instead of the core control plane.")
 	cmd.Flags().StringVar(&organizationName, "organization", "", "The organization name that is being connected to.")
+	cmd.Flags().StringVar(&hostname, "hostname", "", "Override the hostname for the API server")
 
 	cmd.MarkFlagsOneRequired("project", "organization")
 	cmd.MarkFlagsMutuallyExclusive("project", "organization")
