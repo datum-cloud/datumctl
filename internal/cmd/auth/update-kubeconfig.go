@@ -1,17 +1,22 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
+
+	"go.datum.net/datumctl/internal/authutil"
+	"go.datum.net/datumctl/internal/keyring"
 )
 
 func updateKubeconfigCmd() *cobra.Command {
-	var kubeconfig, hostname, projectName, organizationName string
+	var kubeconfig, projectName, organizationName string
 
 	cmd := &cobra.Command{
 		Use:   "update-kubeconfig",
@@ -26,6 +31,45 @@ func updateKubeconfigCmd() *cobra.Command {
 			} else {
 				kubeconfigPath = clientcmd.RecommendedHomeFile
 			}
+
+			// --- Get hostname from stored credentials ---
+			activeUserKey, err := keyring.Get(authutil.ServiceName, authutil.ActiveUserKey)
+			if err != nil {
+				if errors.Is(err, keyring.ErrNotFound) {
+					return errors.New("no active user found. Please login using 'datumctl auth login'")
+				}
+				return fmt.Errorf("failed to get active user from keyring: %w", err)
+			}
+
+			credsJSON, err := keyring.Get(authutil.ServiceName, activeUserKey)
+			if err != nil {
+				return fmt.Errorf("failed to get credentials for user '%s' from keyring: %w", activeUserKey, err)
+			}
+
+			var storedCreds authutil.StoredCredentials
+			if err := json.Unmarshal([]byte(credsJSON), &storedCreds); err != nil {
+				return fmt.Errorf("failed to parse stored credentials for user '%s': %w", activeUserKey, err)
+			}
+
+			authHostname := storedCreds.Hostname // Get auth hostname from credentials
+			if authHostname == "" {
+				return fmt.Errorf("hostname not found in stored credentials for user '%s'", activeUserKey)
+			}
+
+			// Derive API hostname from auth hostname (replace 'auth.' with 'api.')
+			apiHostname := strings.Replace(authHostname, "auth.", "api.", 1)
+			if apiHostname == authHostname { // Check if replacement occurred
+				// Consider logging a warning or handling cases where 'auth.' prefix isn't present
+				fmt.Printf("Warning: Could not derive API hostname from auth hostname '%s'. Using it directly.\n", authHostname)
+			}
+
+			// --- Get executable path ---
+			executablePath, err := os.Executable()
+			if err != nil {
+				// Log warning and fallback, or return error? Returning error is safer.
+				return fmt.Errorf("failed to determine datumctl executable path: %w", err)
+			}
+			// --- End Get executable path ---
 
 			var path string
 			if projectName != "" {
@@ -50,7 +94,7 @@ func updateKubeconfigCmd() *cobra.Command {
 			}
 
 			cfg.Clusters[clusterName] = &api.Cluster{
-				Server: fmt.Sprintf("https://%s%s", hostname, path),
+				Server: fmt.Sprintf("https://%s%s", apiHostname, path), // Use derived API hostname
 			}
 
 			cfg.Contexts[clusterName] = &api.Context{
@@ -61,15 +105,14 @@ func updateKubeconfigCmd() *cobra.Command {
 			cfg.AuthInfos["datum-user"] = &api.AuthInfo{
 				Exec: &api.ExecConfig{
 					InstallHint: execPluginInstallHint,
-					Command:     "datumctl",
+					Command:     executablePath, // Use absolute path
 					Args: []string{
 						"auth",
 						"get-token",
-						fmt.Sprintf("--hostname=%s", hostname),
 						"--output=client.authentication.k8s.io/v1",
 					},
 					APIVersion:         "client.authentication.k8s.io/v1",
-					ProvideClusterInfo: true,
+					ProvideClusterInfo: false,
 					InteractiveMode:    "IfAvailable",
 				},
 			}
@@ -79,13 +122,12 @@ func updateKubeconfigCmd() *cobra.Command {
 				return fmt.Errorf("failed to write updated kubeconfig: %v", err)
 			}
 
-			fmt.Printf("Successfully updated kubeconfig at %s\n", kubeconfigPath)
+			fmt.Printf("Successfully updated kubeconfig at %s for user %s (API Server: %s)\n", kubeconfigPath, activeUserKey, apiHostname) // Update print message
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the kubeconfig file")
-	cmd.Flags().StringVar(&hostname, "hostname", "api.datum.net", "The hostname of the Datum Cloud instance to authenticate with")
 	cmd.Flags().StringVar(&projectName, "project", "", "Configure kubectl to access a specific project's control plane instead of the core control plane.")
 	cmd.Flags().StringVar(&organizationName, "organization", "", "The organization name that is being connected to.")
 

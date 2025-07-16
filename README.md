@@ -1,29 +1,61 @@
-# Datum Cloud CLI
+# datumctl: The Datum Cloud CLI
 
-## Prerequisites
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-- [Golang](https://go.dev)
+`datumctl` is the official command-line interface for interacting with [Datum Cloud](https://www.datum.net), the connectivity infrastructure platform designed to unlock networking superpowers for developers and forward-thinking companies.
 
-## Installing
+Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and integrate with tools like `kubectl`.
 
-### Homebrew
+## Features
 
-The Datum Cloud CLI can be installed using the
-[datum-cloud/tap](https://github.com/datum-cloud/homebrew-tap) tap.
+*   **Secure Authentication:** Uses modern OAuth 2.0 and OIDC PKCE flow for secure, browser-based login. No static API keys required.
+*   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
+*   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
+*   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
+*   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
-```shell
-$ brew tap datum-cloud/tap
-==> Tapping datum-cloud/tap
-...
+## Getting Started
 
-$ brew install datum-cloud/tap/datumctl
-==> Fetching datum-cloud/tap/datumctl
-```
+### Installation
 
-### Manually
+See the [Installation Guide](./docs/user/installation.md) for detailed instructions, including Homebrew for macOS and pre-built binaries for all platforms.
 
-Install the Datum Cloud CLI using the following command.
+### Basic Usage
 
-```shell
-go install go.datum.net/datumctl@latest
-```
+1.  **Log in to Datum Cloud:**
+    ```bash
+    datumctl auth login
+    ```
+    (This will open your web browser to complete authentication.)
+
+2.  **List your organizations:**
+    ```bash
+    datumctl organizations list
+    ```
+
+3.  **Configure `kubectl` access:**
+    Use the organization ID (or a specific project ID) from the previous step
+    to configure `kubectl`.
+    ```bash
+    # Example using an organization ID
+    datumctl auth update-kubeconfig --organization <org-id>
+
+    # Example using a project ID
+    # datumctl auth update-kubeconfig --project <project-id>
+    ```
+    Now you can use `kubectl` to interact with your Datum Cloud control plane.
+
+For more detailed tool setup instructions, refer to the official
+[Set Up Tools](https://docs.datum.net/docs/tasks/tools/) guide on docs.datum.net.
+
+## Documentation
+
+For comprehensive user and developer guides, including detailed command references and authentication flow explanations, please see the [**Documentation**](./docs/README.md).
+
+## Contributing
+
+Contributions are welcome! Please refer to the contribution guidelines (link to be added) for more information.
+
+## License
+
+`datumctl` is licensed under the Apache License, Version 2.0. See the [LICENSE](./LICENSE) file for details.
