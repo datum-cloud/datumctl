@@ -5,7 +5,6 @@ go 1.24.0
 toolchain go1.24.2
 
 require (
-	buf.build/gen/go/datum-cloud/datum-os/protocolbuffers/go v1.36.1-20241220153950-69c59230c8e9.1
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rodaine/table v1.3.0
@@ -13,7 +12,6 @@ require (
 	github.com/zalando/go-keyring v0.2.6
 	go.miloapis.com/milo v0.0.0-20250710191109-fef54cb30bb6
 	golang.org/x/oauth2 v0.28.0
-	google.golang.org/protobuf v1.36.6
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.32.1
 	sigs.k8s.io/controller-runtime v0.20.4
@@ -21,7 +19,6 @@ require (
 
 require (
 	al.essio.dev/pkg/shellescape v1.5.1 // indirect
-	cloud.google.com/go/longrunning v0.6.3 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
@@ -54,10 +51,7 @@ require (
 	golang.org/x/term v0.32.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
-	google.golang.org/genproto v0.0.0-20241223144023-3abc09e42ca8 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
-	google.golang.org/grpc v1.71.0 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.32.1 // indirect

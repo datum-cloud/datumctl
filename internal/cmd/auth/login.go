@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -21,9 +22,11 @@ import (
 )
 
 const (
-	stagingClientID = "320166351379434897" // Client ID for staging
+	stagingClientID = "325848904128073754" // Client ID for staging
+	prodClientID    = "328728232771788043" // Client ID for prod
 	redirectPath    = "/datumctl/auth/callback"
-	listenAddr      = "localhost:8085"
+	// Listen on a random port
+	listenAddr = "localhost:0"
 )
 
 var (
@@ -42,6 +45,8 @@ var LoginCmd = &cobra.Command{
 			actualClientID = clientIDFlag
 		} else if strings.HasSuffix(hostname, ".staging.env.datum.net") {
 			actualClientID = stagingClientID
+		} else if strings.HasSuffix(hostname, ".datum.net") {
+			actualClientID = prodClientID
 		} else {
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
@@ -117,11 +122,19 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	// Define scopes
 	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
 
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
+	}
+	defer listener.Close()
+
+	actualListenAddr := listener.Addr().String()
+
 	conf := &oauth2.Config{
 		ClientID:    clientID,
 		Scopes:      scopes,
 		Endpoint:    provider.Endpoint(),
-		RedirectURL: fmt.Sprintf("http://%s%s", listenAddr, redirectPath),
+		RedirectURL: fmt.Sprintf("http://%s%s", actualListenAddr, redirectPath),
 	}
 
 	// Generate PKCE parameters
@@ -149,7 +162,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	serverClosed := make(chan struct{}) // To signal server shutdown completion
 
 	// Start local server to handle the callback
-	server := &http.Server{Addr: listenAddr}
+	server := &http.Server{}
 	mux := http.NewServeMux() // Use a mux to avoid conflicts if other handlers exist
 	mux.HandleFunc(redirectPath, func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
@@ -186,7 +199,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	server.Handler = mux
 
 	go func() {
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != http.ErrServerClosed {
 			// Don't send error if context is cancelled (which might happen on success)
 			select {
 			case <-ctx.Done():
@@ -199,6 +212,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 
 	// Attempt to open browser
 	fmt.Println("\nAttempting to open your default browser for authentication...")
+	fmt.Printf("\nOpen this URL in your browser: %s\n", authURL)
 	err = browser.OpenURL(authURL)
 	if err != nil {
 		fmt.Println("\nCould not open browser automatically.")
