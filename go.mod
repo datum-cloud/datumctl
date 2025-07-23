@@ -8,9 +8,9 @@ require (
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rodaine/table v1.3.0
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.9.1
 	github.com/zalando/go-keyring v0.2.6
-	go.miloapis.com/milo v0.0.0-20250711174448-db7176e7774a
+	go.miloapis.com/milo v0.0.0-20250721214348-0d7cd85d7b7b
 	golang.org/x/oauth2 v0.28.0
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.32.1
@@ -42,7 +42,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/spf13/pflag v1.0.7 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
