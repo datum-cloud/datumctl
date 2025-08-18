@@ -5,6 +5,7 @@ import (
 
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/get"
+	"go.datum.net/datumctl/internal/cmd/mcp" 
 )
 
 var (
@@ -17,6 +18,7 @@ var (
 func init() {
 	rootCmd.AddCommand(auth.Command())
 	rootCmd.AddCommand(get.Command())
+	rootCmd.AddCommand(mcp.Command())
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
