@@ -66,6 +66,10 @@ type Kubectl struct {
 // New returns a new helper; clients are initialized lazily.
 func New() *Kubectl { return &Kubectl{} }
 
+// NewWithRESTConfig returns a helper that uses the provided *rest.Config.
+// When set, kubeconfig will NOT be loaded; clients will be built from this cfg.
+func NewWithRESTConfig(cfg *rest.Config) *Kubectl { return &Kubectl{cfg: cfg} }
+
 // CRDItem is a compact view of a CustomResourceDefinition.
 type CRDItem struct {
 	Name     string   `json:"name"`     // e.g. "httpproxies.networking.datumapis.com"
@@ -175,13 +179,34 @@ func (k *Kubectl) ValidateYAML(ctx context.Context, manifest string) (bool, stri
 			ri = k.dyn.Resource(mapping.Resource)
 		}
 
-		// Server-side apply (dry run) performs full API validation without persisting.
+		// Server-side apply/create (dry run) performs full API validation without persisting.
 		data, err := json.Marshal(u.Object)
 		if err != nil {
 			return false, fmt.Sprintf("encode %s/%s: %v", u.GetKind(), u.GetName(), err), nil
 		}
 		if u.GetName() == "" {
-			return false, fmt.Sprintf("%s is missing metadata.name", gvk.Kind), nil
+			// No metadata.name → use Create (dry-run). Supports generateName.
+			_, err = ri.Create(ctx, u, metav1.CreateOptions{
+				DryRun: []string{metav1.DryRunAll},
+			})
+			if err != nil {
+				// Treat API validation failures as ok=false with a descriptive message.
+				if statusErr, ok := err.(*apierrors.StatusError); ok {
+					status := statusErr.ErrStatus
+					reason := status.Message
+					if status.Details != nil && len(status.Details.Causes) > 0 {
+						var b strings.Builder
+						_, _ = fmt.Fprintf(&b, "%s:", status.Message)
+						for _, c := range status.Details.Causes {
+							_, _ = fmt.Fprintf(&b, " %s", c.Message)
+						}
+						reason = b.String()
+					}
+					return false, reason, nil
+				}
+				return false, err.Error(), nil
+			}
+			continue
 		}
 
 		_, err = ri.Patch(
@@ -275,17 +300,28 @@ func (k *Kubectl) ensureClusterReachable(ctx context.Context) error {
 // initClients loads kubeconfig and constructs client-go clients on first use.
 func (k *Kubectl) initClients() error {
 	k.once.Do(func() {
-		rules := clientcmd.NewDefaultClientConfigLoadingRules()
-		overrides := &clientcmd.ConfigOverrides{}
-		if k.Context != "" {
-			overrides.CurrentContext = k.Context
+		var (
+			cfg *rest.Config
+			err error
+		)
+
+		// If a rest.Config was injected, use it (no kubeconfig reliance).
+		if k.cfg != nil {
+			cfg = k.cfg
+		} else {
+			// Otherwise, fall back to kubeconfig loading.
+			rules := clientcmd.NewDefaultClientConfigLoadingRules()
+			overrides := &clientcmd.ConfigOverrides{}
+			if k.Context != "" {
+				overrides.CurrentContext = k.Context
+			}
+			cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+			if err != nil {
+				k.initErr = fmt.Errorf("load kubeconfig: %w", err)
+				return
+			}
+			k.cfg = cfg
 		}
-		cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
-		if err != nil {
-			k.initErr = fmt.Errorf("load kubeconfig: %w", err)
-			return
-		}
-		k.cfg = cfg
 
 		if k.kube, err = kubernetes.NewForConfig(cfg); err != nil {
 			k.initErr = fmt.Errorf("kubernetes client: %w", err)
