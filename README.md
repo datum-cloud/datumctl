@@ -91,7 +91,11 @@ datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
 # or
 datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
 ```
-Preflight verifies API connectivity via discovery (`/version`). The server **never applies** changes—it only validates via the Kubernetes API (server-side dry-run).
+
+##### Startup & safety
+
+- **Preflight:** On startup, `datumctl mcp` verifies connectivity and auth by calling Kubernetes discovery (e.g., `GET /version`). If this check fails, the server exits.
+- **Read-only:** All operations are validation-only and use server-side dry-run (`dryRun=All`). No resources are created, modified, or deleted.
 
 > [!NOTE]
 > The MCP server builds its own Kubernetes connection for the selected Datum context; it does **not** depend on your local kubeconfig or `--kube-context`. Provide either `--organization` or `--project`.
