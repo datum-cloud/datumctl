@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"go.datum.net/datumctl/internal/authutil"
-	"go.datum.net/datumctl/internal/kube"
+	"go.datum.net/datumctl/internal/client"
 	serversvc "go.datum.net/datumctl/internal/mcp"
 )
 
@@ -45,9 +45,21 @@ Select a Datum context with exactly one of --organization or --project.`,
 
 			cmd.Printf("MCP target: %s (org=%s project=%s)\n", cfg.Host, organization, project)
 
-			// Use injected rest.Config for all kube ops.
-			k := kube.NewWithRESTConfig(cfg)
+			// Construct the k8s client (no kubeconfig fallback) and set default namespace.
+			k, err := client.NewK8sFromRESTConfig(cfg)
+			if err != nil {
+				return err
+			}
 			k.Namespace = namespace
+
+			// Preflight: verify we can reach the API server for this context.
+			if err := k.Preflight(cmd.Context()); err != nil {
+				return err
+			}
+
+			if port > 0 {
+				cmd.Printf("[datum-mcp] HTTP debug API will listen on 127.0.0.1:%d\n", port)
+			}
 
 			svc := serversvc.NewService(k)
 			svc.RunSTDIO(port) // blocks; if --port > 0, also serves HTTP
