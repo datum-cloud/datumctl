@@ -3,8 +3,11 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
+	"encoding/json"
 
 	"go.datum.net/datumctl/internal/client"
+	syaml "sigs.k8s.io/yaml"
 )
 
 type Service struct {
@@ -69,11 +72,43 @@ func (s *Service) GetCRD(ctx context.Context, r GetCRDReq) (GetCRDResp, error) {
 	if r.Name == "" {
 		return GetCRDResp{}, fmt.Errorf("missing CRD name")
 	}
-	text, err := s.K.GetCRD(ctx, r.Name, r.Mode)
+	crd, err := s.K.GetCRD(ctx, r.Name) // native CRD from client
 	if err != nil {
 		return GetCRDResp{}, err
 	}
-	return GetCRDResp{Text: text}, nil
+
+	switch strings.ToLower(r.Mode) {
+	case "json":
+		b, err := json.MarshalIndent(crd, "", "  ")
+		if err != nil {
+			return GetCRDResp{}, err
+		}
+		return GetCRDResp{Text: string(b)}, nil
+
+	case "describe":
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Name: %s\n", crd.Name)
+		fmt.Fprintf(&sb, "Group: %s\n", crd.Spec.Group)
+		fmt.Fprintf(&sb, "Kind: %s\n", crd.Spec.Names.Kind)
+		fmt.Fprintf(&sb, "Scope: %s\n", crd.Spec.Scope)
+		versions := make([]string, 0, len(crd.Spec.Versions))
+		for _, v := range crd.Spec.Versions {
+			versions = append(versions, v.Name)
+		}
+		fmt.Fprintf(&sb, "Versions: %s\n", strings.Join(versions, ", "))
+		return GetCRDResp{Text: sb.String()}, nil
+
+	default: // yaml
+		b, err := json.Marshal(crd)
+		if err != nil {
+			return GetCRDResp{}, err
+		}
+		y, err := syaml.JSONToYAML(b)
+		if err != nil {
+			return GetCRDResp{}, err
+		}
+		return GetCRDResp{Text: string(y)}, nil
+	}
 }
 
 func (s *Service) ValidateYAML(ctx context.Context, r ValidateReq) ValidateResp {

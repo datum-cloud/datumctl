@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -71,47 +70,17 @@ func (c *K8sClient) ListCRDs(ctx context.Context) ([]*apiextv1.CustomResourceDef
 	return items, nil
 }
 
-// GetCRD fetches a CRD by name and renders it as yaml|json|describe (default yaml).
-func (c *K8sClient) GetCRD(ctx context.Context, name, mode string) (string, error) {
+// GetCRD returns the native CRD by name (no formatting).
+func (c *K8sClient) GetCRD(ctx context.Context, name string) (*apiextv1.CustomResourceDefinition, error) {
 	cs, err := apiextcs.NewForConfig(c.cfg)
 	if err != nil {
-		return "", fmt.Errorf("apiextensions client: %w", err)
+		return nil, fmt.Errorf("apiextensions client: %w", err)
 	}
 	crd, err := cs.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	switch strings.ToLower(mode) {
-	case "json":
-		b, err := json.MarshalIndent(crd, "", "  ")
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	case "describe":
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "Name: %s\n", crd.Name)
-		fmt.Fprintf(&sb, "Group: %s\n", crd.Spec.Group)
-		fmt.Fprintf(&sb, "Kind: %s\n", crd.Spec.Names.Kind)
-		fmt.Fprintf(&sb, "Scope: %s\n", crd.Spec.Scope)
-		versions := make([]string, 0, len(crd.Spec.Versions))
-		for _, v := range crd.Spec.Versions {
-			versions = append(versions, v.Name)
-		}
-		fmt.Fprintf(&sb, "Versions: %s\n", strings.Join(versions, ", "))
-		return sb.String(), nil
-	default: // yaml
-		b, err := json.Marshal(crd)
-		if err != nil {
-			return "", err
-		}
-		y, err := syaml.JSONToYAML(b)
-		if err != nil {
-			return "", err
-		}
-		return string(y), nil
-	}
+	return crd, nil
 }
 
 // ValidateYAML validates one or more YAML documents using Create with server-side dry-run.
