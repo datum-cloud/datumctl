@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,38 +11,48 @@ func ServeHTTP(s *Service, port int) error {
 
 	mux.HandleFunc("/datum/list_crds", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.K.Preflight(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			jsonError(w, http.StatusUnauthorized, err)
 			return
 		}
-		res, err := s.ListCRDs(context.Background())
-		if err != nil { http.Error(w, err.Error(), 500); return }
+		res, err := s.ListCRDs(r.Context())
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, err)
+			return
+		}
 		writeJSON(w, res)
 	})
 
 	mux.HandleFunc("/datum/get_crd", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.K.Preflight(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			jsonError(w, http.StatusUnauthorized, err)
 			return
 		}
 		var req GetCRDReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400); return
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
 		}
-		res, err := s.GetCRD(context.Background(), req)
-		if err != nil { http.Error(w, err.Error(), 400); return }
+		res, err := s.GetCRD(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
 		writeJSON(w, res)
 	})
 
 	mux.HandleFunc("/datum/validate_yaml", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.K.Preflight(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			jsonError(w, http.StatusUnauthorized, err)
 			return
 		}
 		var req ValidateReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400); return
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
 		}
-		writeJSON(w, s.ValidateYAML(context.Background(), req))
+		// ValidateYAML returns a single value (the response struct)
+		res := s.ValidateYAML(r.Context(), req)
+		writeJSON(w, res)
 	})
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -53,4 +62,10 @@ func ServeHTTP(s *Service, port int) error {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func jsonError(w http.ResponseWriter, status int, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }

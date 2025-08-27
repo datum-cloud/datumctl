@@ -12,7 +12,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
 *   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
 *   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
-*   **MCP Server (optional):** Start a client-go–backed MCP server (`datumctl mcp`) so AI agents (e.g., Claude) can discover CRDs, inspect schemas, and validate manifests via server-side dry-run.
+*   **MCP Server (optional):** Start an MCP server (`datumctl mcp`) for Datum Cloud so AI agents (e.g., Claude) can discover resources, inspect schemas, and validate manifests via server-side dry-run.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -31,10 +31,10 @@ See the [Installation Guide](./docs/user/installation.md) for detailed instructi
 
 2.  **List your organizations:**
     ```bash
-    datumctl organizations list
+    datumctl get organizations
     ```
 
-3.  **Configure `kubectl` access:**
+3.  **Configure `kubectl` access (optional):**
     Use the organization ID (or a specific project ID) from the previous step
     to configure `kubectl`.
     ```bash
@@ -42,30 +42,86 @@ See the [Installation Guide](./docs/user/installation.md) for detailed instructi
     datumctl auth update-kubeconfig --organization <org-id>
 
     # Example using a project ID
-    # datumctl auth update-kubeconfig --project <project-id>
+    datumctl auth update-kubeconfig --project <project-id>
     ```
     Now you can use `kubectl` to interact with your Datum Cloud control plane.
 
+### Project setup (required for MCP)
+
+MCP typically targets a **project** control plane. You need at least one project and its **Project ID** (the Kubernetes resource name).
+
+**A) If you already have a project:**
+```bash
+# Ensure your kube context points at an organization control plane
+datumctl auth update-kubeconfig --organization <org-id>
+
+# List projects; copy the NAME column (that is the Project ID)
+kubectl get projects
+# Or JSON-friendly:
+kubectl get projects -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+```
+
+**B) If you need to create a project:**
+```bash
+# Make sure your kube context targets an organization control plane
+datumctl auth update-kubeconfig --organization <org-id>
+
+cat > intro-project.yaml <<'YAML'
+apiVersion: resourcemanager.miloapis.com/v1alpha1
+kind: Project
+metadata:
+  generateName: intro-project-
+spec: {}
+YAML
+
+kubectl create -f intro-project.yaml
+
+# Wait until Ready
+PRJ_ID="$(kubectl get projects -o jsonpath='{.items[-1:].metadata.name}')"
+kubectl wait --for=condition=Ready --timeout=15m project/$PRJ_ID
+echo "Project ready: $PRJ_ID"
+```
+
 #### MCP subcommand (optional)
 
-Start the client-go–backed Model Context Protocol (MCP) server:
+Start the Model Context Protocol (MCP) server targeting a specific Datum Cloud context:
 ```bash
-datumctl mcp --kube-context <ctx> --namespace <ns> [--port 8080]
+# Exactly one of --organization or --project is required.
+datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
+# or
+datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
 ```
 Preflight verifies API connectivity via discovery (`/version`). The server **never applies** changes—it only validates via the Kubernetes API (server-side dry-run).
 
-_Note:_ `--kube-context` and `--namespace` are optional; defaults are your current kube context and the `default` namespace.
+> [!NOTE]
+> The MCP server builds its own Kubernetes connection for the selected Datum context; it does **not** depend on your local kubeconfig or `--kube-context`. Provide either `--organization` or `--project`.
 
-**Claude config (macOS):**
+##### Scope: project vs. organization
+
+> [!IMPORTANT]
+> Most Kubernetes operations exposed via MCP (e.g., CRD discovery and server-side dry-run validation) are **project-scoped**.  
+> Running MCP at **organization** scope will typically show only org-level resources; attempts to validate project-level CRDs may return **HTTP 401/Forbidden** or appear missing.
+
+**Recommended (project scope)**
+```bash
+datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
+```
+
+##### Claude config (macOS)
 ```json
 {
   "mcpServers": {
     "datum_mcp": {
       "command": "/absolute/path/to/datumctl",
-      "args": ["mcp","--kube-context","<ctx>","--namespace","<ns>"]
+      "args": ["mcp","--project","<project-id>","--namespace","<ns>"]
     }
   }
 }
+```
+
+**Organization scope**
+```bash
+datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
 ```
 
 **HTTP debug (if `--port` is set):**
@@ -74,8 +130,7 @@ _Note:_ `--kube-context` and `--namespace` are optional; defaults are your curre
 curl -s localhost:8080/datum/list_crds | jq
 
 # Validate a YAML file (wrap safely into JSON)
-printf '{"yaml":%s}
-' "$(jq -Rs . </path/to/file.yaml)" |   curl -s -X POST localhost:8080/datum/validate_yaml   -H 'Content-Type: application/json' -d @-
+printf '{"yaml":%s}\n' "$(jq -Rs . </path/to/file.yaml)"   | curl -s -X POST localhost:8080/datum/validate_yaml       -H 'Content-Type: application/json' -d @- | jq
 ```
 
 For more detailed tool setup instructions, refer to the official
