@@ -4,19 +4,26 @@ import (
 	"context"
 	"fmt"
 
-	"go.datum.net/datumctl/internal/kube"
+	"go.datum.net/datumctl/internal/client"
 )
 
 type Service struct {
-	K *kube.Kubectl
+	K *client.K8sClient
 }
 
-func NewService(k *kube.Kubectl) *Service { return &Service{K: k} }
+func NewService(k *client.K8sClient) *Service { return &Service{K: k} }
 
 // ---------- API types ----------
 
+type CRDItem struct {
+	Name     string   `json:"name"`
+	Group    string   `json:"group"`
+	Kind     string   `json:"kind"`
+	Versions []string `json:"versions"`
+}
+
 type ListCRDsResp struct {
-	Items []kube.CRDItem `json:"items"`
+	Items []CRDItem `json:"items"`
 }
 
 type GetCRDReq struct {
@@ -38,9 +45,22 @@ type ValidateResp struct {
 // ---------- Methods ----------
 
 func (s *Service) ListCRDs(ctx context.Context) (ListCRDsResp, error) {
-	items, err := s.K.ListCRDs(ctx)
+	crds, err := s.K.ListCRDs(ctx) // native CRDs
 	if err != nil {
 		return ListCRDsResp{}, err
+	}
+	items := make([]CRDItem, 0, len(crds))
+	for _, crd := range crds {
+		versions := make([]string, 0, len(crd.Spec.Versions))
+		for _, v := range crd.Spec.Versions {
+			versions = append(versions, v.Name)
+		}
+		items = append(items, CRDItem{
+			Name:     crd.Name,
+			Group:    crd.Spec.Group,
+			Kind:     crd.Spec.Names.Kind,
+			Versions: versions,
+		})
 	}
 	return ListCRDsResp{Items: items}, nil
 }

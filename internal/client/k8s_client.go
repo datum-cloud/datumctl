@@ -1,0 +1,217 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextcs "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
+	syaml "sigs.k8s.io/yaml"
+)
+
+// K8sClient is a minimal Kubernetes client wrapper used by MCP.
+// It is fully constructed by NewK8sFromRESTConfig and does NOT fall back to kubeconfig.
+type K8sClient struct {
+	cfg       *rest.Config
+	disco     discovery.DiscoveryInterface
+	dyn       dynamic.Interface
+	mapper    meta.RESTMapper
+	Namespace string // optional default for namespaced resources
+}
+
+// NewK8sFromRESTConfig constructs a fully-initialized client (no kubeconfig fallback).
+func NewK8sFromRESTConfig(cfg *rest.Config) (*K8sClient, error) {
+	disco, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("discovery: %w", err)
+	}
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("dynamic: %w", err)
+	}
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disco))
+	return &K8sClient{cfg: cfg, disco: disco, dyn: dyn, mapper: mapper}, nil
+}
+
+// Preflight verifies the API server is reachable for the selected context.
+func (c *K8sClient) Preflight(ctx context.Context) error {
+	if _, err := c.disco.ServerVersion(); err != nil {
+		return fmt.Errorf("kubernetes API unreachable: %w", err)
+	}
+	return nil
+}
+
+// ListCRDs returns native CRDs (the MCP layer shapes any view structs).
+func (c *K8sClient) ListCRDs(ctx context.Context) ([]*apiextv1.CustomResourceDefinition, error) {
+	cs, err := apiextcs.NewForConfig(c.cfg)
+	if err != nil {
+		return nil, fmt.Errorf("apiextensions client: %w", err)
+	}
+	list, err := cs.ApiextensionsV1().CustomResourceDefinitions().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*apiextv1.CustomResourceDefinition, 0, len(list.Items))
+	for i := range list.Items {
+		crd := list.Items[i]
+		items = append(items, &crd)
+	}
+	return items, nil
+}
+
+// GetCRD fetches a CRD by name and renders it as yaml|json|describe (default yaml).
+func (c *K8sClient) GetCRD(ctx context.Context, name, mode string) (string, error) {
+	cs, err := apiextcs.NewForConfig(c.cfg)
+	if err != nil {
+		return "", fmt.Errorf("apiextensions client: %w", err)
+	}
+	crd, err := cs.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	switch strings.ToLower(mode) {
+	case "json":
+		b, err := json.MarshalIndent(crd, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	case "describe":
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Name: %s\n", crd.Name)
+		fmt.Fprintf(&sb, "Group: %s\n", crd.Spec.Group)
+		fmt.Fprintf(&sb, "Kind: %s\n", crd.Spec.Names.Kind)
+		fmt.Fprintf(&sb, "Scope: %s\n", crd.Spec.Scope)
+		versions := make([]string, 0, len(crd.Spec.Versions))
+		for _, v := range crd.Spec.Versions {
+			versions = append(versions, v.Name)
+		}
+		fmt.Fprintf(&sb, "Versions: %s\n", strings.Join(versions, ", "))
+		return sb.String(), nil
+	default: // yaml
+		b, err := json.Marshal(crd)
+		if err != nil {
+			return "", err
+		}
+		y, err := syaml.JSONToYAML(b)
+		if err != nil {
+			return "", err
+		}
+		return string(y), nil
+	}
+}
+
+// ValidateYAML validates one or more YAML documents with server-side dry-run.
+//
+// Semantics:
+//   - Named objects (metadata.name present): Server-Side Apply (PATCH + ApplyPatchType)
+//     which is create-or-update on the API server (dryRun=All).
+//   - Unnamed / generateName: Create (dryRun=All) because SSA requires a concrete name.
+func (c *K8sClient) ValidateYAML(ctx context.Context, manifest string) (bool, string, error) {
+	docs := splitYAMLDocuments([]byte(manifest))
+	validated := 0
+
+	for _, d := range docs {
+		if len(bytes.TrimSpace(d)) == 0 {
+			continue
+		}
+		var obj map[string]interface{}
+		if err := syaml.Unmarshal(d, &obj); err != nil {
+			return false, "", fmt.Errorf("decode: %w", err)
+		}
+		u := unstructured.Unstructured{Object: obj}
+
+		// Determine GVK
+		gvk := u.GroupVersionKind()
+		if gvk.Empty() {
+			apiVersion, _, _ := unstructured.NestedString(u.Object, "apiVersion")
+			kind, _, _ := unstructured.NestedString(u.Object, "kind")
+			if apiVersion == "" || kind == "" {
+				return false, "", fmt.Errorf("apiVersion/kind required")
+			}
+			parts := strings.Split(apiVersion, "/")
+			switch len(parts) {
+			case 1:
+				gvk = schema.GroupVersionKind{Group: "", Version: parts[0], Kind: kind}
+			default:
+				gvk = schema.GroupVersionKind{Group: parts[0], Version: parts[1], Kind: kind}
+			}
+			u.SetGroupVersionKind(gvk)
+		}
+
+		// REST mapping
+		mapping, err := c.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil {
+			return false, "", fmt.Errorf("rest mapping for %s: %w", gvk.String(), err)
+		}
+
+		// Namespace selection
+		ns := u.GetNamespace()
+		nsToUse := ""
+		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+			if ns == "" {
+				nsToUse = c.Namespace
+				u.SetNamespace(nsToUse)
+			} else {
+				nsToUse = ns
+			}
+		}
+
+		// Dynamic client interface: always resolve to ResourceInterface
+		ri := c.dyn.Resource(mapping.Resource).Namespace(nsToUse)
+
+		// JSON payload for SSA/Create
+		data, err := json.Marshal(u.Object)
+		if err != nil {
+			return false, "", fmt.Errorf("marshal: %w", err)
+		}
+
+		name := u.GetName()
+		if name != "" {
+			// NOTE: This is Server-Side Apply (PATCH) which creates if absent and updates if present.
+			// It is distinct from a regular JSON/merge patch.
+			if _, err := ri.Patch(ctx, name, types.ApplyPatchType, data, metav1.PatchOptions{
+				DryRun:       []string{metav1.DryRunAll},
+				FieldManager: "datumctl-validate",
+			}); err != nil {
+				return false, "", err
+			}
+		} else {
+			// Unnamed/generateName: do a Create (dry-run). SSA cannot be used with generateName.
+			if _, err := ri.Create(ctx, &u, metav1.CreateOptions{
+				DryRun: []string{metav1.DryRunAll},
+			}); err != nil {
+				return false, "", err
+			}
+		}
+		validated++
+	}
+
+	return true, fmt.Sprintf("validated %d object(s) (server-side dry-run)", validated), nil
+}
+
+// splitYAMLDocuments splits multi-doc YAML on '---' boundaries.
+func splitYAMLDocuments(in []byte) [][]byte {
+	parts := bytes.Split(in, []byte("\n---"))
+	out := make([][]byte, 0, len(parts))
+	for _, p := range parts {
+		if len(bytes.TrimSpace(p)) > 0 {
+			out = append(out, p)
+		}
+	}
+	return out
+}
