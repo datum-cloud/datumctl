@@ -13,7 +13,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -115,12 +114,11 @@ func (c *K8sClient) GetCRD(ctx context.Context, name, mode string) (string, erro
 	}
 }
 
-// ValidateYAML validates one or more YAML documents with server-side dry-run.
+// ValidateYAML validates one or more YAML documents using Create with server-side dry-run.
 //
 // Semantics:
-//   - Named objects (metadata.name present): Server-Side Apply (PATCH + ApplyPatchType)
-//     which is create-or-update on the API server (dryRun=All).
-//   - Unnamed / generateName: Create (dryRun=All) because SSA requires a concrete name.
+//   - Always use Create (dryRun=All) to exercise creation-time validation for both named and generateName objects.
+//   - For named objects, the API will return an AlreadyExists error if the name is taken.
 func (c *K8sClient) ValidateYAML(ctx context.Context, manifest string) (bool, string, error) {
 	docs := splitYAMLDocuments([]byte(manifest))
 	validated := 0
@@ -171,33 +169,16 @@ func (c *K8sClient) ValidateYAML(ctx context.Context, manifest string) (bool, st
 			}
 		}
 
-		// Dynamic client interface: always resolve to ResourceInterface
+		// Dynamic client interface: resolve to ResourceInterface (ns empty = cluster-scope)
 		ri := c.dyn.Resource(mapping.Resource).Namespace(nsToUse)
 
-		// JSON payload for SSA/Create
-		data, err := json.Marshal(u.Object)
-		if err != nil {
-			return false, "", fmt.Errorf("marshal: %w", err)
+		// Creation-time validation: Create with dry-run (works for named and generateName)
+		if _, err := ri.Create(ctx, &u, metav1.CreateOptions{
+			DryRun: []string{metav1.DryRunAll},
+		}); err != nil {
+			return false, "", err
 		}
 
-		name := u.GetName()
-		if name != "" {
-			// NOTE: This is Server-Side Apply (PATCH) which creates if absent and updates if present.
-			// It is distinct from a regular JSON/merge patch.
-			if _, err := ri.Patch(ctx, name, types.ApplyPatchType, data, metav1.PatchOptions{
-				DryRun:       []string{metav1.DryRunAll},
-				FieldManager: "datumctl-validate",
-			}); err != nil {
-				return false, "", err
-			}
-		} else {
-			// Unnamed/generateName: do a Create (dry-run). SSA cannot be used with generateName.
-			if _, err := ri.Create(ctx, &u, metav1.CreateOptions{
-				DryRun: []string{metav1.DryRunAll},
-			}); err != nil {
-				return false, "", err
-			}
-		}
 		validated++
 	}
 
