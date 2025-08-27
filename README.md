@@ -12,6 +12,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
 *   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
 *   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
+*   **MCP Server (optional):** Start a kubectl-backed MCP server (`datumctl mcp`) so AI agents (e.g., Claude) can discover CRDs, inspect schemas, and validate manifests via server-side dry-run.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -44,6 +45,36 @@ See the [Installation Guide](./docs/user/installation.md) for detailed instructi
     # datumctl auth update-kubeconfig --project <project-id>
     ```
     Now you can use `kubectl` to interact with your Datum Cloud control plane.
+
+#### MCP subcommand (optional)
+
+Start the kubectl-backed Model Context Protocol (MCP) server:
+```bash
+datumctl mcp --kube-context <ctx> --namespace <ns> [--port 8080]
+```
+Preflight enforces: valid context, cluster reachable (`/version`), and RBAC (`kubectl auth can-i get crd`). The server **never applies** changes—it only validates.
+
+**Claude config (macOS):**
+```json
+{
+  "mcpServers": {
+    "datum_mcp": {
+      "command": "/absolute/path/to/datumctl",
+      "args": ["mcp","--kube-context","<ctx>","--namespace","<ns>"]
+    }
+  }
+}
+```
+
+**HTTP debug (if `--port` is set):**
+```bash
+# List CRDs
+curl -s localhost:8080/datum/list_crds | jq
+
+# Validate a YAML file (wrap safely into JSON)
+printf '{"yaml":%s}
+' "$(jq -Rs . </path/to/file.yaml)" |   curl -s -X POST localhost:8080/datum/validate_yaml   -H 'Content-Type: application/json' -d @-
+```
 
 For more detailed tool setup instructions, refer to the official
 [Set Up Tools](https://docs.datum.net/docs/tasks/tools/) guide on docs.datum.net.
