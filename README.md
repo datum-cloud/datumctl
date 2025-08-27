@@ -12,7 +12,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
 *   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
 *   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
-*   **MCP Server (optional):** Start a kubectl-backed MCP server (`datumctl mcp`) so AI agents (e.g., Claude) can discover CRDs, inspect schemas, and validate manifests via server-side dry-run.
+*   **MCP Server (optional):** Start a client-go–backed MCP server (`datumctl mcp`) so AI agents (e.g., Claude) can discover CRDs, inspect schemas, and validate manifests via server-side dry-run.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -48,11 +48,13 @@ See the [Installation Guide](./docs/user/installation.md) for detailed instructi
 
 #### MCP subcommand (optional)
 
-Start the kubectl-backed Model Context Protocol (MCP) server:
+Start the client-go–backed Model Context Protocol (MCP) server:
 ```bash
 datumctl mcp --kube-context <ctx> --namespace <ns> [--port 8080]
 ```
-Preflight enforces: valid context, cluster reachable (`/version`), and RBAC (`kubectl auth can-i get crd`). The server **never applies** changes—it only validates.
+Preflight verifies API connectivity via discovery (`/version`). The server **never applies** changes—it only validates via the Kubernetes API (server-side dry-run).
+
+_Note:_ `--kube-context` and `--namespace` are optional; defaults are your current kube context and the `default` namespace.
 
 **Claude config (macOS):**
 ```json

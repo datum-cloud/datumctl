@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+// JSON-RPC constants and types
+const (
+	jsonrpcVersion        = "2.0"
+	JSONRPCMethodNotFound = -32601
+	JSONRPCInvalidParams  = -32602
+	JSONRPCInternalError  = -32603
+)
+
 type jsonrpcReq struct {
 	JSONRPC string         `json:"jsonrpc"`
 	ID      any            `json:"id,omitempty"`
@@ -64,7 +72,7 @@ func (s *Service) RunSTDIO(port int) {
 		switch req.Method {
 		case "initialize":
 			reply(jsonrpcResp{
-				JSONRPC: "2.0",
+				JSONRPC: jsonrpcVersion,
 				ID:      req.ID,
 				Result: map[string]any{
 					"protocolVersion": "2025-06-18",
@@ -80,7 +88,7 @@ func (s *Service) RunSTDIO(port int) {
 
 		case "tools/list":
 			reply(jsonrpcResp{
-				JSONRPC: "2.0",
+				JSONRPC: jsonrpcVersion,
 				ID:      req.ID,
 				Result: map[string]any{
 					"tools": toolsList(),
@@ -92,13 +100,13 @@ func (s *Service) RunSTDIO(port int) {
 			name, _ := req.Params["name"].(string)
 			args, _ := req.Params["arguments"].(map[string]any)
 			if name == "" {
-				replyErr(req.ID, -32602, "Missing tool name")
+				replyErr(req.ID, JSONRPCInvalidParams, "Missing tool name")
 				continue
 			}
 
 			// friendly readiness check (no auto-login)
 			if err := s.K.Preflight(context.Background()); err != nil {
-				replyErr(req.ID, -32603, err.Error())
+				replyErr(req.ID, JSONRPCInternalError, err.Error())
 				continue
 			}
 
@@ -106,7 +114,7 @@ func (s *Service) RunSTDIO(port int) {
 			case "datum_list_crds":
 				res, err := s.ListCRDs(context.Background())
 				if err != nil {
-					replyErr(req.ID, -32603, err.Error())
+					replyErr(req.ID, JSONRPCInternalError, err.Error())
 					continue
 				}
 				replyToolOK(req.ID, res)
@@ -119,7 +127,7 @@ func (s *Service) RunSTDIO(port int) {
 				}
 				res, err := s.GetCRD(context.Background(), r)
 				if err != nil {
-					replyErr(req.ID, -32603, err.Error())
+					replyErr(req.ID, JSONRPCInternalError, err.Error())
 					continue
 				}
 				replyToolOK(req.ID, res)
@@ -133,7 +141,7 @@ func (s *Service) RunSTDIO(port int) {
 				replyToolOK(req.ID, res)
 
 			default:
-				replyErr(req.ID, -32601, fmt.Sprintf("Unknown tool %s", name))
+				replyErr(req.ID, JSONRPCMethodNotFound, fmt.Sprintf("Unknown tool %s", name))
 			}
 			continue
 
@@ -142,7 +150,7 @@ func (s *Service) RunSTDIO(port int) {
 				if req.ID != nil {
 					root := strings.SplitN(req.Method, "/", 2)[0]
 					reply(jsonrpcResp{
-						JSONRPC: "2.0",
+						JSONRPC: jsonrpcVersion,
 						ID:      req.ID,
 						Result:  map[string]any{root: []any{}},
 					})
@@ -150,7 +158,7 @@ func (s *Service) RunSTDIO(port int) {
 				continue
 			}
 			if req.ID != nil {
-				replyErr(req.ID, -32601, "Unknown method "+req.Method)
+				replyErr(req.ID, JSONRPCMethodNotFound, "Unknown method "+req.Method)
 			}
 		}
 	}
@@ -158,7 +166,7 @@ func (s *Service) RunSTDIO(port int) {
 
 func notify(method string, params map[string]any) {
 	emit(jsonrpcResp{
-		JSONRPC: "2.0",
+		JSONRPC: jsonrpcVersion,
 		Method:  method,
 		Params:  params,
 	})
@@ -168,7 +176,7 @@ func reply(resp jsonrpcResp) { emit(resp) }
 
 func replyErr(id any, code int, msg string) {
 	reply(jsonrpcResp{
-		JSONRPC: "2.0",
+		JSONRPC: jsonrpcVersion,
 		ID:      id,
 		Error:   &jsonrpcError{Code: code, Message: msg},
 	})
@@ -180,7 +188,7 @@ func replyToolOK(id any, payload any) {
 		b, _ = json.Marshal(payload)
 	}
 	reply(jsonrpcResp{
-		JSONRPC: "2.0",
+		JSONRPC: jsonrpcVersion,
 		ID:      id,
 		Result: map[string]any{
 			"content": []any{
@@ -219,7 +227,7 @@ func toolsList() []map[string]any {
 		},
 		{
 			"name":        "datum_validate_yaml",
-			"description": "Validate a manifest with kubectl server-side dry-run (strict).",
+			"description": "Validate a manifest with server-side dry-run via the Kubernetes API.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
