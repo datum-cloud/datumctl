@@ -12,7 +12,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
 *   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
 *   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
-*   **MCP Server (optional):** Start an MCP server (`datumctl mcp`) for Datum Cloud so AI agents (e.g., Claude) can discover resources, inspect schemas, and validate manifests via server-side dry-run.
+*   **MCP Server (optional):** Start an MCP server (`datumctl mcp`) for Datum Cloud so AI agents (e.g., Claude) can discover resources, inspect schemas, validate manifests, and perform CRUD operations via server-side dry-run.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -46,9 +46,9 @@ See the [Installation Guide](./docs/user/installation.md) for detailed instructi
     ```
     Now you can use `kubectl` to interact with your Datum Cloud control plane.
 
-### Project setup (required for MCP)
+### MCP Setup
 
-MCP typically targets a **project** control plane. You need at least one project and its **Project ID** (the Kubernetes resource name).
+MCP can target either an **organization** or **project** control plane. For maximum flexibility, we recommend starting with an organization context.
 
 **A) If you already have a project:**
 ```bash
@@ -92,23 +92,31 @@ datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
 datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
 ```
 
+##### Available Tools
+
+- **Discovery:** `list_crds`, `get_crd` - Discover and inspect Custom Resource Definitions
+- **Validation:** `validate_yaml` - Validate manifests via server-side dry-run
+- **Context:** `change_context` - Switch between organization and project contexts
+- **CRUD Operations:** `create_resource`, `get_resource`, `update_resource`, `delete_resource`, `list_resources`
+- **Safety:** All write operations default to dry-run mode; use `dryRun: false` to apply changes
+
 ##### Startup & safety
 
 - **Preflight:** On startup, `datumctl mcp` verifies connectivity and auth by calling Kubernetes discovery (e.g., `GET /version`). If this check fails, the server exits.
-- **Read-only:** All operations are validation-only and use server-side dry-run (`dryRun=All`). No resources are created, modified, or deleted.
+- **Dry-run by default:** All write operations use server-side dry-run (`dryRun=true`) by default for safety.
 
 > [!NOTE]
 > The MCP server builds its own Kubernetes connection for the selected Datum context; it does **not** depend on your local kubeconfig or `--kube-context`. Provide either `--organization` or `--project`.
 
-##### Scope: project vs. organization
+##### Scope: organization vs. project
 
 > [!IMPORTANT]
-> Most Kubernetes operations exposed via MCP (e.g., CRD discovery and server-side dry-run validation) are **project-scoped**.  
-> Running MCP at **organization** scope will typically show only org-level resources; attempts to validate project-level CRDs may return **HTTP 401/Forbidden** or appear missing.
+> **Organization scope** provides access to all projects within the organization and allows switching between them using `change_context`.  
+> **Project scope** provides direct access to project-specific resources but limits visibility to that single project.
 
-**Recommended (project scope)**
+**Recommended (organization scope)**
 ```bash
-datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
+datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
 ```
 
 ##### Claude config (macOS)
@@ -117,15 +125,15 @@ datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
   "mcpServers": {
     "datum_mcp": {
       "command": "/absolute/path/to/datumctl",
-      "args": ["mcp","--project","<project-id>","--namespace","<ns>"]
+      "args": ["mcp", "--organization", "your-org-id", "--namespace", "default"]
     }
   }
 }
 ```
 
-**Organization scope**
+**Project scope (alternative)**
 ```bash
-datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
+datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
 ```
 
 **HTTP debug (if `--port` is set):**
@@ -133,8 +141,11 @@ datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
 # List CRDs
 curl -s localhost:8080/datum/list_crds | jq
 
+# List resources
+curl -s localhost:8080/datum/list_resources -H 'Content-Type: application/json' -d '{"kind":"Project"}' | jq
+
 # Validate a YAML file (wrap safely into JSON)
-printf '{"yaml":%s}\n' "$(jq -Rs . </path/to/file.yaml)"   | curl -s -X POST localhost:8080/datum/validate_yaml       -H 'Content-Type: application/json' -d @- | jq
+printf '{"yaml":%s}\n' "$(jq -Rs . </path/to/file.yaml)" | curl -s -X POST localhost:8080/datum/validate_yaml -H 'Content-Type: application/json' -d @- | jq
 ```
 
 For more detailed tool setup instructions, refer to the official

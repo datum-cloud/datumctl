@@ -16,8 +16,6 @@ type Service struct {
 
 func NewService(k *client.K8sClient) *Service { return &Service{K: k} }
 
-// ---------- Phase-1 API types ----------
-
 type CRDItem struct {
 	Name     string   `json:"name"`
 	Group    string   `json:"group"`
@@ -44,8 +42,6 @@ type ValidateResp struct {
 	Valid  bool   `json:"valid"`
 	Output string `json:"output"`
 }
-
-// ---------- Phase-1 Methods ----------
 
 func (s *Service) ListCRDs(ctx context.Context) (ListCRDsResp, error) {
 	crds, err := s.K.ListCRDs(ctx) // native CRDs
@@ -115,8 +111,6 @@ func (s *Service) ValidateYAML(ctx context.Context, r ValidateReq) ValidateResp 
 	ok, out, _ := s.K.ValidateYAML(ctx, r.YAML)
 	return ValidateResp{Valid: ok, Output: out}
 }
-
-// ---------- New API types (CRUD + context + list) ----------
 
 type ChangeContextReq struct {
 	Project   string `json:"project,omitempty"`
@@ -190,8 +184,6 @@ type GetResourceResp struct {
 type ListResourcesResp struct {
 	Text string `json:"text"`
 }
-
-// ---------- New Methods (CRUD + context + list) ----------
 
 func (s *Service) ChangeContext(ctx context.Context, r ChangeContextReq) (ChangeContextResp, error) {
 	// namespace-only change
@@ -368,8 +360,7 @@ func (s *Service) ListResources(ctx context.Context, r ListResourcesReq) (ListRe
 	}
 }
 
-// ---------- small helper ----------
-
+// helper for getting the first non-empty string
 func firstNonEmpty(a, b string) string {
 	if a != "" {
 		return a

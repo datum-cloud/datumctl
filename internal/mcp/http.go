@@ -9,8 +9,6 @@ import (
 func ServeHTTP(s *Service, port int) error {
 	mux := http.NewServeMux()
 
-	// ----- Phase-1 debug endpoints -----
-
 	mux.HandleFunc("/datum/list_crds", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.K.Preflight(r.Context()); err != nil {
 			jsonError(w, http.StatusUnauthorized, err)
@@ -55,8 +53,6 @@ func ServeHTTP(s *Service, port int) error {
 		res := s.ValidateYAML(r.Context(), req)
 		writeJSON(w, res)
 	})
-
-	// ----- debug endpoints (context + CRUD + list) -----
 
 	mux.HandleFunc("/datum/change_context", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.K.Preflight(r.Context()); err != nil {

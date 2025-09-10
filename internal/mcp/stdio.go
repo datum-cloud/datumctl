@@ -117,7 +117,6 @@ func (s *Service) RunSTDIO(port int) {
 			}
 
 			switch name {
-			// ------ Phase-1 tools ------
 			case "datum_list_crds":
 				res, err := s.ListCRDs(context.Background())
 				if err != nil {
@@ -147,7 +146,6 @@ func (s *Service) RunSTDIO(port int) {
 				res := s.ValidateYAML(context.Background(), r)
 				replyToolOK(req.ID, res)
 
-			// ------ New tools (CRUD + context + list) ------
 			case "datum_change_context":
 				var project, org, ns string
 				if args != nil {
@@ -515,7 +513,6 @@ func emit(resp jsonrpcResp) {
 
 func toolsList() []map[string]any {
 	return []map[string]any{
-		// phase-1
 		{
 			"name":        "datum_list_crds",
 			"description": "List CustomResourceDefinitions in the current cluster.",
@@ -544,7 +541,6 @@ func toolsList() []map[string]any {
 				"required": []any{"yaml"},
 			},
 		},
-		// new
 		{
 			"name":        "datum_change_context",
 			"description": "Switch project/org/namespace for this MCP session.",
