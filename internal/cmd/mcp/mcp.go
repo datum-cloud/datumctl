@@ -27,8 +27,13 @@ func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Start the Datum MCP server",
-		Long: `Start a local MCP server that exposes tools to list CRDs, inspect CRDs,
-and validate manifests via server-side dry run. MCP clients (e.g., Claude) connect over STDIO.
+		Long: `Start a local MCP server exposing tools to:
+  • list & inspect CRDs
+  • validate manifests via server-side dry run
+  • generic CRUD (create/get/update/delete) for any served CRD
+  • switch context at runtime via datum/change_context
+
+MCP clients (e.g., Claude) connect over STDIO.
 Use --port to also expose a local HTTP debug API on 127.0.0.1:<port>.
 Select a Datum context with exactly one of --organization or --project.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,7 +73,7 @@ Select a Datum context with exactly one of --organization or --project.`,
 	}
 
 	cmd.Flags().IntVar(&port, "port", 0, "Run HTTP debug API on 127.0.0.1:<port> (MCP still uses STDIO)")
-	cmd.Flags().StringVar(&namespace, "namespace", "", "Default namespace for validation (if YAML omits it)")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "Default namespace for CRUD/validation (if YAML or tool args omit it)")
 	cmd.Flags().StringVar(&organization, "organization", "", "Organization ID to target (mutually exclusive with --project)")
 	cmd.Flags().StringVar(&project, "project", "", "Project ID to target (mutually exclusive with --organization)")
 	return cmd

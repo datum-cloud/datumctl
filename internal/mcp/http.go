@@ -9,6 +9,8 @@ import (
 func ServeHTTP(s *Service, port int) error {
 	mux := http.NewServeMux()
 
+	// ----- Phase-1 debug endpoints -----
+
 	mux.HandleFunc("/datum/list_crds", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.K.Preflight(r.Context()); err != nil {
 			jsonError(w, http.StatusUnauthorized, err)
@@ -50,8 +52,117 @@ func ServeHTTP(s *Service, port int) error {
 			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
 			return
 		}
-		// ValidateYAML returns a single value (the response struct)
 		res := s.ValidateYAML(r.Context(), req)
+		writeJSON(w, res)
+	})
+
+	// ----- debug endpoints (context + CRUD + list) -----
+
+	mux.HandleFunc("/datum/change_context", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.K.Preflight(r.Context()); err != nil {
+			jsonError(w, http.StatusUnauthorized, err)
+			return
+		}
+		var req ChangeContextReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
+		}
+		res, err := s.ChangeContext(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+
+	mux.HandleFunc("/datum/create_resource", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.K.Preflight(r.Context()); err != nil {
+			jsonError(w, http.StatusUnauthorized, err)
+			return
+		}
+		var req CreateResourceReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
+		}
+		res, err := s.CreateResource(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+
+	mux.HandleFunc("/datum/get_resource", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.K.Preflight(r.Context()); err != nil {
+			jsonError(w, http.StatusUnauthorized, err)
+			return
+		}
+		var req GetResourceReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
+		}
+		res, err := s.GetResource(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+
+	mux.HandleFunc("/datum/update_resource", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.K.Preflight(r.Context()); err != nil {
+			jsonError(w, http.StatusUnauthorized, err)
+			return
+		}
+		var req UpdateResourceReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
+		}
+		res, err := s.UpdateResource(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+
+	mux.HandleFunc("/datum/delete_resource", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.K.Preflight(r.Context()); err != nil {
+			jsonError(w, http.StatusUnauthorized, err)
+			return
+		}
+		var req DeleteResourceReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
+		}
+		res, err := s.DeleteResource(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+
+	mux.HandleFunc("/datum/list_resources", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.K.Preflight(r.Context()); err != nil {
+			jsonError(w, http.StatusUnauthorized, err)
+			return
+		}
+		var req ListResourcesReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Errorf("invalid json: %w", err))
+			return
+		}
+		res, err := s.ListResources(r.Context(), req)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err)
+			return
+		}
 		writeJSON(w, res)
 	})
 
