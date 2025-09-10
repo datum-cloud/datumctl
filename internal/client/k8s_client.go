@@ -11,10 +11,10 @@ import (
 	apiextcs "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -364,18 +364,28 @@ func ToYAMLList(l *unstructured.UnstructuredList) (string, error) {
 
 // ----- internal helpers (keep local to this file) -----
 
-type resolvedKind struct {
+type ResolvedKind struct {
 	GVR        schema.GroupVersionResource
 	GVK        schema.GroupVersionKind
 	Namespaced bool
 }
 
-func (c *K8sClient) resolveKind(ctx context.Context, kind, apiVersion string) (*resolvedKind, error) {
+// ResolveKind resolves a kind and optional apiVersion to a ResolvedKind
+func (c *K8sClient) ResolveKind(ctx context.Context, kind, apiVersion string) (*ResolvedKind, error) {
+	return c.resolveKind(ctx, kind, apiVersion)
+}
+
+// GetDynamicClient returns the dynamic client interface
+func (c *K8sClient) GetDynamicClient() dynamic.Interface {
+	return c.dyn
+}
+
+func (c *K8sClient) resolveKind(ctx context.Context, kind, apiVersion string) (*ResolvedKind, error) {
 	gr, err := restmapper.GetAPIGroupResources(c.disco)
 	if err != nil {
 		return nil, fmt.Errorf("discovery: %w", err)
 	}
-	var candidates []resolvedKind
+	var candidates []ResolvedKind
 	for _, grs := range gr {
 		group := grs.Group.Name
 		for ver, resources := range grs.VersionedResources {
@@ -384,7 +394,7 @@ func (c *K8sClient) resolveKind(ctx context.Context, kind, apiVersion string) (*
 					continue
 				}
 				gv := schema.GroupVersion{Group: group, Version: ver}
-				rk := resolvedKind{
+				rk := ResolvedKind{
 					GVR:        gv.WithResource(r.Name),
 					GVK:        gv.WithKind(kind),
 					Namespaced: r.Namespaced,

@@ -9,6 +9,10 @@ import (
 	"strings"
 
 	"go.datum.net/datumctl/internal/client"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 )
 
 // JSON-RPC constants and types
@@ -265,16 +269,112 @@ func (s *Service) RunSTDIO(port int) {
 				dry := getBoolDefault(args, "dryRun", true)
 				force := getBoolDefault(args, "force", false)
 
-				obj, err := s.K.Apply(context.Background(), client.ApplyOptions{
-					Kind:        kind,
-					APIVersion:  apiVersion,
-					Name:        name,
-					Namespace:   ns,
-					Labels:      labels,
-					Annotations: ann,
-					Spec:        spec,
-					DryRun:      dry,
-					Force:       force,
+				// For partial updates, we need to fetch the current resource first
+				// and merge the changes rather than replacing the entire spec
+				var currentObj *unstructured.Unstructured
+				var err error
+
+				// First, try to get the current resource to determine the correct API version
+				// if not provided, we'll discover it from the existing resource
+				if apiVersion == "" {
+					// Try to find the resource without specifying apiVersion first
+					// This will help us discover the correct API version
+					currentObj, err = s.K.Get(context.Background(), client.GetOptions{
+						Kind:      kind,
+						Name:      name,
+						Namespace: ns,
+					})
+					if err != nil {
+						// If that fails, try to resolve the kind to get available API versions
+						rk, resolveErr := s.K.ResolveKind(context.Background(), kind, "")
+						if resolveErr != nil {
+							replyErr(req.ID, JSONRPCInternalError, fmt.Sprintf("failed to resolve kind %s: %v", kind, resolveErr))
+							continue
+						}
+						apiVersion = rk.GVK.GroupVersion().String()
+					} else {
+						// Use the API version from the existing resource
+						apiVersion = currentObj.GetAPIVersion()
+					}
+				} else {
+					// API version was provided, fetch the resource
+					currentObj, err = s.K.Get(context.Background(), client.GetOptions{
+						Kind:       kind,
+						APIVersion: apiVersion,
+						Name:       name,
+						Namespace:  ns,
+					})
+					if err != nil {
+						replyErr(req.ID, JSONRPCInternalError, fmt.Sprintf("failed to get current resource: %v", err))
+						continue
+					}
+				}
+
+				// Build the update object with merged changes
+				var updateObj *unstructured.Unstructured
+				if currentObj != nil {
+					// Start with current object and merge changes
+					updateObj = currentObj.DeepCopy()
+
+					// Merge spec changes
+					if spec != nil {
+						currentSpec, _, _ := unstructured.NestedMap(updateObj.Object, "spec")
+						if currentSpec == nil {
+							currentSpec = make(map[string]any)
+						}
+						mergedSpec := mergeMaps(currentSpec, spec)
+						unstructured.SetNestedMap(updateObj.Object, mergedSpec, "spec")
+					}
+
+					// Merge labels
+					if labels != nil {
+						currentLabels := updateObj.GetLabels()
+						if currentLabels == nil {
+							currentLabels = make(map[string]string)
+						}
+						for k, v := range labels {
+							currentLabels[k] = v
+						}
+						updateObj.SetLabels(currentLabels)
+					}
+
+					// Merge annotations
+					if ann != nil {
+						currentAnn := updateObj.GetAnnotations()
+						if currentAnn == nil {
+							currentAnn = make(map[string]string)
+						}
+						for k, v := range ann {
+							currentAnn[k] = v
+						}
+						updateObj.SetAnnotations(currentAnn)
+					}
+				} else {
+					// No current resource found, this is an error for update operations
+					replyErr(req.ID, JSONRPCInternalError, fmt.Sprintf("resource %s/%s not found in namespace %s", kind, name, ns))
+					continue
+				}
+
+				// Apply the merged object using Server-Side Apply
+				jb, _ := json.Marshal(updateObj.Object)
+				rk, err := s.K.ResolveKind(context.Background(), kind, apiVersion)
+				if err != nil {
+					replyErr(req.ID, JSONRPCInternalError, err.Error())
+					continue
+				}
+
+				nsable := s.K.GetDynamicClient().Resource(rk.GVR)
+				var ri dynamic.ResourceInterface
+				if rk.Namespaced {
+					ri = nsable.Namespace(updateObj.GetNamespace())
+				} else {
+					ri = nsable
+				}
+
+				obj, err := ri.Patch(context.Background(), name, types.ApplyPatchType, jb, metav1.PatchOptions{
+					FieldManager: "datumctl-mcp",
+					Force:        &force,
+					DryRun:       ternary(dry, []string{metav1.DryRunAll}, nil),
 				})
 				if err != nil {
 					replyErr(req.ID, JSONRPCInternalError, err.Error())
@@ -449,7 +549,7 @@ func toolsList() []map[string]any {
 			"name":        "datum_change_context",
 			"description": "Switch project/org/namespace for this MCP session.",
 			"inputSchema": map[string]any{
-				"type":       "object",
+				"type": "object",
 				"properties": map[string]any{
 					"project":   map[string]any{"type": "string"},
 					"org":       map[string]any{"type": "string"},
@@ -618,4 +718,80 @@ func getMapString(m map[string]any, k string) map[string]string {
 		return out
 	}
 	return nil
+}
+
+// mergeMaps recursively merges map b into map a
+func mergeMaps(a, b map[string]any) map[string]any {
+	if a == nil {
+		a = make(map[string]any)
+	}
+	for k, v := range b {
+		if existing, exists := a[k]; exists {
+			// If both values are maps, merge them recursively
+			if existingMap, ok := existing.(map[string]any); ok {
+				if newMap, ok := v.(map[string]any); ok {
+					a[k] = mergeMaps(existingMap, newMap)
+					continue
+				}
+			}
+		}
+		// Otherwise, replace the value
+		a[k] = v
+	}
+	return a
+}
+
+// buildObjectOpts represents options for building a Kubernetes object
+type buildObjectOpts struct {
+	APIVersion   string
+	Kind         string
+	Name         string
+	GenerateName string
+	Namespace    string
+	Labels       map[string]string
+	Annotations  map[string]string
+	Spec         map[string]any
+}
+
+// buildObject creates an unstructured object from buildObjectOpts
+func buildObject(opts buildObjectOpts) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": opts.APIVersion,
+			"kind":       opts.Kind,
+			"metadata": map[string]any{
+				"labels":      map[string]string{},
+				"annotations": map[string]string{},
+			},
+			"spec": map[string]any{},
+		},
+	}
+	md := obj.Object["metadata"].(map[string]any)
+	if opts.Name != "" {
+		md["name"] = opts.Name
+	}
+	if opts.GenerateName != "" && opts.Name == "" {
+		md["generateName"] = opts.GenerateName
+	}
+	if opts.Namespace != "" {
+		md["namespace"] = opts.Namespace
+	}
+	if len(opts.Labels) > 0 {
+		md["labels"] = opts.Labels
+	}
+	if len(opts.Annotations) > 0 {
+		md["annotations"] = opts.Annotations
+	}
+	if opts.Spec != nil {
+		obj.Object["spec"] = opts.Spec
+	}
+	return obj
+}
+
+// ternary returns a if cond is true, otherwise b
+func ternary[T any](cond bool, a, b T) T {
+	if cond {
+		return a
+	}
+	return b
 }
