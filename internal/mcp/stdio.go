@@ -440,6 +440,14 @@ func (s *Service) RunSTDIO(port int) {
 					Format:        format,
 				})
 				if err != nil {
+					// Handle "resource not found" errors gracefully
+					if strings.Contains(err.Error(), "not found") ||
+						strings.Contains(err.Error(), "no matches for kind") ||
+						strings.Contains(err.Error(), "could not find the requested resource") {
+						// Return empty list instead of error for missing resource types
+						replyToolOK(req.ID, ListResourcesResp{Text: "No resources found"})
+						continue
+					}
 					replyErr(req.ID, JSONRPCInternalError, err.Error())
 					continue
 				}

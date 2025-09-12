@@ -336,6 +336,13 @@ func (s *Service) ListResources(ctx context.Context, r ListResourcesReq) (ListRe
 		Continue:      r.Continue,
 	})
 	if err != nil {
+		// Handle "resource not found" errors gracefully
+		if strings.Contains(err.Error(), "not found") ||
+			strings.Contains(err.Error(), "no matches for kind") ||
+			strings.Contains(err.Error(), "could not find the requested resource") {
+			// Return empty list instead of error for missing resource types
+			return ListResourcesResp{Text: "No resources found"}, nil
+		}
 		return ListResourcesResp{}, err
 	}
 
