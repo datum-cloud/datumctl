@@ -353,8 +353,26 @@ func (s *Service) RunSTDIO(port int) {
 					continue
 				}
 
-				// Apply the merged object using Server-Side Apply
-				jb, _ := json.Marshal(updateObj.Object)
+				// Create a minimal object for Server-Side Apply with only the fields we want to update
+				applyObj := &unstructured.Unstructured{}
+				applyObj.SetAPIVersion(updateObj.GetAPIVersion())
+				applyObj.SetKind(updateObj.GetKind())
+				applyObj.SetName(updateObj.GetName())
+				applyObj.SetNamespace(updateObj.GetNamespace())
+
+				// Copy only the spec, labels, and annotations
+				if spec, _, _ := unstructured.NestedMap(updateObj.Object, "spec"); spec != nil {
+					unstructured.SetNestedMap(applyObj.Object, spec, "spec")
+				}
+				if labels := updateObj.GetLabels(); len(labels) > 0 {
+					applyObj.SetLabels(labels)
+				}
+				if annotations := updateObj.GetAnnotations(); len(annotations) > 0 {
+					applyObj.SetAnnotations(annotations)
+				}
+
+				// Apply the minimal object using Server-Side Apply
+				jb, _ := json.Marshal(applyObj.Object)
 				rk, err := s.K.ResolveKind(context.Background(), kind, apiVersion)
 				if err != nil {
 					replyErr(req.ID, JSONRPCInternalError, err.Error())
