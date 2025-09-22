@@ -3,15 +3,18 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextcs "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -164,4 +167,313 @@ func splitYAMLDocuments(in []byte) [][]byte {
 		}
 	}
 	return out
+}
+
+type CreateOptions struct {
+	Kind         string
+	APIVersion   string // optional: "group/version" or "v1"
+	Name         string // set either Name or GenerateName
+	GenerateName string
+	Namespace    string
+	Labels       map[string]string
+	Annotations  map[string]string
+	Spec         map[string]any
+	DryRun       bool // default true at the tool layer
+}
+
+type GetOptions struct {
+	Kind       string
+	APIVersion string // optional
+	Name       string
+	Namespace  string
+}
+
+type ApplyOptions struct {
+	Kind        string
+	APIVersion  string // optional
+	Name        string
+	Namespace   string
+	Labels      map[string]string
+	Annotations map[string]string
+	Spec        map[string]any
+	DryRun      bool
+	Force       bool // SSA: claim field ownership on conflicts
+}
+
+type DeleteOptions struct {
+	Kind       string
+	APIVersion string // optional
+	Name       string
+	Namespace  string
+	DryRun     bool
+}
+
+func (c *K8sClient) Create(ctx context.Context, opt CreateOptions) (*unstructured.Unstructured, error) {
+	rk, err := c.resolveKind(ctx, opt.Kind, opt.APIVersion)
+	if err != nil {
+		return nil, err
+	}
+	obj := buildObject(buildObjectOpts{
+		APIVersion:   rk.GVK.GroupVersion().String(),
+		Kind:         rk.GVK.Kind,
+		Name:         opt.Name,
+		GenerateName: opt.GenerateName,
+		Namespace:    firstNonEmpty(opt.Namespace, c.Namespace),
+		Labels:       opt.Labels,
+		Annotations:  opt.Annotations,
+		Spec:         opt.Spec,
+	})
+
+	// keep namespaceable and resource interfaces separate
+	nsable := c.dyn.Resource(rk.GVR) // dynamic.NamespaceableResourceInterface
+	var ri dynamic.ResourceInterface
+	if rk.Namespaced {
+		ri = nsable.Namespace(obj.GetNamespace())
+	} else {
+		ri = nsable // Namespaceable implements ResourceInterface
+	}
+
+	return ri.Create(ctx, obj, metav1.CreateOptions{
+		DryRun: ternary(opt.DryRun, []string{metav1.DryRunAll}, nil),
+	})
+}
+
+func (c *K8sClient) Get(ctx context.Context, opt GetOptions) (*unstructured.Unstructured, error) {
+	rk, err := c.resolveKind(ctx, opt.Kind, opt.APIVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	nsable := c.dyn.Resource(rk.GVR)
+	var ri dynamic.ResourceInterface
+	if rk.Namespaced {
+		ri = nsable.Namespace(firstNonEmpty(opt.Namespace, c.Namespace))
+	} else {
+		ri = nsable
+	}
+
+	return ri.Get(ctx, opt.Name, metav1.GetOptions{})
+}
+
+func (c *K8sClient) Apply(ctx context.Context, opt ApplyOptions) (*unstructured.Unstructured, error) {
+	rk, err := c.resolveKind(ctx, opt.Kind, opt.APIVersion)
+	if err != nil {
+		return nil, err
+	}
+	obj := buildObject(buildObjectOpts{
+		APIVersion:  rk.GVK.GroupVersion().String(),
+		Kind:        rk.GVK.Kind,
+		Name:        opt.Name,
+		Namespace:   firstNonEmpty(opt.Namespace, c.Namespace),
+		Labels:      opt.Labels,
+		Annotations: opt.Annotations,
+		Spec:        opt.Spec,
+	})
+	jb, _ := json.Marshal(obj.Object)
+
+	nsable := c.dyn.Resource(rk.GVR)
+	var ri dynamic.ResourceInterface
+	if rk.Namespaced {
+		ri = nsable.Namespace(obj.GetNamespace())
+	} else {
+		ri = nsable
+	}
+
+	return ri.Patch(ctx, opt.Name, types.ApplyPatchType, jb, metav1.PatchOptions{
+		FieldManager: "datumctl-mcp",
+		Force:        &opt.Force,
+		DryRun:       ternary(opt.DryRun, []string{metav1.DryRunAll}, nil),
+	})
+}
+
+func (c *K8sClient) Delete(ctx context.Context, opt DeleteOptions) error {
+	rk, err := c.resolveKind(ctx, opt.Kind, opt.APIVersion)
+	if err != nil {
+		return err
+	}
+
+	nsable := c.dyn.Resource(rk.GVR)
+	var ri dynamic.ResourceInterface
+	if rk.Namespaced {
+		ri = nsable.Namespace(firstNonEmpty(opt.Namespace, c.Namespace))
+	} else {
+		ri = nsable
+	}
+
+	return ri.Delete(ctx, opt.Name, metav1.DeleteOptions{
+		DryRun: ternary(opt.DryRun, []string{metav1.DryRunAll}, nil),
+	})
+}
+
+// ListOptions lists instances of a Kind.
+type ListOptions struct {
+	Kind          string
+	APIVersion    string // optional
+	Namespace     string
+	LabelSelector string
+	FieldSelector string
+	Limit         int64
+	Continue      string
+}
+
+func (c *K8sClient) List(ctx context.Context, opt ListOptions) (*unstructured.UnstructuredList, error) {
+	rk, err := c.resolveKind(ctx, opt.Kind, opt.APIVersion)
+	if err != nil {
+		return nil, err
+	}
+	nsable := c.dyn.Resource(rk.GVR)
+	var ri dynamic.ResourceInterface
+	if rk.Namespaced {
+		ri = nsable.Namespace(firstNonEmpty(opt.Namespace, c.Namespace))
+	} else {
+		ri = nsable
+	}
+	return ri.List(ctx, metav1.ListOptions{
+		LabelSelector: opt.LabelSelector,
+		FieldSelector: opt.FieldSelector,
+		Limit:         opt.Limit,
+		Continue:      opt.Continue,
+	})
+}
+
+// ToYAML returns a YAML string for a k8s object
+func ToYAML(u *unstructured.Unstructured) (string, error) {
+	jb, err := json.Marshal(u.Object)
+	if err != nil {
+		return "", err
+	}
+	yb, err := syaml.JSONToYAML(jb)
+	if err != nil {
+		return "", err
+	}
+	return string(yb), nil
+}
+
+// ToYAMLList renders a list to YAML (like `kubectl get -o yaml`).
+func ToYAMLList(l *unstructured.UnstructuredList) (string, error) {
+	jb, err := json.Marshal(l)
+	if err != nil {
+		return "", err
+	}
+	yb, err := syaml.JSONToYAML(jb)
+	if err != nil {
+		return "", err
+	}
+	return string(yb), nil
+}
+
+// ----- internal helpers (keep local to this file) -----
+
+type ResolvedKind struct {
+	GVR        schema.GroupVersionResource
+	GVK        schema.GroupVersionKind
+	Namespaced bool
+}
+
+// ResolveKind resolves a kind and optional apiVersion to a ResolvedKind
+func (c *K8sClient) ResolveKind(ctx context.Context, kind, apiVersion string) (*ResolvedKind, error) {
+	return c.resolveKind(ctx, kind, apiVersion)
+}
+
+// GetDynamicClient returns the dynamic client interface
+func (c *K8sClient) GetDynamicClient() dynamic.Interface {
+	return c.dyn
+}
+
+func (c *K8sClient) resolveKind(ctx context.Context, kind, apiVersion string) (*ResolvedKind, error) {
+	gr, err := restmapper.GetAPIGroupResources(c.disco)
+	if err != nil {
+		return nil, fmt.Errorf("discovery: %w", err)
+	}
+	var candidates []ResolvedKind
+	for _, grs := range gr {
+		group := grs.Group.Name
+		for ver, resources := range grs.VersionedResources {
+			for _, r := range resources {
+				if r.Kind != kind || strings.Contains(r.Name, "/") {
+					continue
+				}
+				gv := schema.GroupVersion{Group: group, Version: ver}
+				rk := ResolvedKind{
+					GVR:        gv.WithResource(r.Name),
+					GVK:        gv.WithKind(kind),
+					Namespaced: r.Namespaced,
+				}
+				// include if no apiVersion filter, or matches explicit apiVersion ("group/version" or "v1")
+				if apiVersion == "" || gv.String() == apiVersion || (group == "" && ver == apiVersion) {
+					candidates = append(candidates, rk)
+				}
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, apierrs.NewNotFound(schema.GroupResource{Resource: strings.ToLower(kind)}, kind)
+	}
+	// If multiple apiVersions provide this Kind and none specified, ask the caller to disambiguate.
+	uniq := map[string]struct{}{}
+	for _, cnd := range candidates {
+		uniq[cnd.GVK.Group+"/"+cnd.GVK.Version] = struct{}{}
+	}
+	if apiVersion == "" && len(uniq) > 1 {
+		return nil, fmt.Errorf("kind %q is available in multiple apiVersions; please specify apiVersion", kind)
+	}
+	return &candidates[0], nil
+}
+
+type buildObjectOpts struct {
+	APIVersion   string
+	Kind         string
+	Name         string
+	GenerateName string
+	Namespace    string
+	Labels       map[string]string
+	Annotations  map[string]string
+	Spec         map[string]any
+}
+
+func buildObject(opts buildObjectOpts) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": opts.APIVersion,
+			"kind":       opts.Kind,
+			"metadata": map[string]any{
+				"labels":      map[string]string{},
+				"annotations": map[string]string{},
+			},
+			"spec": map[string]any{},
+		},
+	}
+	md := obj.Object["metadata"].(map[string]any)
+	if opts.Name != "" {
+		md["name"] = opts.Name
+	}
+	if opts.GenerateName != "" && opts.Name == "" {
+		md["generateName"] = opts.GenerateName
+	}
+	if opts.Namespace != "" {
+		md["namespace"] = opts.Namespace
+	}
+	if len(opts.Labels) > 0 {
+		md["labels"] = opts.Labels
+	}
+	if len(opts.Annotations) > 0 {
+		md["annotations"] = opts.Annotations
+	}
+	if opts.Spec != nil {
+		obj.Object["spec"] = opts.Spec
+	}
+	return obj
+}
+
+func ternary[T any](cond bool, a, b T) T {
+	if cond {
+		return a
+	}
+	return b
+}
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
