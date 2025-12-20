@@ -1,28 +1,56 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
+	"os"
 
+	"github.com/spf13/cobra"
+	"go.datum.net/datumctl/internal/client"
+	apiresources "go.datum.net/datumctl/internal/cmd/api-resources"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/get"
-	"go.datum.net/datumctl/internal/cmd/mcp" 
+	getv2 "go.datum.net/datumctl/internal/cmd/get/v2"
+	"go.datum.net/datumctl/internal/cmd/mcp"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
-var (
-	rootCmd = &cobra.Command{
+func RootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
 		Use:   "datumctl",
 		Short: "A CLI for interacting with the Datum platform",
 	}
-)
 
-func init() {
+	ioStreams := genericclioptions.IOStreams{
+		In:     rootCmd.InOrStdin(),
+		Out:    rootCmd.OutOrStdout(),
+		ErrOut: rootCmd.ErrOrStderr(),
+	}
+
+	ctx := rootCmd.Context()
+	config, err := client.NewRestConfig(ctx)
+	if err != nil {
+		panic(err)
+	}
+	var projectID string
+	var organizationID string
+
+	factory, err := client.NewDatumFactory(rootCmd.Context(), config)
+	if err != nil {
+		panic(err)
+	}
+
+	rootCmd.PersistentFlags().StringVar(&projectID, "project-id", "", "project id")
+	rootCmd.PersistentFlags().StringVar(&organizationID, "organization-id", "", "org id")
+	factory.ConfigFlags.AddFlags(rootCmd.PersistentFlags())
+
+	isExperimental := os.Getenv("DATUMCTL_EXPERIMENTAL")
 	rootCmd.AddCommand(auth.Command())
-	rootCmd.AddCommand(get.Command())
+	if isExperimental != "" {
+		rootCmd.AddCommand(getv2.Command(factory, ioStreams, &projectID, &organizationID))
+	} else {
+		rootCmd.AddCommand(get.Command())
+	}
+	rootCmd.AddCommand(apiresources.Command(factory, ioStreams))
+	rootCmd.AddCommand(apiresources.CommandApiResources(factory, ioStreams))
 	rootCmd.AddCommand(mcp.Command())
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() error {
-	return rootCmd.Execute()
+	return rootCmd
 }

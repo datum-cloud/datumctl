@@ -16,12 +16,24 @@ import (
 
 // NewUserContextualClient creates a new controller-runtime client configured for the current user's context.
 func NewUserContextualClient(ctx context.Context) (client.Client, error) {
-	// Get OIDC token source
+	config, err := NewRestConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Create a scheme and add the resourcemanager types
+	scheme := runtime.NewScheme()
+	if err := resourcemanagerv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("failed to add resourcemanager types to scheme: %w", err)
+	}
+	// Create a new controller-runtime client
+	return client.New(config, client.Options{Scheme: scheme})
+}
+
+func NewRestConfig(ctx context.Context) (*rest.Config, error) {
 	tknSrc, err := authutil.GetTokenSource(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token source: %w", err)
 	}
-
 	// Get user ID from stored credentials
 	userID, err := authutil.GetUserIDFromToken(ctx)
 	if err != nil {
@@ -37,15 +49,10 @@ func NewUserContextualClient(ctx context.Context) (client.Client, error) {
 	// Build the user-contextual API endpoint
 	userContextAPI := fmt.Sprintf("https://%s/apis/iam.miloapis.com/v1alpha1/users/%s/control-plane", apiHostname, userID)
 
-	// Create a scheme and add the resourcemanager types
-	scheme := runtime.NewScheme()
-	if err := resourcemanagerv1alpha1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("failed to add resourcemanager types to scheme: %w", err)
-	}
-
 	// Create Kubernetes client configuration with scheme
 	config := &rest.Config{
-		Host: userContextAPI,
+		Host:      userContextAPI,
+		UserAgent: "datumctl",
 		WrapTransport: func(rt http.RoundTripper) http.RoundTripper {
 			return &oauth2.Transport{
 				Source: tknSrc,
@@ -54,6 +61,5 @@ func NewUserContextualClient(ctx context.Context) (client.Client, error) {
 		},
 	}
 
-	// Create a new controller-runtime client
-	return client.New(config, client.Options{Scheme: scheme})
+	return config, nil
 }

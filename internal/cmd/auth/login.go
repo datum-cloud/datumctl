@@ -33,7 +33,6 @@ var (
 	hostname     string // Variable to store hostname flag
 	apiHostname  string // Variable to store api-hostname flag
 	clientIDFlag string // Variable to store client-id flag
-	verbose      bool   // Variable to store verbose flag
 )
 
 var LoginCmd = &cobra.Command{
@@ -51,7 +50,7 @@ var LoginCmd = &cobra.Command{
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
 		}
-		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, verbose)
+		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, false)
 	},
 }
 
@@ -62,8 +61,6 @@ func init() {
 	LoginCmd.Flags().StringVar(&apiHostname, "api-hostname", "", "Hostname of the Datum Cloud API server (if not specified, will be derived from auth hostname)")
 	// Add the client-id flag
 	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
-	// Add the verbose flag
-	LoginCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Print the full ID token claims after successful login")
 }
 
 // Generates a random PKCE code verifier
