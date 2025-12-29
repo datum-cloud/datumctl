@@ -68,20 +68,11 @@ func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	// Create overrides from ConfigFlags - THIS IS THE KEY
 	overrides := &clientcmd.ConfigOverrides{}
 
-	// Apply context override if set
-	if c.Context != nil && *c.Context != "" {
-		overrides.CurrentContext = *c.Context
-	}
-
 	if c.Namespace != nil {
 		overrides.Context.Namespace = *c.Namespace
 	}
 
 	// Apply cluster overrides if set
-	if c.ClusterName != nil && *c.ClusterName != "" {
-		overrides.Context.Cluster = *c.ClusterName
-	}
-
 	if c.APIServer != nil && *c.APIServer != "" {
 		overrides.ClusterInfo.Server = *c.APIServer
 	}
@@ -92,14 +83,6 @@ func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 
 	if c.BearerToken != nil && *c.BearerToken != "" {
 		overrides.AuthInfo.Token = *c.BearerToken
-	}
-
-	if c.CertFile != nil && *c.CertFile != "" {
-		overrides.AuthInfo.ClientCertificate = *c.CertFile
-	}
-
-	if c.KeyFile != nil && *c.KeyFile != "" {
-		overrides.AuthInfo.ClientKey = *c.KeyFile
 	}
 
 	if c.Impersonate != nil && *c.Impersonate != "" {
@@ -124,6 +107,10 @@ func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*MyFactory, 
 	})
 	baseConfigFlags.KubeConfig = nil
 	baseConfigFlags.CacheDir = nil
+	baseConfigFlags.KeyFile = nil
+	baseConfigFlags.CertFile = nil
+	baseConfigFlags.ClusterName = nil
+	baseConfigFlags.Context = nil
 	configFlags := &customConfigFlags{
 		ConfigFlags: baseConfigFlags,
 		restConfig:  restConfig,
