@@ -13,19 +13,18 @@ import (
 )
 
 func Command(factory *client.MyFactory, ioStreams genericclioptions.IOStreams, projectID *string, organizationID *string) *cobra.Command {
-	getCmd := get.NewCmdGet("datumctl", factory, ioStreams)
-	getCmd.Run = func(cmd *cobra.Command, args []string) {
+	preRunFunc := func(cmd *cobra.Command, args []string) error {
 		apiHostname, err := authutil.GetAPIHostname()
 		if err != nil {
-			panic(fmt.Errorf("get API hostname: %w", err))
+			return err
 		}
 		restConfig, err := factory.ToRESTConfig()
 		if err != nil {
-			panic(fmt.Errorf("get API hostname: %w", err))
+			return err
 		}
 		tknSrc, err := authutil.GetTokenSource(cmd.Context())
 		if err != nil {
-			panic(err)
+			return err
 		}
 		restConfig.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
 			return &oauth2.Transport{Source: tknSrc, Base: rt}
@@ -39,10 +38,15 @@ func Command(factory *client.MyFactory, ioStreams genericclioptions.IOStreams, p
 			factory.RestConfig.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
 				apiHostname, *projectID)
 		default:
-			panic(fmt.Errorf("exactly one of organizationID or projectID must be provided"))
+			return fmt.Errorf("exactly one of organizationID or projectID must be provided")
 		}
-		cmdInt := get.NewCmdGet("datumctl", factory, ioStreams)
-		cmdInt.Run(cmd, args)
+		if args[0] == "organizations" || args[0] == "organization" {
+			args[0] = "organizationmemberships"
+			cmd.Flag("all-namespaces").Value.Set("true")
+		}
+		return nil
 	}
+	getCmd := get.NewCmdGet("datumctl", factory, ioStreams)
+	getCmd.PreRunE = preRunFunc
 	return getCmd
 }

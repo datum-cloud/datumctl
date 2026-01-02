@@ -59,7 +59,7 @@ func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 			"inmemory": {
 				Cluster:   "inmemory",
 				AuthInfo:  "inmemory",
-				Namespace: *c.Namespace,
+				Namespace: "",
 			},
 		},
 		CurrentContext: "inmemory",
@@ -68,8 +68,8 @@ func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	// Create overrides from ConfigFlags - THIS IS THE KEY
 	overrides := &clientcmd.ConfigOverrides{}
 
-	if c.Namespace != nil {
-		overrides.Context.Namespace = *c.Namespace
+	if c.ConfigFlags.Namespace != nil && *c.ConfigFlags.Namespace != "" {
+		overrides.Context.Namespace = *c.ConfigFlags.Namespace
 	}
 
 	// Apply cluster overrides if set
