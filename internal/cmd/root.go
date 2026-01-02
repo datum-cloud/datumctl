@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/client"
 	apiresources "go.datum.net/datumctl/internal/cmd/api-resources"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/get"
-	getv2 "go.datum.net/datumctl/internal/cmd/get/v2"
 	"go.datum.net/datumctl/internal/cmd/mcp"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
@@ -42,13 +39,8 @@ func RootCmd() *cobra.Command {
 	rootCmd.PersistentFlags().StringVar(&organizationID, "organization-id", "", "org id")
 	factory.ConfigFlags.AddFlags(rootCmd.PersistentFlags())
 
-	isExperimental := os.Getenv("DATUMCTL_EXPERIMENTAL")
 	rootCmd.AddCommand(auth.Command())
-	if isExperimental != "" {
-		rootCmd.AddCommand(getv2.Command(factory, ioStreams, &projectID, &organizationID))
-	} else {
-		rootCmd.AddCommand(get.Command())
-	}
+	rootCmd.AddCommand(get.Command(factory, ioStreams, &projectID, &organizationID))
 	rootCmd.AddCommand(apiresources.Command(factory, ioStreams))
 	rootCmd.AddCommand(apiresources.CommandApiResources(factory, ioStreams))
 	rootCmd.AddCommand(mcp.Command())
