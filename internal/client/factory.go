@@ -2,7 +2,12 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 
+	"github.com/spf13/pflag"
+	"go.datum.net/datumctl/internal/authutil"
+	"golang.org/x/oauth2"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -10,24 +15,30 @@ import (
 	"k8s.io/kubectl/pkg/cmd/util"
 )
 
-type MyFactory struct {
+type DatumCloudFactory struct {
 	util.Factory
-	ConfigFlags *genericclioptions.ConfigFlags
+	ConfigFlags *CustomConfigFlags
 	RestConfig  *rest.Config
 }
 
-type customConfigFlags struct {
+type CustomConfigFlags struct {
 	*genericclioptions.ConfigFlags
-	restConfig *rest.Config
+	Project      *string
+	Organization *string
+	restConfig   *rest.Config
+	tokenSrc     oauth2.TokenSource
 }
 
-func (c *customConfigFlags) ToRESTConfig() (*rest.Config, error) {
+func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
+	factory.ConfigFlags.AddFlags(flags)
+	flags.StringVar(factory.ConfigFlags.Project, "project", "", "project name")
+	flags.StringVar(factory.ConfigFlags.Organization, "organization", "", "organization name")
+}
+
+func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 	config := rest.CopyConfig(c.restConfig)
 	if c.APIServer != nil && *c.APIServer != "" {
 		config.Host = *c.APIServer
-	}
-	if c.BearerToken != nil && *c.BearerToken != "" {
-		config.BearerToken = *c.BearerToken
 	}
 	if c.Insecure != nil && *c.Insecure {
 		config.Insecure = true
@@ -36,10 +47,30 @@ func (c *customConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		config.ServerName = *c.TLSServerName
 	}
 
+	config.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+		return &oauth2.Transport{Source: c.tokenSrc, Base: rt}
+	}
+
+	apiHostname, err := authutil.GetAPIHostname()
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case (c.Project == nil || *c.Project == "") && (c.Organization == nil || *c.Organization == ""):
+	case (c.Project == nil || *c.Project == "") && (c.Organization != nil || *c.Organization != ""):
+		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
+			apiHostname, *c.Organization)
+	case (c.Project != nil || *c.Project != "") && (c.Organization == nil || *c.Organization == ""):
+		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
+			apiHostname, *c.Project)
+	default:
+		return nil, fmt.Errorf("exactly one of organizationID or projectID must be provided")
+	}
+
 	return config, nil
 }
 
-func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
+func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	kubeConfig := &api.Config{
 		Clusters: map[string]*api.Cluster{
 			"inmemory": {
@@ -81,10 +112,6 @@ func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 		overrides.ClusterInfo.InsecureSkipTLSVerify = true
 	}
 
-	if c.BearerToken != nil && *c.BearerToken != "" {
-		overrides.AuthInfo.Token = *c.BearerToken
-	}
-
 	if c.Impersonate != nil && *c.Impersonate != "" {
 		overrides.AuthInfo.Impersonate = *c.Impersonate
 	}
@@ -100,7 +127,7 @@ func (c *customConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	return clientcmd.NewDefaultClientConfig(*kubeConfig, overrides)
 }
 
-func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*MyFactory, error) {
+func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*DatumCloudFactory, error) {
 	baseConfigFlags := genericclioptions.NewConfigFlags(true)
 	baseConfigFlags = baseConfigFlags.WithWrapConfigFn(func(*rest.Config) *rest.Config {
 		return restConfig
@@ -111,14 +138,27 @@ func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*MyFactory, 
 	baseConfigFlags.CertFile = nil
 	baseConfigFlags.ClusterName = nil
 	baseConfigFlags.Context = nil
-	configFlags := &customConfigFlags{
+	tknSrc, err := authutil.GetTokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	configFlags := &CustomConfigFlags{
 		ConfigFlags: baseConfigFlags,
 		restConfig:  restConfig,
+		tokenSrc:    tknSrc,
+		Project: func() *string {
+			m := ""
+			return &m
+		}(),
+		Organization: func() *string {
+			m := ""
+			return &m
+		}(),
 	}
 	f := util.NewFactory(configFlags)
-	return &MyFactory{
+	return &DatumCloudFactory{
 		Factory:     f,
-		ConfigFlags: baseConfigFlags,
+		ConfigFlags: configFlags,
 		RestConfig:  restConfig,
 	}, nil
 }

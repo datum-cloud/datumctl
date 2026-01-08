@@ -27,20 +27,14 @@ func RootCmd() *cobra.Command {
 	if err != nil {
 		panic(err)
 	}
-	var projectID string
-	var organizationID string
 
 	factory, err := client.NewDatumFactory(rootCmd.Context(), config)
 	if err != nil {
 		panic(err)
 	}
-
-	rootCmd.PersistentFlags().StringVar(&projectID, "project-id", "", "project id")
-	rootCmd.PersistentFlags().StringVar(&organizationID, "organization-id", "", "org id")
-	factory.ConfigFlags.AddFlags(rootCmd.PersistentFlags())
-
+	factory.AddFlags(rootCmd.PersistentFlags())
 	rootCmd.AddCommand(auth.Command())
-	rootCmd.AddCommand(get.Command(factory, ioStreams, &projectID, &organizationID))
+	rootCmd.AddCommand(get.Command(factory, ioStreams))
 	rootCmd.AddCommand(apiresources.Command(factory, ioStreams))
 	rootCmd.AddCommand(apiresources.CommandApiResources(factory, ioStreams))
 	rootCmd.AddCommand(mcp.Command())

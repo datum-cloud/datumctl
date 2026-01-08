@@ -9,6 +9,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rodaine/table v1.3.0
 	github.com/spf13/cobra v1.9.1
+	github.com/spf13/pflag v1.0.7
 	github.com/zalando/go-keyring v0.2.6
 	go.miloapis.com/milo v0.2.0
 	golang.org/x/oauth2 v0.30.0
@@ -76,7 +77,6 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/spf13/pflag v1.0.7 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
