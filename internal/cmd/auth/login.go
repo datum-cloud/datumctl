@@ -10,7 +10,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+
+	kubectlcmd "k8s.io/kubectl/pkg/cmd"
 
 	"github.com/coreos/go-oidc/v3/oidc" // OIDC discovery
 	"github.com/pkg/browser"
@@ -50,7 +53,7 @@ var LoginCmd = &cobra.Command{
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
 		}
-		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, false)
+		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, (kubectlcmd.GetLogVerbosity(os.Args) != "0"))
 	},
 }
 
