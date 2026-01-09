@@ -2,27 +2,41 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-
+	"go.datum.net/datumctl/internal/client"
+	apiresources "go.datum.net/datumctl/internal/cmd/api-resources"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/get"
-	"go.datum.net/datumctl/internal/cmd/mcp" 
+	"go.datum.net/datumctl/internal/cmd/mcp"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
-var (
-	rootCmd = &cobra.Command{
+func RootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
 		Use:   "datumctl",
 		Short: "A CLI for interacting with the Datum platform",
 	}
-)
 
-func init() {
+	ioStreams := genericclioptions.IOStreams{
+		In:     rootCmd.InOrStdin(),
+		Out:    rootCmd.OutOrStdout(),
+		ErrOut: rootCmd.ErrOrStderr(),
+	}
+
+	ctx := rootCmd.Context()
+	config, err := client.NewRestConfig(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	factory, err := client.NewDatumFactory(rootCmd.Context(), config)
+	if err != nil {
+		panic(err)
+	}
+	factory.AddFlags(rootCmd.PersistentFlags())
 	rootCmd.AddCommand(auth.Command())
-	rootCmd.AddCommand(get.Command())
+	rootCmd.AddCommand(get.Command(factory, ioStreams))
+	rootCmd.AddCommand(apiresources.Command(factory, ioStreams))
+	rootCmd.AddCommand(apiresources.CommandApiResources(factory, ioStreams))
 	rootCmd.AddCommand(mcp.Command())
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() error {
-	return rootCmd.Execute()
+	return rootCmd
 }
