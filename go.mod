@@ -12,7 +12,7 @@ require (
 	github.com/spf13/pflag v1.0.7
 	github.com/zalando/go-keyring v0.2.6
 	go.miloapis.com/milo v0.2.0
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.34.0
 	k8s.io/apiextensions-apiserver v0.32.1
 	k8s.io/apimachinery v0.34.3
 	k8s.io/cli-runtime v0.34.3
