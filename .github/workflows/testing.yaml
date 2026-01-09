@@ -1,0 +1,20 @@
+name: "ctl testing"
+on:
+  push:
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+
+jobs:
+  testing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install dependencies
+        run: go mod download
+      - name: Verify dependencies
+        run: go mod verify
+      - name: Test
+        run: go test -timeout 5m ./...
