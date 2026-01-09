@@ -186,7 +186,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 				}
 			}
 			http.Error(w, errMsg, http.StatusBadRequest)
-			errChan <- fmt.Errorf(errMsg)
+			errChan <- fmt.Errorf("%s", errMsg)
 			return
 		}
 
