@@ -23,7 +23,7 @@ jobs:
       - name: Install Syft CLI
         run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
       # More assembly might be required: Docker logins, GPG, etc.
