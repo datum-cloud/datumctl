@@ -13,13 +13,13 @@ require (
 	github.com/zalando/go-keyring v0.2.6
 	go.miloapis.com/milo v0.16.0
 	golang.org/x/oauth2 v0.34.0
-	k8s.io/apiextensions-apiserver v0.32.3
+	k8s.io/apiextensions-apiserver v0.34.1
 	k8s.io/apimachinery v0.34.3
 	k8s.io/cli-runtime v0.34.3
 	k8s.io/client-go v0.34.3
 	k8s.io/component-base v0.34.3
 	k8s.io/kubectl v0.34.3
-	sigs.k8s.io/controller-runtime v0.20.4
+	sigs.k8s.io/controller-runtime v0.22.4
 	sigs.k8s.io/yaml v1.6.0
 )
 
