@@ -14,5 +14,6 @@ func WrapResourceCommand(cmd *cobra.Command) *cobra.Command {
 		return nil
 	}
 	cmd.PreRunE = preRunFunc
+	cmd.GroupID = "resource"
 	return cmd
 }

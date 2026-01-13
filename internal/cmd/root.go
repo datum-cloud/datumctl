@@ -41,21 +41,48 @@ func RootCmd() *cobra.Command {
 		panic(err)
 	}
 	factory.AddFlags(rootCmd.PersistentFlags())
-	rootCmd.AddCommand(auth.Command())
+
+	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
+	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})
+	rootCmd.AddGroup(&cobra.Group{ID: "resource", Title: "Resource Management"})
+
+	authCommand := auth.Command()
+	authCommand.GroupID = "auth"
+	rootCmd.AddCommand(authCommand)
 
 	rootCmd.AddCommand(WrapResourceCommand(get.NewCmdGet("datumctl", factory, ioStreams)))
 	rootCmd.AddCommand(WrapResourceCommand(delcmd.NewCmdDelete(factory, ioStreams)))
-	rootCmd.AddCommand(create.NewCmdCreate(factory, ioStreams))
-	rootCmd.AddCommand(apply.NewCmdApply("datumctl", factory, ioStreams))
+
+	createCmd := create.NewCmdCreate(factory, ioStreams)
+	createCmd.GroupID = "resource"
+	rootCmd.AddCommand(createCmd)
+
+	applyCmd := apply.NewCmdApply("datumctl", factory, ioStreams)
+	applyCmd.GroupID = "resource"
+	rootCmd.AddCommand(applyCmd)
+
 	rootCmd.AddCommand(WrapResourceCommand(edit.NewCmdEdit(factory, ioStreams)))
 	rootCmd.AddCommand(WrapResourceCommand(describe.NewCmdDescribe("datumctl", factory, ioStreams)))
 
-	rootCmd.AddCommand(diff.NewCmdDiff(factory, ioStreams))
-	rootCmd.AddCommand(explain.NewCmdExplain("datumctl", factory, ioStreams))
+	diffCmd := diff.NewCmdDiff(factory, ioStreams)
+	diffCmd.GroupID = "resource"
+	rootCmd.AddCommand(diffCmd)
 
-	rootCmd.AddCommand(apiresources.NewCmdAPIVersions(factory, ioStreams))
-	rootCmd.AddCommand(clusterinfo.NewCmdClusterInfo(factory, ioStreams))
-	rootCmd.AddCommand(apiresources.NewCmdAPIResources(factory, ioStreams))
+	explainCmd := explain.NewCmdExplain("datumctl", factory, ioStreams)
+	explainCmd.GroupID = "other"
+	rootCmd.AddCommand(explainCmd)
+
+	apiVersionCmd := apiresources.NewCmdAPIVersions(factory, ioStreams)
+	apiVersionCmd.GroupID = "other"
+	rootCmd.AddCommand(apiVersionCmd)
+
+	clusterInfoCmd := clusterinfo.NewCmdClusterInfo(factory, ioStreams)
+	clusterInfoCmd.GroupID = "other"
+	rootCmd.AddCommand(clusterInfoCmd)
+
+	apiResourceCmd := apiresources.NewCmdAPIResources(factory, ioStreams)
+	apiResourceCmd.GroupID = "other"
+	rootCmd.AddCommand(apiResourceCmd)
 
 	rootCmd.AddCommand(mcp.Command())
 	return rootCmd
