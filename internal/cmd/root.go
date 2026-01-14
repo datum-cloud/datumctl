@@ -10,7 +10,6 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
-	"k8s.io/kubectl/pkg/cmd/clusterinfo"
 	"k8s.io/kubectl/pkg/cmd/create"
 	delcmd "k8s.io/kubectl/pkg/cmd/delete"
 	"k8s.io/kubectl/pkg/cmd/describe"
@@ -77,10 +76,6 @@ func RootCmd() *cobra.Command {
 	apiVersionCmd := apiresources.NewCmdAPIVersions(factory, ioStreams)
 	apiVersionCmd.GroupID = "other"
 	rootCmd.AddCommand(apiVersionCmd)
-
-	clusterInfoCmd := clusterinfo.NewCmdClusterInfo(factory, ioStreams)
-	clusterInfoCmd.GroupID = "other"
-	rootCmd.AddCommand(clusterInfoCmd)
 
 	apiResourceCmd := apiresources.NewCmdAPIResources(factory, ioStreams)
 	apiResourceCmd.GroupID = "other"
