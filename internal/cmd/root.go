@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
@@ -30,13 +32,13 @@ func RootCmd() *cobra.Command {
 		ErrOut: rootCmd.ErrOrStderr(),
 	}
 
-	ctx := rootCmd.Context()
+	ctx := context.Background()
 	config, err := client.NewRestConfig(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	factory, err := client.NewDatumFactory(rootCmd.Context(), config)
+	factory, err := client.NewDatumFactory(ctx, config)
 	if err != nil {
 		panic(err)
 	}
