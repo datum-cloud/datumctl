@@ -7,6 +7,7 @@ import (
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/mcp"
+	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
@@ -82,5 +83,9 @@ func RootCmd() *cobra.Command {
 	rootCmd.AddCommand(apiResourceCmd)
 
 	rootCmd.AddCommand(mcp.Command())
+	rootCmd.AddCommand(activity.NewActivityCommand(activity.ActivityCommandOptions{
+		Factory:   factory,
+		IOStreams: ioStreams,
+	}))
 	return rootCmd
 }
