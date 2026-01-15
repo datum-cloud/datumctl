@@ -2,3 +2,5 @@
 dist/
 # Built binary
 /datumctl
+# Nix stuff
+/result
