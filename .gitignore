@@ -1,2 +1,4 @@
 # Ignore goreleaser output
 dist/
+# Built binary
+/datumctl
