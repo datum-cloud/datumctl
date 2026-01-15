@@ -181,6 +181,8 @@ go.miloapis.com/activity v0.0.0-20260113191412-5f92a716b929 h1:AXJs4z44qMNYbfciM
 go.miloapis.com/activity v0.0.0-20260113191412-5f92a716b929/go.mod h1:fWG1hMargldOpT6z93Y3Hv7e96mrOkozLZod7BgLnlU=
 go.miloapis.com/activity v0.0.0-20260114181500-b0ad85ef9504 h1:cKuTr7qFjX80NeiZ+7aMK0pDh32v2YZ2kBps98X1eMo=
 go.miloapis.com/activity v0.0.0-20260114181500-b0ad85ef9504/go.mod h1:fWG1hMargldOpT6z93Y3Hv7e96mrOkozLZod7BgLnlU=
+go.miloapis.com/activity v0.0.0-20260115210810-67ce864b7137 h1:Bjj4bdFhnrbVehu863Vubj6ywj+5clEpeoU9XZ6efko=
+go.miloapis.com/activity v0.0.0-20260115210810-67ce864b7137/go.mod h1:fWG1hMargldOpT6z93Y3Hv7e96mrOkozLZod7BgLnlU=
 go.miloapis.com/milo v0.16.1 h1:kz5Cod+pxD/i8A2K22R9amFK+ypwhn45NfdkrEkTfnc=
 go.miloapis.com/milo v0.16.1/go.mod h1:xOFYvUsvSZV3z6eow5YdB5C/qRQf2s/5/arcfJs5XPg=
 go.opentelemetry.io/otel v1.39.0 h1:8yPrr/S0ND9QEfTfdP9V+SiwT4E0G7Y5MO7p85nis48=
