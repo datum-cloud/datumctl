@@ -27,7 +27,7 @@ datumctl ships with a `flake.nix` so you don't have to install anything:
 nix run github:datum-cloud/datumctl
 
 # Specify version
-nix run github:datum-cloud/datumctl/
+nix run github:datum-cloud/datumctl/b044455d877b800812e4fd78e42429c1617c011b
 
 # Run from local git clone
 nix run
