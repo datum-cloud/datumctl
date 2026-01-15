@@ -18,6 +18,34 @@ brew install datumctl
 brew upgrade datumctl
 ```
 
+## nix (Linux and macOS)
+
+datumctl ships with a `flake.nix` so you don't have to install anything:
+
+```
+# Pick latest from git
+nix run github:datum-cloud/datumctl
+
+# Specify version
+nix run github:datum-cloud/datumctl/
+
+# Run from local git clone
+nix run
+
+# Start shell with all dependencies available
+nix develop --command zsh
+
+# Build locally
+nix build
+
+# ...or for specific platform
+nix build .#packages.x86_64-linux.default
+nix build .#packages.aarch64-linux.default
+```
+
+You can, however, incorporate it into your home-manager build or other
+flake so that it's always available in your profile.
+
 ## Pre-built binaries (recommended)
 
 The easiest way to install `datumctl` is by downloading the pre-built binary
