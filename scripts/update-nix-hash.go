@@ -3,7 +3,11 @@
 //
 // Usage:
 //
-//	go run scripts/update-nix-hash.go
+//	task update-nix-hash
+//
+// Or directly:
+//
+//	go run bin/update-nix-hash.go
 package main
 
 import (
