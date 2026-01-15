@@ -1,5 +1,5 @@
 {
-  description = "datumctl - A CLI for interacting with the Datum platform";
+  description = "datumctl - A CLI for interacting with Datum Cloud";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -38,7 +38,8 @@
 
             src = ./.;
 
-            # Hash of Go module dependencies. Update this after changing go.mod/go.sum:
+            # Hash of Go module dependencies.
+            # Update this after changing go.mod/go.sum:
             #   go run bin/update-nix-hash.go
             vendorHash = "sha256-IZtck6ZsaIoEZLpukWHVbQAhfOsly0WO0OWO+6uRhgE=";
 
@@ -50,7 +51,7 @@
 
             meta = with pkgs.lib; {
               description = "A CLI for interacting with the Datum platform";
-              homepage = "https://www.datum.net/";
+              homepage = "https://www.datum.net/docs/quickstart/datumctl/";
               license = licenses.asl20;
               maintainers = [ ];
               mainProgram = "datumctl";
@@ -58,7 +59,6 @@
           };
         };
 
-        # Development shell with Go and other tools
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             go_1_25
@@ -74,7 +74,6 @@
           '';
         };
 
-        # Formatter for nix files
         formatter = pkgs.nixpkgs-fmt;
       }
     );
