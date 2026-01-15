@@ -6,32 +6,32 @@ tasks:
     cmds:
       - task --list
 
-  update-nix-hash:
+  nix-update-hash:
     desc: Automatically update the vendorHash in flake.nix after Go dependency changes
     cmds:
-      - go run bin/update-nix-hash.go
+      - go run scripts/update-nix-hash.go
 
-  build:
+  nix-build:
     desc: Build the project with Nix
     cmds:
       - nix build
 
-  dev:
+  nix-dev:
     desc: Enter the Nix development shell
     cmds:
       - nix develop
+
+  nix-fmt:
+    desc: Format nix files
+    cmds:
+      - nix fmt
 
   clean:
     desc: Remove build artifacts
     cmds:
       - rm -rf result result-*
 
-  fmt:
-    desc: Format nix files
-    cmds:
-      - nix fmt
-
-  check:
+  nix-check:
     desc: Check flake syntax and run checks
     cmds:
       - nix flake check
