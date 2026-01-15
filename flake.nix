@@ -38,6 +38,8 @@
 
             src = ./.;
 
+            # Hash of Go module dependencies. Update this after changing go.mod/go.sum:
+            #   go run bin/update-nix-hash.go
             vendorHash = "sha256-IZtck6ZsaIoEZLpukWHVbQAhfOsly0WO0OWO+6uRhgE=";
 
             ldflags = [
