@@ -24,7 +24,7 @@ const ActiveUserKey = "active_user"
 const KnownUsersKey = "known_users"
 
 // ErrNoActiveUser indicates that no active user is set in the keyring.
-var ErrNoActiveUser = errors.New("no active user set. Please login first")
+var ErrNoActiveUser = errors.New("You haven't authenticated with Datum Cloud yet. Please login first using 'datumctl auth login' and retry the command.")
 
 // StoredCredentials holds all necessary information for a single authenticated session.
 type StoredCredentials struct {
