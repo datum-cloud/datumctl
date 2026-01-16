@@ -34,7 +34,7 @@ jobs:
         run: task nix-update-hash
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: 'chore(nix): Update vendorHash after Go dependency changes'
           title: 'chore(nix): Update vendorHash after Go dependency changes'
