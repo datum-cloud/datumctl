@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.datum.net/datumctl/internal/keyring"
 	"golang.org/x/oauth2"
@@ -86,10 +87,59 @@ func GetStoredCredentials(userKey string) (*StoredCredentials, error) {
 	return &creds, nil
 }
 
+// persistingTokenSource wraps an oauth2.TokenSource and persists token updates to the keyring.
+type persistingTokenSource struct {
+	ctx     context.Context
+	source  oauth2.TokenSource
+	userKey string
+	creds   *StoredCredentials
+	mu      sync.Mutex
+}
+
+// Token implements oauth2.TokenSource.
+// It retrieves a token from the underlying source and persists it to the keyring if refreshed.
+func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	currentAccessToken := ""
+	if p.creds.Token != nil {
+		currentAccessToken = p.creds.Token.AccessToken
+	}
+
+	// Get token from the underlying source (may trigger refresh)
+	newToken, err := p.source.Token()
+	if err != nil {
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) {
+			if retrieveErr.ErrorCode == "invalid_grant" || retrieveErr.ErrorCode == "invalid_request" {
+				return nil, fmt.Errorf("Authentication session has expired or refresh token is no longer valid. Please re-authenticate using: `datumctl auth login`")
+			}
+		}
+		return nil, err
+	}
+
+	// Persist the token if it was refreshed
+	if newToken.AccessToken != currentAccessToken {
+		p.creds.Token = newToken
+
+		credsJSON, marshalErr := json.Marshal(p.creds)
+		if marshalErr != nil {
+			return newToken, fmt.Errorf("failed to marshal updated credentials: %w", marshalErr)
+		}
+
+		if setErr := keyring.Set(ServiceName, p.userKey, string(credsJSON)); setErr != nil {
+			return newToken, fmt.Errorf("failed to persist refreshed token to keyring: %w", setErr)
+		}
+	}
+
+	return newToken, nil
+}
+
 // GetTokenSource creates an oauth2.TokenSource for the active user.
-// This source will automatically refresh the token if it's expired.
+// This source will automatically refresh the token if it's expired and persist updates to the keyring.
 func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	creds, _, err := GetActiveCredentials()
+	creds, userKey, err := GetActiveCredentials()
 	if err != nil {
 		return nil, err
 	}
@@ -105,9 +155,16 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 		// RedirectURL not needed for token refresh
 	}
 
-	// Create a TokenSource with the stored token
-	// The oauth2 library handles refresh using the context, config, and refresh token.
-	return conf.TokenSource(ctx, creds.Token), nil
+	// Create the base TokenSource with the stored token
+	baseSource := conf.TokenSource(ctx, creds.Token)
+
+	// Wrap it with our persisting source
+	return &persistingTokenSource{
+		ctx:     ctx,
+		source:  baseSource,
+		userKey: userKey,
+		creds:   creds,
+	}, nil
 }
 
 // GetUserIDFromToken extracts the user ID (sub claim) from the stored credentials.
