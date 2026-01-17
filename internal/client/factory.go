@@ -18,15 +18,13 @@ import (
 type DatumCloudFactory struct {
 	util.Factory
 	ConfigFlags *CustomConfigFlags
-	RestConfig  *rest.Config
 }
 
 type CustomConfigFlags struct {
 	*genericclioptions.ConfigFlags
 	Project      *string
 	Organization *string
-	restConfig   *rest.Config
-	tokenSrc     oauth2.TokenSource
+	Context      context.Context
 }
 
 func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
@@ -36,7 +34,10 @@ func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
 }
 
 func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
-	config := rest.CopyConfig(c.restConfig)
+	config, err := c.ConfigFlags.ToRESTConfig()
+	if err != nil {
+		return nil, err
+	}
 	if c.APIServer != nil && *c.APIServer != "" {
 		config.Host = *c.APIServer
 	}
@@ -47,8 +48,13 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		config.ServerName = *c.TLSServerName
 	}
 
+	tknSrc, err := authutil.GetTokenSource(c.Context)
+	if err != nil {
+		return nil, err
+	}
+
 	config.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
-		return &oauth2.Transport{Source: c.tokenSrc, Base: rt}
+		return &oauth2.Transport{Source: tknSrc, Base: rt}
 	}
 
 	apiHostname, err := authutil.GetAPIHostname()
@@ -71,19 +77,23 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 }
 
 func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
+	restConfig, err := c.ToRESTConfig()
+	if err != nil {
+		panic(err)
+	}
 	kubeConfig := &api.Config{
 		Clusters: map[string]*api.Cluster{
 			"inmemory": {
-				Server:                   c.restConfig.Host,
-				CertificateAuthorityData: c.restConfig.CAData,
-				InsecureSkipTLSVerify:    c.restConfig.Insecure,
+				Server:                   restConfig.Host,
+				CertificateAuthorityData: restConfig.CAData,
+				InsecureSkipTLSVerify:    restConfig.Insecure,
 			},
 		},
 		AuthInfos: map[string]*api.AuthInfo{
 			"inmemory": {
-				Token:                 c.restConfig.BearerToken,
-				ClientCertificateData: c.restConfig.CertData,
-				ClientKeyData:         c.restConfig.KeyData,
+				Token:                 restConfig.BearerToken,
+				ClientCertificateData: restConfig.CertData,
+				ClientKeyData:         restConfig.KeyData,
 			},
 		},
 		Contexts: map[string]*api.Context{
@@ -127,10 +137,14 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	return clientcmd.NewDefaultClientConfig(*kubeConfig, overrides)
 }
 
-func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*DatumCloudFactory, error) {
+func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
 	baseConfigFlags := genericclioptions.NewConfigFlags(true)
 	baseConfigFlags = baseConfigFlags.WithWrapConfigFn(func(*rest.Config) *rest.Config {
-		return restConfig
+		config, err := NewRestConfig(ctx)
+		if err != nil {
+			panic(err)
+		}
+		return config
 	})
 	baseConfigFlags.KubeConfig = nil
 	baseConfigFlags.CacheDir = nil
@@ -138,14 +152,8 @@ func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*DatumCloudF
 	baseConfigFlags.CertFile = nil
 	baseConfigFlags.ClusterName = nil
 	baseConfigFlags.Context = nil
-	tknSrc, err := authutil.GetTokenSource(ctx)
-	if err != nil {
-		return nil, err
-	}
 	configFlags := &CustomConfigFlags{
 		ConfigFlags: baseConfigFlags,
-		restConfig:  restConfig,
-		tokenSrc:    tknSrc,
 		Project: func() *string {
 			m := ""
 			return &m
@@ -159,6 +167,5 @@ func NewDatumFactory(ctx context.Context, restConfig *rest.Config) (*DatumCloudF
 	return &DatumCloudFactory{
 		Factory:     f,
 		ConfigFlags: configFlags,
-		RestConfig:  restConfig,
 	}, nil
 }

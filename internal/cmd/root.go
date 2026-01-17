@@ -25,7 +25,6 @@ func RootCmd() *cobra.Command {
 		Use:   "datumctl",
 		Short: "A CLI for interacting with the Datum platform",
 	}
-
 	ioStreams := genericclioptions.IOStreams{
 		In:     rootCmd.InOrStdin(),
 		Out:    rootCmd.OutOrStdout(),
@@ -33,12 +32,7 @@ func RootCmd() *cobra.Command {
 	}
 
 	ctx := context.Background()
-	config, err := client.NewRestConfig(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	factory, err := client.NewDatumFactory(ctx, config)
+	factory, err := client.NewDatumFactory(ctx)
 	if err != nil {
 		panic(err)
 	}
