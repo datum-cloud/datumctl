@@ -19,7 +19,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 
 ### Installation
 
-See the [Installation Guide](./docs/user/installation.md) for detailed instructions, including Homebrew for macOS and pre-built binaries for all platforms.
+See the [Installation Guide](./docs/user/installation.md) for detailed instructions, including Homebrew for macOS, nix for Linux and macOS, and pre-built binaries for all platforms.
 
 ### Basic Usage
 

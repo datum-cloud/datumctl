@@ -2,7 +2,7 @@ module go.datum.net/datumctl
 
 go 1.25.0
 
-toolchain go1.25.5
+toolchain go1.25.6
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
@@ -11,7 +11,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/zalando/go-keyring v0.2.6
-	go.miloapis.com/activity v0.0.0-20260113191412-5f92a716b929
+	go.miloapis.com/activity v0.0.0-20260115210810-67ce864b7137
 	go.miloapis.com/milo v0.16.1
 	golang.org/x/oauth2 v0.34.0
 	k8s.io/apiextensions-apiserver v0.35.0
