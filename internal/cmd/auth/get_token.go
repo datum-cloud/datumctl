@@ -9,8 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/authutil"
-	"go.datum.net/datumctl/internal/keyring"
-	"golang.org/x/oauth2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientauthv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
 )
@@ -49,63 +47,19 @@ func runGetToken(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid --output format %q. Must be %s or %s", outputFormat, outputFormatToken, outputFormatK8sV1Creds)
 	}
 
-	// Get Active User Credential
-	activeUserKey, err := keyring.Get(authutil.ServiceName, authutil.ActiveUserKey)
+	// Get the token source (which handles refresh and persistence automatically)
+	tokenSource, err := authutil.GetTokenSource(ctx)
 	if err != nil {
-		if errors.Is(err, keyring.ErrNotFound) {
+		if errors.Is(err, authutil.ErrNoActiveUser) {
 			return errors.New("no active user found in keyring. Please login first using 'datumctl auth login'")
 		}
-		return fmt.Errorf("failed to get active user key from keyring: %w", err)
+		return fmt.Errorf("failed to get token source: %w", err)
 	}
 
-	credsJSON, err := keyring.Get(authutil.ServiceName, activeUserKey)
-	if err != nil {
-		return fmt.Errorf("failed to get credentials for active user '%s' from keyring", activeUserKey)
-	}
-
-	var foundCreds authutil.StoredCredentials
-	if err := json.Unmarshal([]byte(credsJSON), &foundCreds); err != nil {
-		return fmt.Errorf("failed to parse stored credential JSON for active user '%s'", activeUserKey)
-	}
-	foundUserKey := activeUserKey
-
-	// Check if Token pointer is nil
-	if foundCreds.Token == nil {
-		return fmt.Errorf("internal error: stored token for active user '%s' is nil", foundUserKey)
-	}
-
-	// Create oauth2.Config
-	conf := &oauth2.Config{
-		ClientID: foundCreds.ClientID,
-		Scopes:   foundCreds.Scopes,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  foundCreds.EndpointAuthURL,
-			TokenURL: foundCreds.EndpointTokenURL,
-		},
-	}
-
-	// Create TokenSource
-	currentToken := *foundCreds.Token
-	tokenSource := conf.TokenSource(ctx, &currentToken)
-
-	// Get fresh token
+	// Get fresh token (will refresh if needed and persist automatically)
 	newToken, err := tokenSource.Token()
 	if err != nil {
-		return fmt.Errorf("failed to refresh token for active user '%s': %w", foundUserKey, err)
-	}
-
-	// Update keyring if refreshed
-	if newToken.AccessToken != currentToken.AccessToken {
-		updatedCreds := foundCreds
-		updatedCreds.Token = newToken
-		credsJSONBytes, err := json.Marshal(updatedCreds)
-		if err == nil {
-			err = keyring.Set(authutil.ServiceName, foundUserKey, string(credsJSONBytes))
-			if err != nil {
-				// Print a warning instead of silently ignoring.
-				fmt.Fprintf(os.Stderr, "Warning: failed to update refreshed token in keyring for user '%s': %v\n", foundUserKey, err)
-			}
-		} // If marshalling failed, we can't save anyway, maybe log this too? (Optional)
+		return fmt.Errorf("failed to get token: %w", err)
 	}
 
 	// --- Output based on requested format ---
