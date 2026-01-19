@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/keyring"
 	"golang.org/x/oauth2"
 )
@@ -24,7 +25,10 @@ const ActiveUserKey = "active_user"
 const KnownUsersKey = "known_users"
 
 // ErrNoActiveUser indicates that no active user is set in the keyring.
-var ErrNoActiveUser = errors.New("no active user set. Please login first")
+var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
+	"No active user found.",
+	"Please login first using: `datumctl auth login`",
+)
 
 // StoredCredentials holds all necessary information for a single authenticated session.
 type StoredCredentials struct {
@@ -113,7 +117,11 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 		var retrieveErr *oauth2.RetrieveError
 		if errors.As(err, &retrieveErr) {
 			if retrieveErr.ErrorCode == "invalid_grant" || retrieveErr.ErrorCode == "invalid_request" {
-				return nil, fmt.Errorf("Authentication session has expired or refresh token is no longer valid. Please re-authenticate using: `datumctl auth login`")
+				return nil, customerrors.WrapUserErrorWithHint(
+					"Authentication session has expired or refresh token is no longer valid.",
+					"Please re-authenticate using: `datumctl auth login`",
+					err,
+				)
 			}
 		}
 		return nil, err
