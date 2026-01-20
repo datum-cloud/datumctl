@@ -24,6 +24,7 @@ type CustomConfigFlags struct {
 	*genericclioptions.ConfigFlags
 	Project      *string
 	Organization *string
+	PlatformWide *bool
 	Context      context.Context
 }
 
@@ -31,6 +32,11 @@ func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
 	factory.ConfigFlags.AddFlags(flags)
 	flags.StringVar(factory.ConfigFlags.Project, "project", "", "project name")
 	flags.StringVar(factory.ConfigFlags.Organization, "organization", "", "organization name")
+	flags.BoolVar(factory.ConfigFlags.PlatformWide, "platform-wide", false, "access the platform root instead of a project or organization control plane")
+}
+
+func (factory *DatumCloudFactory) AddFlagMutualExclusions(cmd interface{ MarkFlagsMutuallyExclusive(...string) }) {
+	cmd.MarkFlagsMutuallyExclusive("project", "organization", "platform-wide")
 }
 
 func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
@@ -61,12 +67,27 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Handle platform-wide mode
+	isPlatformWide := c.PlatformWide != nil && *c.PlatformWide
+	hasProject := c.Project != nil && *c.Project != ""
+	hasOrganization := c.Organization != nil && *c.Organization != ""
+
 	switch {
-	case (c.Project == nil || *c.Project == "") && (c.Organization == nil || *c.Organization == ""):
-	case (c.Project == nil || *c.Project == "") && (c.Organization != nil || *c.Organization != ""):
+	case isPlatformWide:
+		// Platform-wide mode: access the root of the platform
+		if hasProject || hasOrganization {
+			return nil, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
+		}
+		config.Host = fmt.Sprintf("https://%s", apiHostname)
+	case !hasProject && !hasOrganization:
+		// No context specified - default behavior
+	case hasOrganization && !hasProject:
+		// Organization context
 		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
 			apiHostname, *c.Organization)
-	case (c.Project != nil || *c.Project != "") && (c.Organization == nil || *c.Organization == ""):
+	case hasProject && !hasOrganization:
+		// Project context
 		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
 			apiHostname, *c.Project)
 	default:
@@ -161,6 +182,10 @@ func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
 		Organization: func() *string {
 			m := ""
 			return &m
+		}(),
+		PlatformWide: func() *bool {
+			b := false
+			return &b
 		}(),
 	}
 	f := util.NewFactory(configFlags)
