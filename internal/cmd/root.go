@@ -37,6 +37,7 @@ func RootCmd() *cobra.Command {
 		panic(err)
 	}
 	factory.AddFlags(rootCmd.PersistentFlags())
+	factory.AddFlagMutualExclusions(rootCmd)
 
 	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
 	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})
