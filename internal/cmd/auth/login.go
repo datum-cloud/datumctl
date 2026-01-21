@@ -154,6 +154,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	authURL := conf.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+		oauth2.SetAuthURLParam("prompt", "select_account"),
 	)
 
 	// Channel to receive the authorization code
