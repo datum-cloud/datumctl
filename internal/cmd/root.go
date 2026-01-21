@@ -82,5 +82,7 @@ func RootCmd() *cobra.Command {
 		Factory:   factory,
 		IOStreams: ioStreams,
 	}))
+	genDoc := GenerateDocumentation()
+	rootCmd.AddCommand(genDoc)
 	return rootCmd
 }
