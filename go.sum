@@ -199,8 +199,6 @@ github.com/zalando/go-keyring v0.2.6 h1:r7Yc3+H+Ux0+M72zacZoItR3UDxeWfKTcabvkI8u
 github.com/zalando/go-keyring v0.2.6/go.mod h1:2TCrxYrbUNYfNS/Kgy/LSrkSQzZ5UPVH85RwfczwvcI=
 go.miloapis.com/activity v0.2.0 h1:/l5Ce713MSSlaPw3eS0aaVV+Btqo4TJ/evhD9SchPDQ=
 go.miloapis.com/activity v0.2.0/go.mod h1:sp04VDZnzqyj26+Cp10NkrA4YT3FXyN48wS8nw3zuRk=
-go.miloapis.com/milo v0.16.1 h1:kz5Cod+pxD/i8A2K22R9amFK+ypwhn45NfdkrEkTfnc=
-go.miloapis.com/milo v0.16.1/go.mod h1:xOFYvUsvSZV3z6eow5YdB5C/qRQf2s/5/arcfJs5XPg=
 go.miloapis.com/milo v0.16.2 h1:MqrBQvTYWIWBlniJXqBe3ycO/sZxgkL2tYems4s1+LY=
 go.miloapis.com/milo v0.16.2/go.mod h1:xOFYvUsvSZV3z6eow5YdB5C/qRQf2s/5/arcfJs5XPg=
 go.opentelemetry.io/otel v1.39.0 h1:8yPrr/S0ND9QEfTfdP9V+SiwT4E0G7Y5MO7p85nis48=
