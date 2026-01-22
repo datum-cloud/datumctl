@@ -1,3 +1,5 @@
+// remove this
+
 module go.datum.net/datumctl
 
 go 1.25.0
