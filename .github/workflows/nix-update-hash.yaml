@@ -6,6 +6,7 @@ on:
       - 'go.sum'
     branches-ignore:
       - 'nix-update-hash/*'
+  workflow_dispatch:
 
 jobs:
   update-hash:
