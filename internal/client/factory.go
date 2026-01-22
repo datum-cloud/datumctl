@@ -175,6 +175,7 @@ func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
 	baseConfigFlags.Context = nil
 	configFlags := &CustomConfigFlags{
 		ConfigFlags: baseConfigFlags,
+		Context:     ctx,
 		Project: func() *string {
 			m := ""
 			return &m
