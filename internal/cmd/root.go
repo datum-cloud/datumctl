@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
+	"go.datum.net/datumctl/internal/cmd/docs"
 	"go.datum.net/datumctl/internal/cmd/mcp"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -82,5 +83,10 @@ func RootCmd() *cobra.Command {
 		Factory:   factory,
 		IOStreams: ioStreams,
 	}))
+
+	docsCmd := docs.Command()
+	docsCmd.GroupID = "other"
+	rootCmd.AddCommand(docsCmd)
+
 	return rootCmd
 }
