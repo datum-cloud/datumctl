@@ -1,13 +1,22 @@
-# Installation
+---
+title: "Installation"
+sidebar:
+  order: 1
+---
 
-This section describes how to install `datumctl`.
+Welcome to the documentation for `datumctl`, the command-line interface for
+interacting with Datum Cloud.
+
+Let's start installing the binary itself, but if you want to get deeper, make a
+contribution or you are a curious developer nativate to the [documentation we
+wrote specifically for you.](developer/overview)
 
 ## Homebrew (macOS)
 
 If you are using macOS and have [Homebrew](https://brew.sh/) installed, you can
 install `datumctl` via our official tap:
 
-```bash
+```
 # Tap the Datum Cloud formula repository (only needs to be done once)
 brew tap datum-cloud/homebrew-tap
 
@@ -74,7 +83,7 @@ This example shows how to download and install a specific version. You **must**:
     architecture found on the releases page (e.g.,
     `datumctl_Darwin_arm64.tar.gz`).
 
-```bash
+```
 VERSION="<version>"
 ARCHIVE="<archive_filename>"
 curl -sSL "https://github.com/datum-cloud/datumctl/releases/download/${VERSION}/${ARCHIVE}" | tar xz
@@ -93,12 +102,12 @@ If you prefer, you can build `datumctl` from source:
     *   Go (version 1.21 or later)
     *   Git
 2.  **Clone the repository:**
-    ```bash
+    ```
     git clone https://github.com/datum-cloud/datumctl.git
     cd datumctl
     ```
 3.  **Build the binary:**
-    ```bash
+    ```
     go build -o datumctl .
     ```
 4.  **Install:** Move the resulting `datumctl` binary to a directory in your
@@ -108,7 +117,7 @@ If you prefer, you can build `datumctl` from source:
 
 To verify the installation, run:
 
-```bash
+```
 datumctl version
 ```
 

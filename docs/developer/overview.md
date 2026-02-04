@@ -1,4 +1,8 @@
-# Developer overview
+---
+title: "Overview"
+sidebar:
+  order: 5
+---
 
 `datumctl` is the command-line interface for interacting with Datum Cloud. It is
 built using Go and the [Cobra](https://cobra.dev/) library for CLI structure.

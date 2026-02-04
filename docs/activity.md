@@ -1,3 +1,9 @@
+---
+title: "Activity"
+sidebar:
+  order: 3
+---
+
 # Activity
 
 The `datumctl activity` command is available for interacting with the [activity
@@ -8,7 +14,7 @@ with the platform.
 You can see the full list of commands and CLI options by using the `--help`
 flag.
 
-```shell
+```
 $ datumctl activity --help
 ```
 
@@ -28,7 +34,7 @@ logs to understand what's happening within your organization and projects.
 Use the `--project` and `--organization` flag to control which context audit
 logs are retrieved from.
 
-```shell
+```
 $ datumctl activity query --project datum-cloud
 TIMESTAMP             VERB     USER               NAMESPACE   RESOURCE          NAME       STATUS
 2026-01-14 09:52:43   create   swells@datum.net               auditlogqueries              201
@@ -43,7 +49,7 @@ The `--filter` command is available to filter the audit logs returned in the
 query. The filter option accepts a [CEL expression][cel] to select which audit
 logs should be returned.
 
-```shell
+```
 $ datumctl activity query --project datum-cloud --limit 10 --filter='user.username == "swells@datum.net" && objectRef.apiGroup == "networking.datumapis.com"'
 TIMESTAMP             VERB   USER               NAMESPACE   RESOURCE   NAME        STATUS
 2026-01-14 10:08:33   get    swells@datum.net   default     domains    datum.net   200
@@ -62,7 +68,7 @@ The `--continue` option is available to paginate requests when additional
 results are available. The CLI will provide the continue option to use for the
 next page of requests.
 
-```shell
+```
 $ datumctl activity query --project datum-cloud --limit 10 --filter='user.username == "swells@datum.net" && objectRef.apiGroup == "networking.datumapis.com"' --limit 3
 TIMESTAMP             VERB   USER               NAMESPACE   RESOURCE   NAME        STATUS
 2026-01-14 10:08:33   get    swells@datum.net   default     domains    datum.net   200
@@ -83,7 +89,7 @@ that are helpful to users to understand the activity. You can also output the
 results as `yaml` or `json` to see the full audit logs that were retrieved by
 the query.
 
-```shell
+```
 $ datumctl activity query --project datum-cloud -o yaml
 apiVersion: audit.k8s.io/v1
 items:
