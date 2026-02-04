@@ -4,3 +4,4 @@ dist/
 /datumctl
 # Nix stuff
 /result
+.generated/
