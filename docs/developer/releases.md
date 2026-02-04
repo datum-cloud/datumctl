@@ -1,7 +1,6 @@
 ---
 title: "Releases"
 ---
-# Releases
 
 This guide explains how to cut a `datumctl` release locally with GoReleaser and
 how the GitHub Actions workflow publishes the official artifacts.
