@@ -9,6 +9,7 @@ before:
   hooks:
     - go mod tidy
     - go generate ./...
+    - ./scripts/generate-cli-docs.sh
 
 builds:
   - env:
@@ -57,7 +58,10 @@ changelog:
       - "^test:"
       - "^chore:"
 
-release: {}
+release:
+  extra_files:
+    - glob: .generated/datumctl-cli-docs.tar.gz
+      name_template: "{{ .ProjectName }}-cli-docs_{{ .Version }}.tar.gz"
 
 sboms:
   - artifacts: archive

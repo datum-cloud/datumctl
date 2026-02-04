@@ -8,3 +8,4 @@ development of the `datumctl` CLI.
 *   [Overview](./overview.md)
 *   [Authentication Flow](./authentication_flow.md)
 *   [Code Structure](./code_structure.md)
+*   [Releases](./releases.md)

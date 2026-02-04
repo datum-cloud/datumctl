@@ -66,6 +66,8 @@
             gotools
             go-task
             go-tools
+            goreleaser
+            syft
             git
           ];
 
