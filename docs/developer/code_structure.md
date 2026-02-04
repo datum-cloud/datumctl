@@ -1,4 +1,8 @@
-# Code structure
+---
+title: "Code structure"
+sidebar:
+  order: 6
+---
 
 The `datumctl` codebase is organized primarily within the `internal` directory,
 following common Go practices.

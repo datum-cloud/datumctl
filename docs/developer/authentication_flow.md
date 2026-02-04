@@ -1,4 +1,8 @@
-# Authentication flow
+---
+title: "Authentication flow"
+sidebar:
+  order: 7
+---
 
 `datumctl` utilizes OAuth 2.0 Authorization Code Flow with PKCE (Proof Key for
 Code Exchange) for user authentication. This flow is orchestrated by the

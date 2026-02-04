@@ -1,4 +1,8 @@
-# Authentication
+---
+title: "Authentication"
+sidebar:
+  order: 2
+---
 
 `datumctl` uses OAuth 2.0 and OpenID Connect (OIDC) with the PKCE extension for
 secure authentication against Datum Cloud. This avoids the need to handle static
@@ -20,7 +24,7 @@ keyring.
 
 To authenticate with Datum Cloud, use the `login` command:
 
-```bash
+```
 datumctl auth login [--hostname <auth-hostname>] [-v]
 ```
 
@@ -49,7 +53,7 @@ Once logged in, you typically need to configure `kubectl` to authenticate to
 Datum Cloud Kubernetes clusters using your `datumctl` login session. Use the
 `update-kubeconfig` command:
 
-```bash
+```
 datumctl auth update-kubeconfig [--kubeconfig <path>] [--project <name>] [--organization <name>]
 ```
 
@@ -75,7 +79,7 @@ automatically use your active `datumctl` login session for authentication.
 
 To see which users you have authenticated locally, use the `list` command:
 
-```bash
+```
 datumctl auth list
 # Alias: datumctl auth ls
 ```
@@ -91,7 +95,7 @@ If you have logged in with multiple user accounts (visible via
 `datumctl auth list`), you can switch which account is active using the
 `switch` command:
 
-```bash
+```
 datumctl auth switch <user-email>
 ```
 
@@ -108,7 +112,7 @@ To remove stored credentials, use the `logout` command.
 
 **Log out a specific user:**
 
-```bash
+```
 datumctl auth logout <user-email>
 ```
 
@@ -117,7 +121,7 @@ Replace `<user-email>` with the email address shown in the
 
 **Log out all users:**
 
-```bash
+```
 datumctl auth logout --all
 ```
 
@@ -129,7 +133,7 @@ The `get-token` command retrieves the current access token for the *active*
 authenticated user. This is primarily used internally by other tools (like
 `kubectl`) but can be used directly if needed.
 
-```bash
+```
 datumctl auth get-token [-o <format>]
 ```
 
