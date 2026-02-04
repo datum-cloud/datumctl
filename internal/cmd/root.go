@@ -84,7 +84,7 @@ func RootCmd() *cobra.Command {
 		IOStreams: ioStreams,
 	}))
 
-	docsCmd := docs.Command()
+	docsCmd := docs.Command(rootCmd)
 	docsCmd.GroupID = "other"
 	rootCmd.AddCommand(docsCmd)
 
