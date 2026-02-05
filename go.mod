@@ -2,7 +2,7 @@ module go.datum.net/datumctl
 
 go 1.25.0
 
-toolchain go1.25.6
+toolchain go1.25.7
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
