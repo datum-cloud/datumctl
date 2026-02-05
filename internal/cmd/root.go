@@ -13,6 +13,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
+	kubeauth "k8s.io/kubectl/pkg/cmd/auth"
 	delcmd "k8s.io/kubectl/pkg/cmd/delete"
 	"k8s.io/kubectl/pkg/cmd/describe"
 	"k8s.io/kubectl/pkg/cmd/diff"
@@ -45,6 +46,10 @@ func RootCmd() *cobra.Command {
 	rootCmd.AddGroup(&cobra.Group{ID: "resource", Title: "Resource Management"})
 
 	authCommand := auth.Command()
+	whoami := kubeauth.NewCmdWhoAmI(factory, ioStreams)
+	authCommand.AddCommand(whoami)
+	cani := kubeauth.NewCmdCanI(factory, ioStreams)
+	authCommand.AddCommand(cani)
 	authCommand.GroupID = "auth"
 	rootCmd.AddCommand(authCommand)
 
