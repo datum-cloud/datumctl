@@ -1,6 +1,8 @@
 package auth
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+)
 
 // Command creates the base "auth" command and adds subcommands for login,
 // logout, token retrieval, etc.
