@@ -25,18 +25,21 @@ keyring.
 To authenticate with Datum Cloud, use the `login` command:
 
 ```
-datumctl auth login [--hostname <auth-hostname>] [-v]
+datumctl auth login [--hostname <auth-hostname>] [--no-browser] [-v]
 ```
 
 *   `--hostname <auth-hostname>`: (Optional) Specify the hostname of the Datum
     Cloud authentication server. Defaults to `auth.datum.net`.
+*   `--no-browser`: (Optional) Do not attempt to open a browser; print the login
+    URL and use the device authorization flow (enter a user code) so you can
+    complete login without a local callback.
 *   `-v, --verbose`: (Optional) Print the full ID token claims after successful
     login.
 
 Running this command will:
 
 1.  Attempt to open your default web browser to the Datum Cloud authentication
-    page.
+    page (or use device authorization if `--no-browser` is used).
 2.  If the browser cannot be opened automatically, it will print a URL for you
     to visit manually.
 3.  Authenticate via the web page (this might involve entering your
