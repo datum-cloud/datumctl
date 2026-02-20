@@ -58,6 +58,33 @@ func TestNormalizeSeeAlsoLine(t *testing.T) {
 	}
 }
 
+func TestDropFirstH2HeaderLine(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		dropped bool
+	}{
+		{name: "h2 header dropped", in: "## Title\n", want: "", dropped: true},
+		{name: "h2 with indent dropped", in: "  ## Title\n", want: "", dropped: true},
+		{name: "h3 not dropped", in: "### Title\n", want: "### Title\n", dropped: false},
+		{name: "non-header", in: "Title\n", want: "Title\n", dropped: false},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, dropped := dropFirstH2HeaderLine(test.in)
+			if got != test.want || dropped != test.dropped {
+				t.Fatalf("dropFirstH2HeaderLine(%q) = (%q, %v), want (%q, %v)", test.in, got, dropped, test.want, test.dropped)
+			}
+		})
+	}
+}
+
 func TestDownscaleMarkdownHeadersInFile_RespectsFences(t *testing.T) {
 	t.Parallel()
 
@@ -93,7 +120,6 @@ func TestDownscaleMarkdownHeadersInFile_RespectsFences(t *testing.T) {
 		"```bash\n" +
 		"# Not\n" +
 		"```\n" +
-		"## B\n" +
 		"~~~\n" +
 		"### Not2\n" +
 		"~~~\n"

@@ -34,6 +34,8 @@ func GenerateDocumentationCmd(root *cobra.Command) *cobra.Command {
 	)
 	const fmTemplate = `---
 title: "%s"
+sidebar:
+  hidden: true
 ---
 `
 
@@ -44,7 +46,7 @@ title: "%s"
 	}
 	linkHandler := func(name string) string {
 		base := strings.TrimSuffix(name, path.Ext(name))
-		return "/docs/datumctl/commands/" + strings.ToLower(base) + "/"
+		return "/docs/datumctl/command/" + strings.ToLower(base) + "/"
 	}
 	cmd := &cobra.Command{
 		Use:     "generate-cli-docs",
@@ -75,6 +77,7 @@ func downscaleMarkdownHeadersInDir(root string) error {
 }
 
 func downscaleMarkdownHeadersInFile(filename string) error {
+	isDatumctlDoc := filepath.Base(filename) == "datumctl.md"
 	in, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -94,6 +97,7 @@ func downscaleMarkdownHeadersInFile(filename string) error {
 	writer := bufio.NewWriter(tmp)
 	inFence := false
 	var fenceMarker string
+	dropNextH2Header := true
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -114,8 +118,23 @@ func downscaleMarkdownHeadersInFile(filename string) error {
 				fenceMarker = ""
 			}
 		} else if !inFence {
+			if isDatumctlDoc {
+				line = replaceDatumctlTitle(line)
+			}
+			if dropNextH2Header {
+				var dropped bool
+				line, dropped = dropFirstH2HeaderLine(line)
+				if dropped {
+					dropNextH2Header = false
+					if isEOF {
+						break
+					}
+					continue
+				}
+			}
 			line = replaceH1WithH3(line)
 			line = normalizeSeeAlsoLine(line)
+			line = normalizeDatumctlCommandLinks(line)
 		}
 
 		if _, werr := writer.WriteString(line); werr != nil {
@@ -137,6 +156,14 @@ func downscaleMarkdownHeadersInFile(filename string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), filename)
+}
+
+func dropFirstH2HeaderLine(line string) (string, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if strings.HasPrefix(trimmed, "## ") {
+		return "", true
+	}
+	return line, false
 }
 
 func replaceH1WithH3(line string) string {
@@ -168,6 +195,21 @@ func normalizeSeeAlsoLine(line string) string {
 	}
 	if strings.Contains(line, "[SEE ALSO](") {
 		return strings.ReplaceAll(line, "[SEE ALSO](", "[See also](")
+	}
+	return line
+}
+
+func normalizeDatumctlCommandLinks(line string) string {
+	return strings.ReplaceAll(line, "/docs/datumctl/command/datumctl/", "/docs/datumctl/cli-reference/")
+}
+
+func replaceDatumctlTitle(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "hidden: true" {
+		return strings.Replace(line, "hidden: true", "hidden: false", 1)
+	}
+	if trimmed == `title: "datumctl"` {
+		return strings.Replace(line, `title: "datumctl"`, `title: "CLI command reference"`, 1)
 	}
 	return line
 }
