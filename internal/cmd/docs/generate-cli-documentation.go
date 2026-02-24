@@ -1,7 +1,10 @@
 package docs
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -49,13 +52,122 @@ title: "%s"
 		Example: generateDocExample,
 		Long:    generateDocLong,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := doc.GenMarkdownTreeCustom(root, outputDir, filePrepender, linkHandler)
-			if err != nil {
+			if err := doc.GenMarkdownTreeCustom(root, outputDir, filePrepender, linkHandler); err != nil {
 				return err
 			}
-			return nil
+			return downscaleMarkdownHeadersInDir(outputDir)
 		},
 	}
 	cmd.Flags().StringVar(&outputDir, "output-dir", "/tmp/datumctl-generated-doc", "Directory to use to output the generated documentation")
 	return cmd
+}
+
+func downscaleMarkdownHeadersInDir(root string) error {
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".md" {
+			return nil
+		}
+		return downscaleMarkdownHeadersInFile(path)
+	})
+}
+
+func downscaleMarkdownHeadersInFile(filename string) error {
+	in, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	tmp, err := os.CreateTemp(filepath.Dir(filename), ".md-transform-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+
+	reader := bufio.NewReader(in)
+	writer := bufio.NewWriter(tmp)
+	inFence := false
+	var fenceMarker string
+
+	for {
+		line, err := reader.ReadString('\n')
+		isEOF := err == io.EOF
+		if err != nil && !isEOF {
+			return err
+		}
+
+		trimmed := strings.TrimRight(line, "\r\n")
+		fence := strings.TrimLeft(trimmed, " \t")
+		if strings.HasPrefix(fence, "```") || strings.HasPrefix(fence, "~~~") {
+			marker := fence[:3]
+			if !inFence {
+				inFence = true
+				fenceMarker = marker
+			} else if fenceMarker == marker {
+				inFence = false
+				fenceMarker = ""
+			}
+		} else if !inFence {
+			line = replaceH1WithH3(line)
+			line = normalizeSeeAlsoLine(line)
+		}
+
+		if _, werr := writer.WriteString(line); werr != nil {
+			return werr
+		}
+
+		if isEOF {
+			break
+		}
+	}
+
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := in.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filename)
+}
+
+func replaceH1WithH3(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	if len(trimmed) == 0 || trimmed[0] != '#' {
+		return line
+	}
+
+	hashes := 0
+	for hashes < len(trimmed) && trimmed[hashes] == '#' {
+		hashes++
+	}
+	if hashes != 1 {
+		return line
+	}
+	if len(trimmed) <= hashes || trimmed[hashes] != ' ' {
+		return line
+	}
+
+	prefixLen := len(line) - len(trimmed)
+	return line[:prefixLen] + "###" + trimmed[hashes:]
+}
+
+func normalizeSeeAlsoLine(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	if strings.HasPrefix(trimmed, "### SEE ALSO") {
+		prefixLen := len(line) - len(trimmed)
+		return line[:prefixLen] + "### See also" + trimmed[len("### SEE ALSO"):]
+	}
+	if strings.Contains(line, "[SEE ALSO](") {
+		return strings.ReplaceAll(line, "[SEE ALSO](", "[See also](")
+	}
+	return line
 }
