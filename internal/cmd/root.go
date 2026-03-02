@@ -20,6 +20,7 @@ import (
 	"k8s.io/kubectl/pkg/cmd/edit"
 	"k8s.io/kubectl/pkg/cmd/explain"
 	"k8s.io/kubectl/pkg/cmd/get"
+	"k8s.io/kubectl/pkg/cmd/version"
 )
 
 func RootCmd() *cobra.Command {
@@ -27,6 +28,8 @@ func RootCmd() *cobra.Command {
 		Use:   "datumctl",
 		Short: "A CLI for interacting with the Datum platform",
 	}
+	// kubectl version expects this flag to exist; add it here to avoid nil deref.
+	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
 	ioStreams := genericclioptions.IOStreams{
 		In:     rootCmd.InOrStdin(),
 		Out:    rootCmd.OutOrStdout(),
@@ -82,6 +85,10 @@ func RootCmd() *cobra.Command {
 	apiResourceCmd := apiresources.NewCmdAPIResources(factory, ioStreams)
 	apiResourceCmd.GroupID = "other"
 	rootCmd.AddCommand(apiResourceCmd)
+
+	versionCmd := version.NewCmdVersion(factory, ioStreams)
+	versionCmd.GroupID = "other"
+	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.AddCommand(mcp.Command())
 	rootCmd.AddCommand(activity.NewActivityCommand(activity.ActivityCommandOptions{

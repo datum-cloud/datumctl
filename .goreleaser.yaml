@@ -19,6 +19,11 @@ builds:
       - linux
       - windows
       - darwin
+    ldflags:
+    - "-X k8s.io/component-base/version.gitVersion=v{{.Version}}"
+    - "-X k8s.io/component-base/version.gitCommit={{.Commit}}"
+    - "-X k8s.io/component-base/version.gitTreeState={{.GitTreeState}}"
+    - "-X k8s.io/component-base/version.buildDate={{.Date}}"
 
 archives:
   - format: tar.gz
