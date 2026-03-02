@@ -41,7 +41,7 @@
             # Hash of Go module dependencies.
             # Update this after changing go.mod/go.sum:
             #   task nix-update-hash
-            vendorHash = "sha256-2p22SnHmW7LV8G6aWs2f8AoNZjRNoAJWB6AhxguIM/4=";
+            vendorHash = "sha256-1OZRjIwwVHuK+RajcaIyRqHmLEwCIqMa2m973m1kGhg=";
 
             ldflags = [
               "-s"
