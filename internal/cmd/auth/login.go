@@ -192,7 +192,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 		}
 
 		// Redirect to documentation site upon success
-		http.Redirect(w, r, "https://docs.datum.net", http.StatusFound)
+		http.Redirect(w, r, "https://www.datum.net/docs/datumctl/cli-reference/#see-also", http.StatusFound)
 
 		codeChan <- code // Send code
 		// Server shutdown will be initiated by the main goroutine now
