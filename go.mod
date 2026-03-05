@@ -20,7 +20,7 @@ require (
 	k8s.io/client-go v0.35.2
 	k8s.io/component-base v0.35.1
 	k8s.io/kubectl v0.35.1
-	sigs.k8s.io/controller-runtime v0.23.1
+	sigs.k8s.io/controller-runtime v0.23.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
