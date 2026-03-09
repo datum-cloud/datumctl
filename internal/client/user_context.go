@@ -30,18 +30,22 @@ func NewUserContextualClient(ctx context.Context) (client.Client, error) {
 }
 
 func NewRestConfig(ctx context.Context) (*rest.Config, error) {
-	tknSrc, err := authutil.GetTokenSource(ctx)
+	userKey, _, err := authutil.GetUserKeyForCurrentContext()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user key: %w", err)
+	}
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, userKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token source: %w", err)
 	}
 	// Get user ID from stored credentials
-	userID, err := authutil.GetUserIDFromToken(ctx)
+	userID, err := authutil.GetUserIDFromTokenForUser(userKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user ID from token: %w", err)
 	}
 
 	// Get API hostname from stored credentials
-	apiHostname, err := authutil.GetAPIHostname()
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API hostname: %w", err)
 	}

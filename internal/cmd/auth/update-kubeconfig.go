@@ -30,26 +30,29 @@ func updateKubeconfigCmd() *cobra.Command {
 			}
 
 			var apiHostname string
-			var activeUserKey string
+			var userKey string
+			var datumClusterName string
 
 			// Use override hostname if provided, otherwise get from stored credentials
 			if hostname != "" {
 				apiHostname = hostname
 			} else {
 				var err error
-				apiHostname, err = authutil.GetAPIHostname()
+				userKey, datumClusterName, err = authutil.GetUserKeyForCurrentContext()
+				if err != nil {
+					return err
+				}
+
+				apiHostname, err = authutil.GetAPIHostnameForUser(userKey)
 				if err != nil {
 					return fmt.Errorf("failed to get API hostname: %w", err)
 				}
-
-				activeUserKey, err = authutil.GetActiveUserKey()
+			}
+			if datumClusterName == "" {
+				var err error
+				userKey, datumClusterName, err = authutil.GetUserKeyForCurrentContext()
 				if err != nil {
-					// We only expect an error here if the user is not logged in.
-					if errors.Is(err, authutil.ErrNoActiveUser) {
-						return errors.New("no active user found. Please login using 'datumctl auth login'")
-					}
-					// For other errors, provide more context.
-					return fmt.Errorf("failed to get active user for kubeconfig message: %w", err)
+					return err
 				}
 			}
 
@@ -100,6 +103,7 @@ func updateKubeconfigCmd() *cobra.Command {
 						"auth",
 						"get-token",
 						"--output=client.authentication.k8s.io/v1",
+						"--cluster=" + datumClusterName,
 					},
 					APIVersion:         "client.authentication.k8s.io/v1",
 					ProvideClusterInfo: false,
@@ -113,7 +117,7 @@ func updateKubeconfigCmd() *cobra.Command {
 			}
 
 			// Construct success message
-			userInfo := activeUserKey
+			userInfo := userKey
 			if userInfo == "" {
 				userInfo = "custom hostname override"
 			}

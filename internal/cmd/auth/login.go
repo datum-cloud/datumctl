@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -21,6 +20,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"go.datum.net/datumctl/internal/authutil" // Import new authutil package
+	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/keyring"
 )
 
@@ -33,9 +33,12 @@ const (
 )
 
 var (
-	hostname     string // Variable to store hostname flag
-	apiHostname  string // Variable to store api-hostname flag
-	clientIDFlag string // Variable to store client-id flag
+	hostname          string // Variable to store hostname flag
+	apiHostname       string // Variable to store api-hostname flag
+	clientIDFlag      string // Variable to store client-id flag
+	skipConfigSetup   bool
+	configClusterName string
+	configContextName string
 )
 
 var LoginCmd = &cobra.Command{
@@ -53,7 +56,12 @@ var LoginCmd = &cobra.Command{
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
 		}
-		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, (kubectlcmd.GetLogVerbosity(os.Args) != "0"))
+		opts := configSetupOptions{
+			skipConfigSetup: skipConfigSetup,
+			clusterName:     configClusterName,
+			contextName:     configContextName,
+		}
+		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, (kubectlcmd.GetLogVerbosity(os.Args) != "0"), opts)
 	},
 }
 
@@ -64,6 +72,9 @@ func init() {
 	LoginCmd.Flags().StringVar(&apiHostname, "api-hostname", "", "Hostname of the Datum Cloud API server (if not specified, will be derived from auth hostname)")
 	// Add the client-id flag
 	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
+	LoginCmd.Flags().BoolVar(&skipConfigSetup, "skip-config-setup", false, "Do not prompt to create a default cluster/context")
+	LoginCmd.Flags().StringVar(&configClusterName, "cluster-name", "", "Cluster name to use when populating config (defaults to datum-<api-hostname>)")
+	LoginCmd.Flags().StringVar(&configContextName, "context-name", "", "Context name to use when populating config (defaults to cluster name)")
 }
 
 // Generates a random PKCE code verifier
@@ -94,7 +105,13 @@ func generateRandomState(length int) (string, error) {
 }
 
 // runLoginFlow now accepts context, hostname, apiHostname, clientID, and verbose flag
-func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, clientID string, verbose bool) error {
+type configSetupOptions struct {
+	skipConfigSetup bool
+	clusterName     string
+	contextName     string
+}
+
+func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, clientID string, verbose bool, setupOpts configSetupOptions) error {
 	fmt.Printf("Starting login process for %s ...\n", authHostname)
 
 	// Determine the final API hostname to use
@@ -294,8 +311,8 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 
 	fmt.Printf("\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
 
-	// Use email directly as the key, as it already contains the hostname from the claim
-	userKey := claims.Email
+	// Use subject+auth-hostname to avoid overwriting credentials across clusters.
+	userKey := fmt.Sprintf("%s@%s", claims.Subject, authHostname)
 
 	creds := authutil.StoredCredentials{
 		Hostname:         authHostname,
@@ -320,27 +337,15 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 		return fmt.Errorf("failed to store credentials in keyring for user %s: %w", userKey, err)
 	}
 
-	activeUserKey := "" // Temp variable to check if active user was set
-	err = keyring.Set(authutil.ServiceName, authutil.ActiveUserKey, userKey)
-	if err != nil {
-		fmt.Printf("Warning: Failed to set '%s' as active user in keyring: %v\n", userKey, err)
-		fmt.Printf("Credentials for '%s' were stored successfully.\n", userKey)
-	} else {
-		// fmt.Printf("Credentials stored and set as active for user '%s'.\n", userKey) // Old message
-		activeUserKey = userKey // Mark success
-	}
-
-	// Update confirmation messages
-	if activeUserKey == userKey { // Check if we successfully set the active user
-		fmt.Println("Authentication successful. Credentials stored and set as active.")
-	} else {
-		// This case handles if setting the active user key failed but creds were stored
-		fmt.Println("Authentication successful. Credentials stored.")
-	}
+	fmt.Println("Authentication successful. Credentials stored.")
 
 	// Update the list of known users (using the new key format)
-	if err := addKnownUser(userKey); err != nil {
+	if err := authutil.AddKnownUserKey(userKey); err != nil {
 		fmt.Printf("Warning: Failed to update list of known users: %v\n", err)
+	}
+
+	if err := maybePopulateConfig(finalAPIHostname, userKey, setupOpts); err != nil {
+		return err
 	}
 
 	if verbose {
@@ -362,47 +367,77 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	return nil
 }
 
-// addKnownUser adds a userKey (now email@hostname) to the known_users list in the keyring.
-func addKnownUser(newUserKey string) error {
-	knownUsers := []string{}
-
-	// Get current list
-	knownUsersJSON, err := keyring.Get(authutil.ServiceName, authutil.KnownUsersKey)
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		// Only return error if it's not ErrNotFound
-		return fmt.Errorf("failed to get known users list from keyring: %w", err)
+func maybePopulateConfig(apiHostname string, userKey string, opts configSetupOptions) error {
+	if opts.skipConfigSetup {
+		return nil
 	}
 
-	if err == nil && knownUsersJSON != "" {
-		if err := json.Unmarshal([]byte(knownUsersJSON), &knownUsers); err != nil {
-			return fmt.Errorf("failed to unmarshal known users list: %w", err)
-		}
+	cfg, err := datumconfig.Load()
+	if err != nil {
+		return err
 	}
 
-	// Check if user already exists
-	found := false
-	for _, key := range knownUsers {
-		if key == newUserKey {
-			found = true
-			break
-		}
+	clusterName := strings.TrimSpace(opts.clusterName)
+	if clusterName == "" {
+		clusterName = "datum-" + sanitizeClusterName(apiHostname)
+	}
+	contextName := strings.TrimSpace(opts.contextName)
+	if contextName == "" {
+		contextName = clusterName
 	}
 
-	// Add if not found
-	if !found {
-		knownUsers = append(knownUsers, newUserKey)
-
-		// Marshal updated list
-		updatedJSON, err := json.Marshal(knownUsers)
-		if err != nil {
-			return fmt.Errorf("failed to marshal updated known users list: %w", err)
-		}
-
-		// Store updated list
-		if err := keyring.Set(authutil.ServiceName, authutil.KnownUsersKey, string(updatedJSON)); err != nil {
-			return fmt.Errorf("failed to store updated known users list: %w", err)
-		}
+	cluster := datumconfig.Cluster{
+		Server: datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname)),
+	}
+	if err := cfg.ValidateCluster(cluster); err != nil {
+		return err
 	}
 
+	ctx := datumconfig.Context{
+		Cluster: clusterName,
+		User:    userKey,
+	}
+	cfg.EnsureContextDefaults(&ctx)
+	if err := cfg.ValidateContext(ctx); err != nil {
+		return err
+	}
+
+	cfg.UpsertCluster(datumconfig.NamedCluster{
+		Name:    clusterName,
+		Cluster: cluster,
+	})
+	cfg.UpsertContext(datumconfig.NamedContext{
+		Name:    contextName,
+		Context: ctx,
+	})
+	cfg.UpsertUser(datumconfig.NamedUser{
+		Name: userKey,
+		User: datumconfig.User{Key: userKey},
+	})
+	if cfg.CurrentContext == "" {
+		cfg.CurrentContext = contextName
+	}
+
+	if err := datumconfig.Save(cfg); err != nil {
+		return err
+	}
+	if err := authutil.SetActiveUserKeyForCluster(clusterName, userKey); err != nil {
+		fmt.Printf("Warning: Failed to bind active user to cluster %q: %v\n", clusterName, err)
+	}
+
+	if cfg.CurrentContext == contextName {
+		fmt.Printf("Created default cluster %q and context %q in datumctl config.\n", clusterName, contextName)
+	} else {
+		fmt.Printf("Updated datumctl config with cluster %q and context %q (current-context unchanged).\n", clusterName, contextName)
+	}
 	return nil
+}
+
+func sanitizeClusterName(apiHostname string) string {
+	name := strings.TrimSpace(apiHostname)
+	name = strings.TrimPrefix(name, "https://")
+	name = strings.TrimPrefix(name, "http://")
+	name = strings.TrimSuffix(name, "/")
+	name = strings.NewReplacer(":", "-", "/", "-", " ", "-").Replace(name)
+	return name
 }

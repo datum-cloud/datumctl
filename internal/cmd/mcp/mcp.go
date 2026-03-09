@@ -13,6 +13,7 @@ import (
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/datumconfig"
 	serversvc "go.datum.net/datumctl/internal/mcp"
 )
 
@@ -37,13 +38,20 @@ MCP clients (e.g., Claude) connect over STDIO.
 Use --port to also expose a local HTTP debug API on 127.0.0.1:<port>.
 Select a Datum context with exactly one of --organization or --project.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Exactly one of --organization or --project is required.
-			if (organization == "") == (project == "") {
-				return errors.New("exactly one of --organization or --project is required")
+			_, ctxEntry, clusterEntry, err := datumconfig.LoadCurrentContext()
+			if err != nil {
+				return err
+			}
+			if organization == "" && project == "" && ctxEntry != nil {
+				organization = ctxEntry.Context.OrganizationID
+				project = ctxEntry.Context.ProjectID
+				if namespace == "" {
+					namespace = ctxEntry.Context.Namespace
+				}
 			}
 
 			// Build *rest.Config from Datum context (no kubeconfig reliance).
-			cfg, err := restConfigFromFlags(cmd.Context(), organization, project)
+			cfg, err := restConfigFromFlags(cmd.Context(), organization, project, clusterEntry)
 			if err != nil {
 				return err
 			}
@@ -81,15 +89,27 @@ Select a Datum context with exactly one of --organization or --project.`,
 
 // restConfigFromFlags constructs a client-go *rest.Config using the same auth + host
 // pattern as internal/client/user_context.go, but scoped to an org OR a project.
-func restConfigFromFlags(ctx context.Context, organizationID, projectID string) (*rest.Config, error) {
+func restConfigFromFlags(ctx context.Context, organizationID, projectID string, clusterEntry *datumconfig.NamedCluster) (*rest.Config, error) {
 	// OIDC token & API hostname from stored credentials
-	tknSrc, err := authutil.GetTokenSource(ctx)
+	if clusterEntry == nil {
+		return nil, authutil.ErrNoCurrentContext
+	}
+	userKey, err := authutil.GetActiveUserKeyForCluster(clusterEntry.Name)
+	if err != nil {
+		return nil, err
+	}
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, userKey)
 	if err != nil {
 		return nil, fmt.Errorf("get token source: %w", err)
 	}
-	apiHostname, err := authutil.GetAPIHostname()
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
 	if err != nil {
 		return nil, fmt.Errorf("get API hostname: %w", err)
+	}
+
+	baseServer := datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname))
+	if clusterEntry != nil && clusterEntry.Cluster.Server != "" {
+		baseServer = datumconfig.CleanBaseServer(datumconfig.EnsureScheme(clusterEntry.Cluster.Server))
 	}
 
 	if (organizationID == "") == (projectID == "") {
@@ -99,11 +119,11 @@ func restConfigFromFlags(ctx context.Context, organizationID, projectID string) 
 	// Build the control-plane endpoint similar to user_context.go
 	var host string
 	if organizationID != "" {
-		host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
-			apiHostname, organizationID)
+		host = fmt.Sprintf("%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
+			baseServer, organizationID)
 	} else {
-		host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
-			apiHostname, projectID)
+		host = fmt.Sprintf("%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
+			baseServer, projectID)
 	}
 
 	return &rest.Config{

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
+	"go.datum.net/datumctl/internal/cmd/config"
 	"go.datum.net/datumctl/internal/cmd/create"
 	"go.datum.net/datumctl/internal/cmd/docs"
 	"go.datum.net/datumctl/internal/cmd/mcp"
@@ -45,6 +46,7 @@ func RootCmd() *cobra.Command {
 	factory.AddFlagMutualExclusions(rootCmd)
 
 	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
+	rootCmd.AddGroup(&cobra.Group{ID: "config", Title: "Configuration"})
 	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})
 	rootCmd.AddGroup(&cobra.Group{ID: "resource", Title: "Resource Management"})
 
@@ -55,6 +57,10 @@ func RootCmd() *cobra.Command {
 	authCommand.AddCommand(cani)
 	authCommand.GroupID = "auth"
 	rootCmd.AddCommand(authCommand)
+
+	configCmd := config.Command()
+	configCmd.GroupID = "config"
+	rootCmd.AddCommand(configCmd)
 
 	rootCmd.AddCommand(WrapResourceCommand(get.NewCmdGet("datumctl", factory, ioStreams)))
 	rootCmd.AddCommand(WrapResourceCommand(delcmd.NewCmdDelete(factory, ioStreams)))

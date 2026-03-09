@@ -2,7 +2,6 @@ package auth
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -22,8 +21,8 @@ const (
 // getTokenCmd retrieves tokens based on the --output flag.
 var getTokenCmd = &cobra.Command{
 	Use:   "get-token",
-	Short: "Retrieve access token for active user (raw or K8s format)",
-	Long: `Retrieves credentials for the currently active datumctl user.
+	Short: "Retrieve access token for current context (raw or K8s format)",
+	Long: `Retrieves credentials for the current datumctl context.
 
 Default behavior (--output=token) prints the raw access token to stdout.
 With --output=client.authentication.k8s.io/v1, prints a K8s ExecCredential JSON object
@@ -35,24 +34,36 @@ suitable for use as a kubectl credential plugin.`, // Updated description
 func init() {
 	// Add flags for direct execution mode
 	getTokenCmd.Flags().StringP("output", "o", outputFormatToken, fmt.Sprintf("Output format. One of: %s|%s", outputFormatToken, outputFormatK8sV1Creds))
+	getTokenCmd.Flags().String("cluster", "", "Datumctl cluster name to use (defaults to current context)")
 }
 
 // runGetToken implements the logic based on the --output flag.
 func runGetToken(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	outputFormat, _ := cmd.Flags().GetString("output") // Ignore error, handled by validation
+	clusterName, _ := cmd.Flags().GetString("cluster")
 
 	if outputFormat != outputFormatToken && outputFormat != outputFormatK8sV1Creds {
 		// Return error here so Cobra prints usage
 		return fmt.Errorf("invalid --output format %q. Must be %s or %s", outputFormat, outputFormatToken, outputFormatK8sV1Creds)
 	}
 
-	// Get the token source (which handles refresh and persistence automatically)
-	tokenSource, err := authutil.GetTokenSource(ctx)
+	var (
+		userKey string
+		err     error
+	)
+	if clusterName != "" {
+		userKey, err = authutil.GetActiveUserKeyForCluster(clusterName)
+	} else {
+		userKey, _, err = authutil.GetUserKeyForCurrentContext()
+	}
 	if err != nil {
-		if errors.Is(err, authutil.ErrNoActiveUser) {
-			return errors.New("no active user found in keyring. Please login first using 'datumctl auth login'")
-		}
+		return err
+	}
+
+	// Get the token source (which handles refresh and persistence automatically)
+	tokenSource, err := authutil.GetTokenSourceForUser(ctx, userKey)
+	if err != nil {
 		return fmt.Errorf("failed to get token source: %w", err)
 	}
 

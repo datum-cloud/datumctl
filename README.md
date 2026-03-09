@@ -46,6 +46,26 @@ See the [Installation Guide](https://www.datum.net/docs/quickstart/datumctl/) fo
     ```
     Now you can use `kubectl` to interact with your Datum Cloud control plane.
 
+4.  **Manage contexts and clusters (optional):**
+    ```bash
+    # Define a cluster (base API server URL)
+    datumctl config set-cluster prod --server https://api.datum.net
+
+    # Create a context for a project and namespace
+    datumctl config set-context prod-project \
+      --cluster prod \
+      --project <project-id> \
+      --namespace default
+
+    # Switch the current context
+    datumctl config use-context prod-project
+
+    # View or list contexts
+    datumctl config view
+    datumctl config get-contexts
+    ```
+    Contexts are stored in `~/.datumctl/config`. Credentials remain in the system keychain.
+
 ### MCP Setup
 
 MCP can target either an **organization** or **project** control plane. For maximum flexibility, we recommend starting with an organization context.
@@ -86,7 +106,7 @@ echo "Project ready: $PRJ_ID"
 
 Start the Model Context Protocol (MCP) server targeting a specific Datum Cloud context:
 ```bash
-# Exactly one of --organization or --project is required.
+# Exactly one of --organization or --project is required (unless a current context provides one).
 datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
 # or
 datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
