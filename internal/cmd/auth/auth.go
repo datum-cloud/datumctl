@@ -15,9 +15,7 @@ func Command() *cobra.Command {
 	cmd.AddCommand(
 		getTokenCmd,
 		LoginCmd,
-		listCmd,
 		logoutCmd,
-		switchCmd,
 		updateKubeconfigCmd(),
 	)
 

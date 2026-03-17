@@ -38,11 +38,15 @@ func NewForOrg(ctx context.Context, orgID, defaultNamespace string) (*K8sClient,
 }
 
 func restConfigFor(ctx context.Context, organizationID, projectID string) (*rest.Config, error) {
-	tknSrc, err := authutil.GetTokenSource(ctx)
+	userKey, _, err := authutil.GetUserKeyForCurrentContext()
+	if err != nil {
+		return nil, fmt.Errorf("get user key: %w", err)
+	}
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, userKey)
 	if err != nil {
 		return nil, fmt.Errorf("get token source: %w", err)
 	}
-	apiHostname, err := authutil.GetAPIHostname()
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
 	if err != nil {
 		return nil, fmt.Errorf("get API hostname: %w", err)
 	}

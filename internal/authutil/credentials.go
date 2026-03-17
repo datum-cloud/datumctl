@@ -21,13 +21,25 @@ const ServiceName = "datumctl-auth"
 // ActiveUserKey is the key used in the keyring to store the identifier of the currently active user credentials.
 const ActiveUserKey = "active_user"
 
-// KnownUsersKey is the key used in the keyring to store a JSON list of known user identifiers (email@hostname).
+// KnownUsersKey is the key used in the keyring to store a JSON list of known user identifiers (subject@hostname).
 const KnownUsersKey = "known_users"
 
 // ErrNoActiveUser indicates that no active user is set in the keyring.
 var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"No active user found.",
 	"Please login first using: `datumctl auth login`",
+)
+
+// ErrNoCurrentContext indicates there is no datumctl current context set.
+var ErrNoCurrentContext = customerrors.NewUserErrorWithHint(
+	"No current context set.",
+	"Set one with `datumctl config use-context` or login using `datumctl auth login`.",
+)
+
+// ErrNoActiveUserForCluster indicates there are no credentials for the selected cluster.
+var ErrNoActiveUserForCluster = customerrors.NewUserErrorWithHint(
+	"No credentials found for the current cluster.",
+	"Login for this cluster using: `datumctl auth login`",
 )
 
 // StoredCredentials holds all necessary information for a single authenticated session.
@@ -144,14 +156,26 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 	return newToken, nil
 }
 
-// GetTokenSource creates an oauth2.TokenSource for the active user.
+// GetTokenSource creates an oauth2.TokenSource for the current context's user.
 // This source will automatically refresh the token if it's expired and persist updates to the keyring.
 func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	creds, userKey, err := GetActiveCredentials()
+	userKey, _, err := GetUserKeyForCurrentContext()
 	if err != nil {
 		return nil, err
 	}
+	return GetTokenSourceForUser(ctx, userKey)
+}
 
+// GetTokenSourceForUser creates an oauth2.TokenSource for a specific user key.
+func GetTokenSourceForUser(ctx context.Context, userKey string) (oauth2.TokenSource, error) {
+	creds, err := GetStoredCredentials(userKey)
+	if err != nil {
+		return nil, err
+	}
+	return tokenSourceForCreds(ctx, userKey, creds), nil
+}
+
+func tokenSourceForCreds(ctx context.Context, userKey string, creds *StoredCredentials) oauth2.TokenSource {
 	// Rebuild the oauth2.Config needed for refreshing
 	conf := &oauth2.Config{
 		ClientID: creds.ClientID,
@@ -172,12 +196,21 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 		source:  baseSource,
 		userKey: userKey,
 		creds:   creds,
-	}, nil
+	}
 }
 
 // GetUserIDFromToken extracts the user ID (sub claim) from the stored credentials.
 func GetUserIDFromToken(ctx context.Context) (string, error) {
-	creds, _, err := GetActiveCredentials()
+	userKey, _, err := GetUserKeyForCurrentContext()
+	if err != nil {
+		return "", err
+	}
+	return GetUserIDFromTokenForUser(userKey)
+}
+
+// GetUserIDFromTokenForUser extracts the user ID (sub claim) for a specific user key.
+func GetUserIDFromTokenForUser(userKey string) (string, error) {
+	creds, err := GetStoredCredentials(userKey)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +222,7 @@ func GetUserIDFromToken(ctx context.Context) (string, error) {
 	return creds.Subject, nil
 }
 
-// GetActiveUserKey retrieves the key for the currently active user (e.g., email@example.com).
+// GetActiveUserKey retrieves the key for the currently active user (e.g., subject@hostname).
 func GetActiveUserKey() (string, error) {
 	activeUserKey, err := keyring.Get(ServiceName, ActiveUserKey)
 	if err != nil {
@@ -209,17 +242,25 @@ func GetActiveUserKey() (string, error) {
 // GetAPIHostname returns the API hostname from stored credentials.
 // If no API hostname is stored, it attempts to derive it from the auth hostname.
 func GetAPIHostname() (string, error) {
-	creds, _, err := GetActiveCredentials()
+	userKey, _, err := GetUserKeyForCurrentContext()
+	if err != nil {
+		return "", err
+	}
+	return GetAPIHostnameForUser(userKey)
+}
+
+// GetAPIHostnameForUser returns the API hostname from stored credentials for a specific user key.
+// If no API hostname is stored, it attempts to derive it from the auth hostname.
+func GetAPIHostnameForUser(userKey string) (string, error) {
+	creds, err := GetStoredCredentials(userKey)
 	if err != nil {
 		return "", err
 	}
 
-	// If API hostname is explicitly stored, use it
 	if creds.APIHostname != "" {
 		return creds.APIHostname, nil
 	}
 
-	// Fall back to deriving from auth hostname
 	return DeriveAPIHostname(creds.Hostname)
 }
 

@@ -11,11 +11,9 @@ API keys directly.
 Authentication involves the following commands:
 
 *   `datumctl auth login`
-*   `datumctl auth list`
 *   `datumctl auth logout`
 *   `datumctl auth get-token`
 *   `datumctl auth update-kubeconfig`
-*   `datumctl auth switch`
 
 Credentials and tokens are stored securely in your operating system's default
 keyring.
@@ -47,6 +45,14 @@ Running this command will:
 Your credentials (including refresh tokens) are stored securely in the system
 keyring, associated with your user identifier (typically your email address).
 
+On every successful login, `datumctl` also ensures a matching cluster/context
+entry exists in `~/.datumctl/config` for the API host you authenticated against.
+If a current context already exists, it remains unchanged.
+
+`datumctl` stores a list of users in `~/.datumctl/config` and links each context
+to a user key (in the `subject@auth-hostname` format). The actual tokens are
+stored in your OS keyring under the `datumctl-auth` service.
+
 ## Updating kubeconfig
 
 Once logged in, you typically need to configure `kubectl` to authenticate to
@@ -73,38 +79,8 @@ This command adds or updates the necessary cluster, user, and context entries
 in your kubeconfig file. The user entry will be configured to use
 `datumctl auth get-token --output=client.authentication.k8s.io/v1` as an `exec`
 credential plugin. This means `kubectl` commands targeting this cluster will
-automatically use your active `datumctl` login session for authentication.
-
-## Listing logged-in users
-
-To see which users you have authenticated locally, use the `list` command:
-
-```
-datumctl auth list
-# Alias: datumctl auth ls
-```
-
-This will output a table showing the Name, Email, and Status (Active or blank)
-for each set of stored credentials. The user marked `Active` is the one whose
-credentials will be used by default for other `datumctl` commands and
-`kubectl` (if configured via `update-kubeconfig`).
-
-## Switching active user
-
-If you have logged in with multiple user accounts (visible via
-`datumctl auth list`), you can switch which account is active using the
-`switch` command:
-
-```
-datumctl auth switch <user-email>
-```
-
-Replace `<user-email>` with the email address of the user you want to make
-active. This user must already be logged in.
-
-After switching, subsequent commands that require authentication (like
-`datumctl organizations list` or `kubectl` operations configured via
-`update-kubeconfig`) will use the credentials of the newly activated user.
+automatically use the credentials associated with your current `datumctl`
+context for authentication.
 
 ## Logging out
 
@@ -113,11 +89,11 @@ To remove stored credentials, use the `logout` command.
 **Log out a specific user:**
 
 ```
-datumctl auth logout <user-email>
+datumctl auth logout <user-key>
 ```
 
-Replace `<user-email>` with the email address shown in the
-`datumctl auth list` command.
+Replace `<user-key>` with the key shown in the `users` list in
+`~/.datumctl/config`. Use `--all` to remove all credentials.
 
 **Log out all users:**
 
@@ -129,12 +105,12 @@ This removes all Datum Cloud credentials stored by `datumctl` in your keyring.
 
 ## Getting tokens (advanced)
 
-The `get-token` command retrieves the current access token for the *active*
-authenticated user. This is primarily used internally by other tools (like
+The `get-token` command retrieves the current access token for the credentials
+associated with the current context. This is primarily used internally by other tools (like
 `kubectl`) but can be used directly if needed.
 
 ```
-datumctl auth get-token [-o <format>]
+datumctl auth get-token [-o <format>] [--cluster <datumctl-cluster>]
 ```
 
 *   `-o, --output <format>`: (Optional) Specify the output format. Defaults to
@@ -143,6 +119,8 @@ datumctl auth get-token [-o <format>]
     *   `client.authentication.k8s.io/v1`: Prints a Kubernetes `ExecCredential`
         JSON object containing the ID token, suitable for `kubectl`
         authentication.
+*   `--cluster <datumctl-cluster>`: (Optional) Use credentials bound to the
+    specified datumctl cluster instead of the current context.
 
 If the stored access token is expired, `get-token` will attempt to use the
 refresh token to obtain a new one automatically.

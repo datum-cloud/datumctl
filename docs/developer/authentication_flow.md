@@ -36,8 +36,9 @@ sequenceDiagram
     Datumctl->>DatumAuth: Verify ID Token signature & claims
     Datumctl->>Datumctl: Extract user info (email, name) from ID Token
     Datumctl->>OSKeyring: Store Credentials (Hostname, Tokens, User Info) keyed by user email
-    Datumctl->>OSKeyring: Update Active User pointer
     Datumctl->>OSKeyring: Update Known Users list
+    Datumctl->>OSKeyring: Bind credentials to active_user.cluster.<cluster>
+    Datumctl->>Datumctl: Upsert cluster/context/user in ~/.datumctl/config (current-context unchanged if set)
     Datumctl-->>-User: Login Successful
 ```
 
@@ -81,10 +82,13 @@ sequenceDiagram
     endpoints, scopes, and user info, is marshalled to JSON and stored
     securely in the OS keyring. The key for this entry is the user's email
     address.
-11. **Active User:** A pointer (`active_user`) is also stored in the keyring,
-    indicating which user's credentials should be used by default.
-12. **Known Users:** The user's key (email) is added to a list (`known_users`)
-    in the keyring to facilitate listing and multi-user management.
+11. **Cluster Mapping:** A cluster-specific pointer
+    (`active_user.cluster.<cluster>`) is stored in the keyring, indicating which
+    user's credentials should be used for that cluster.
+12. **Config Users:** The config file stores a `users` list keyed by
+    `subject@hostname` and each context references a user.
+13. **Known Users:** The user's key (subject@hostname) is added to a list (`known_users`)
+    in the keyring for compatibility and multi-user management.
 
 ## Token refresh & usage
 
@@ -112,7 +116,7 @@ When commands like `datumctl organizations list` or
 *   The `internal/keyring` package provides a wrapper around
     `github.com/zalando/go-keyring`.
 *   The `internal/authutil` package defines constants for the service name
-    (`datumctl-auth`) and keys (`active_user`, `known_users`, `<user-email>`)
+    (`datumctl-auth`) and keys (`active_user.cluster.<cluster>`, `known_users`, `<subject@hostname>`)
     used within the keyring.
 *   `authutil.StoredCredentials` is the structure marshalled into JSON for
     storage.

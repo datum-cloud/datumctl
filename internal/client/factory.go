@@ -2,11 +2,14 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/spf13/pflag"
 	"go.datum.net/datumctl/internal/authutil"
+	"go.datum.net/datumctl/internal/datumconfig"
 	"golang.org/x/oauth2"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/rest"
@@ -44,6 +47,10 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctxEntry, clusterEntry, err := c.loadDatumContext()
+	if err != nil {
+		return nil, err
+	}
 	if c.APIServer != nil && *c.APIServer != "" {
 		config.Host = *c.APIServer
 	}
@@ -54,7 +61,11 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		config.ServerName = *c.TLSServerName
 	}
 
-	tknSrc, err := authutil.GetTokenSource(c.Context)
+	userKey, err := c.resolveUserKeyForCluster(clusterEntry)
+	if err != nil {
+		return nil, err
+	}
+	tknSrc, err := authutil.GetTokenSourceForUser(c.Context, userKey)
 	if err != nil {
 		return nil, err
 	}
@@ -63,35 +74,47 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		return &oauth2.Transport{Source: tknSrc, Base: rt}
 	}
 
-	apiHostname, err := authutil.GetAPIHostname()
+	baseServer, err := c.resolveBaseServer(userKey, clusterEntry)
 	if err != nil {
 		return nil, err
 	}
 
-	// Handle platform-wide mode
-	isPlatformWide := c.PlatformWide != nil && *c.PlatformWide
-	hasProject := c.Project != nil && *c.Project != ""
-	hasOrganization := c.Organization != nil && *c.Organization != ""
+	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
+	if err != nil {
+		return nil, err
+	}
 
 	switch {
-	case isPlatformWide:
-		// Platform-wide mode: access the root of the platform
-		if hasProject || hasOrganization {
-			return nil, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
-		}
-		config.Host = fmt.Sprintf("https://%s", apiHostname)
-	case !hasProject && !hasOrganization:
-		// No context specified - default behavior
-	case hasOrganization && !hasProject:
-		// Organization context
-		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
-			apiHostname, *c.Organization)
-	case hasProject && !hasOrganization:
-		// Project context
-		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
-			apiHostname, *c.Project)
+	case platformWide:
+		config.Host = baseServer
+	case organizationID != "":
+		config.Host = fmt.Sprintf("%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
+			baseServer, organizationID)
+	case projectID != "":
+		config.Host = fmt.Sprintf("%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
+			baseServer, projectID)
 	default:
-		return nil, fmt.Errorf("exactly one of organizationID or projectID must be provided")
+		userID, err := authutil.GetUserIDFromTokenForUser(userKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user ID from token: %w", err)
+		}
+		config.Host = fmt.Sprintf("%s/apis/iam.miloapis.com/v1alpha1/users/%s/control-plane", baseServer, userID)
+	}
+
+	if clusterEntry != nil {
+		if (c.TLSServerName == nil || *c.TLSServerName == "") && clusterEntry.Cluster.TLSServerName != "" {
+			config.ServerName = clusterEntry.Cluster.TLSServerName
+		}
+		if (c.Insecure == nil || !*c.Insecure) && clusterEntry.Cluster.InsecureSkipTLSVerify {
+			config.Insecure = true
+		}
+		if len(config.CAData) == 0 && clusterEntry.Cluster.CertificateAuthorityData != "" {
+			decoded, err := base64.StdEncoding.DecodeString(clusterEntry.Cluster.CertificateAuthorityData)
+			if err != nil {
+				return nil, fmt.Errorf("decode certificate authority data for cluster %q: %w", clusterEntry.Name, err)
+			}
+			config.CAData = decoded
+		}
 	}
 
 	return config, nil
@@ -132,6 +155,11 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 
 	if c.ConfigFlags.Namespace != nil && *c.ConfigFlags.Namespace != "" {
 		overrides.Context.Namespace = *c.ConfigFlags.Namespace
+	} else {
+		ctxEntry, _, err := c.loadDatumContext()
+		if err == nil && ctxEntry != nil && ctxEntry.Context.Namespace != "" {
+			overrides.Context.Namespace = ctxEntry.Context.Namespace
+		}
 	}
 
 	// Apply cluster overrides if set
@@ -156,6 +184,67 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	}
 
 	return clientcmd.NewDefaultClientConfig(*kubeConfig, overrides)
+}
+
+func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.NamedContext, *datumconfig.NamedCluster, error) {
+	_, ctxEntry, clusterEntry, err := datumconfig.LoadCurrentContext()
+	if err != nil {
+		return nil, nil, err
+	}
+	return ctxEntry, clusterEntry, nil
+}
+
+func (c *CustomConfigFlags) resolveUserKeyForCluster(clusterEntry *datumconfig.NamedCluster) (string, error) {
+	if clusterEntry != nil && clusterEntry.Name != "" {
+		return authutil.GetActiveUserKeyForCluster(clusterEntry.Name)
+	}
+	return "", authutil.ErrNoCurrentContext
+}
+
+func (c *CustomConfigFlags) resolveBaseServer(userKey string, clusterEntry *datumconfig.NamedCluster) (string, error) {
+	if c.APIServer != nil && *c.APIServer != "" {
+		return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(*c.APIServer)), nil
+	}
+	if clusterEntry != nil && clusterEntry.Cluster.Server != "" {
+		return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(clusterEntry.Cluster.Server)), nil
+	}
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
+	if err != nil {
+		return "", err
+	}
+	return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname)), nil
+}
+
+func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.NamedContext) (string, string, bool, error) {
+	platformWide := c.PlatformWide != nil && *c.PlatformWide
+	projectID := ""
+	organizationID := ""
+
+	if c.Project != nil && *c.Project != "" {
+		projectID = *c.Project
+	}
+	if c.Organization != nil && *c.Organization != "" {
+		organizationID = *c.Organization
+	}
+
+	if platformWide && (projectID != "" || organizationID != "") {
+		return "", "", false, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
+	}
+
+	if projectID == "" && organizationID == "" && !platformWide && ctxEntry != nil {
+		projectID = ctxEntry.Context.ProjectID
+		organizationID = ctxEntry.Context.OrganizationID
+	}
+
+	if projectID != "" && organizationID != "" {
+		if c.Project != nil && *c.Project != "" || c.Organization != nil && *c.Organization != "" {
+			return "", "", false, fmt.Errorf("exactly one of organizationID or projectID must be provided")
+		}
+		fmt.Fprintf(os.Stderr, "Warning: context has both project_id and organization_id set; using project_id and ignoring organization_id.\n")
+		organizationID = ""
+	}
+
+	return projectID, organizationID, platformWide, nil
 }
 
 func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {

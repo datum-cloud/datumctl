@@ -18,8 +18,7 @@ var logoutCmd = &cobra.Command{
 	Short: "Remove local authentication credentials for a specified user or all users",
 	Long: `Remove local authentication credentials.
 
-Specify a user in the format 'email@hostname' to log out only that user.
-Use 'datumctl auth list' to see available users.
+Specify a user in the format 'subject@hostname' to log out only that user.
 Use the --all flag to log out all known users.`, // Updated Long description
 	Args: func(cmd *cobra.Command, args []string) error {
 		// Custom args validation
@@ -28,7 +27,7 @@ Use the --all flag to log out all known users.`, // Updated Long description
 			return errors.New("cannot specify a user argument when using the --all flag")
 		}
 		if !all && len(args) != 1 {
-			return errors.New("must specify exactly one user (email@hostname) or use the --all flag")
+			return errors.New("must specify exactly one user (subject@hostname) or use the --all flag")
 		}
 		return nil
 	},
