@@ -129,7 +129,7 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
 
 	if noBrowser {
-		token, err := runDeviceFlow(ctx, provider, providerURL, clientID, scopes)
+		token, err := runDeviceFlow(ctx, providerURL, clientID, scopes)
 		if err != nil {
 			return err
 		}
@@ -403,37 +403,31 @@ type oauthErrorResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
-func runDeviceFlow(ctx context.Context, provider *oidc.Provider, providerURL string, clientID string, scopes []string) (*oauth2.Token, error) {
-	var discovery struct {
-		DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
-	}
-	if err := provider.Claims(&discovery); err != nil {
-		return nil, fmt.Errorf("failed to read OIDC discovery document: %w", err)
-	}
-
-	deviceEndpoint := discovery.DeviceAuthorizationEndpoint
-	if deviceEndpoint == "" {
-		deviceEndpoint = strings.TrimRight(providerURL, "/") + "/oauth/v2/device_authorization"
-	}
+func runDeviceFlow(ctx context.Context, providerURL string, clientID string, scopes []string) (*oauth2.Token, error) {
+	base := strings.TrimRight(providerURL, "/")
+	deviceEndpoint := base + "/oauth/v2/device_authorization"
+	tokenURL := base + "/oauth/v2/token"
 
 	deviceResp, err := requestDeviceAuthorization(ctx, deviceEndpoint, clientID, scopes)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("\nTo authenticate, visit:")
-	if deviceResp.VerificationURIComplete != "" {
-		fmt.Printf("\n%s\n\n", deviceResp.VerificationURIComplete)
-	} else {
-		fmt.Printf("\n%s\n\n", deviceResp.VerificationURI)
+	// Force the v2 UI login path regardless of what the server returns.
+	verificationURI := base + "/ui/v2/login/device"
+	verificationURIComplete := verificationURI
+	if deviceResp.UserCode != "" {
+		verificationURIComplete += "?user_code=" + url.QueryEscape(deviceResp.UserCode)
 	}
+
+	fmt.Println("\nTo authenticate, visit:")
+	fmt.Printf("\n%s\n\n", verificationURIComplete)
 	if deviceResp.UserCode != "" {
 		fmt.Printf("And enter code: %s\n\n", deviceResp.UserCode)
 	}
 
 	fmt.Println("Waiting for authorization...")
 
-	tokenURL := provider.Endpoint().TokenURL
 	token, err := pollDeviceToken(ctx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
 	if err != nil {
 		return nil, err
