@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	stagingClientID = "360304563007327549" // Client ID for staging
+	stagingClientID = "325848904128073754" // Client ID for staging
 	prodClientID    = "328728232771788043" // Client ID for prod
 	redirectPath    = "/datumctl/auth/callback"
 	// Listen on a random port
