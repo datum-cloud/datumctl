@@ -17,7 +17,37 @@ func updateKubeconfigCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "update-kubeconfig",
-		Short: "Update the kubeconfig file",
+		Short: "Configure kubectl to access a Datum Cloud control plane (kubectl users only)",
+		Long: `For kubectl users only. datumctl users do not need this command —
+manage your resources directly with 'datumctl get', 'datumctl apply', etc.
+
+This command adds or updates a cluster, user, and context entry in your
+kubeconfig file so that kubectl can authenticate to a Datum Cloud control
+plane using your active datumctl session.
+
+After running this command, kubectl will automatically call
+'datumctl auth get-token' to obtain a fresh credential on each request.
+
+You must specify exactly one of --organization or --project:
+
+  --organization <id>   Configure kubectl access to an organization's
+                        control plane.
+  --project <id>        Configure kubectl access to a specific project's
+                        control plane.
+
+The kubeconfig is updated at $HOME/.kube/config by default, or the path
+set by the KUBECONFIG environment variable. Use --kubeconfig to override.
+
+Use --hostname to override the API server hostname (useful for self-hosted
+environments where the hostname cannot be derived from stored credentials).`,
+		Example: `  # Configure kubectl for an organization's control plane
+  datumctl auth update-kubeconfig --organization my-org-id
+
+  # Configure kubectl for a specific project's control plane
+  datumctl auth update-kubeconfig --project my-project-id
+
+  # Write to a custom kubeconfig file
+  datumctl auth update-kubeconfig --organization my-org-id --kubeconfig ~/.kube/datum-config`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Determine kubeconfig path
 			var kubeconfigPath string

@@ -18,13 +18,22 @@ import (
 var (
 	generateDocExample = templates.Examples(i18n.T(`
 		# Generate documentation into a temporary directory
-		datumctl generate-cli-docs -o /tmp/commands-doc`))
+		datumctl docs generate-cli-docs --output-dir /tmp/datumctl-docs
 
-	generateDocLong = templates.Examples(i18n.T(`
-		Generate documentation from each command metadata.
-		The directory where you place the documentation (-o) should exists.
+		# Generate documentation into the docs output directory
+		datumctl docs generate-cli-docs --output-dir ./site/content/cli`))
 
-		Each command turns into its correspondine markdown file.
+	generateDocLong = templates.LongDesc(i18n.T(`
+		Generate a markdown file for every datumctl command and write them to
+		the specified output directory.
+
+		Each command produces one markdown file named after its full command path
+		(e.g., datumctl_get.md). Files include front matter compatible with the
+		Datum Cloud documentation site.
+
+		The output directory must already exist before running this command.
+		This command is primarily used by the Datum Cloud documentation pipeline
+		to publish the CLI reference at datum.net/docs/datumctl.
 		`))
 )
 
@@ -50,7 +59,7 @@ sidebar:
 	}
 	cmd := &cobra.Command{
 		Use:     "generate-cli-docs",
-		Short:   "Generate markdown documentation",
+		Short:   "Generate markdown reference documentation for all datumctl commands",
 		Example: generateDocExample,
 		Long:    generateDocLong,
 		RunE: func(cmd *cobra.Command, args []string) error {

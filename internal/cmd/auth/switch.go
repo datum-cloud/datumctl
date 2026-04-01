@@ -12,11 +12,19 @@ import (
 
 var switchCmd = &cobra.Command{
 	Use:   "switch <user-email>",
-	Short: "Set the active authenticated user session",
-	Long: `Switches the active user context to the specified user email.
+	Short: "Switch the active Datum Cloud user session",
+	Long: `Change which locally stored user account is treated as active.
 
-The user email must correspond to an existing set of credentials previously
-established via 'datumctl auth login'. Use 'datumctl auth list' to see available users.`,
+The active user's credentials are used for all datumctl commands that
+require authentication.
+
+The email address must match an account shown by 'datumctl auth list'.
+To add a new account, run 'datumctl auth login' first.`,
+	Example: `  # See which accounts are available
+  datumctl auth list
+
+  # Switch to a different account
+  datumctl auth switch user@example.com`,
 	Args: cobra.ExactArgs(1), // Requires exactly one argument: the user email
 	RunE: func(cmd *cobra.Command, args []string) error {
 		targetUserKey := args[0]

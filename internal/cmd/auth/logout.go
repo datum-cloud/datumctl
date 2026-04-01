@@ -14,13 +14,22 @@ var logoutAll bool // Flag variable for --all
 
 // logoutCmd removes local authentication credentials for a specified user or all users.
 var logoutCmd = &cobra.Command{
-	Use:   "logout [user]",
-	Short: "Remove local authentication credentials for a specified user or all users",
-	Long: `Remove local authentication credentials.
+	Use:   "logout <email>",
+	Short: "Remove stored credentials for a user or all users",
+	Long: `Remove locally stored Datum Cloud credentials from the system keyring.
 
-Specify a user in the format 'email@hostname' to log out only that user.
-Use 'datumctl auth list' to see available users.
-Use the --all flag to log out all known users.`, // Updated Long description
+Provide the email address of the user to log out (as shown by
+'datumctl auth list'). Use --all to remove credentials for every
+logged-in user at once.
+
+If you log out the currently active user, the active session is cleared.
+You will need to run 'datumctl auth login' again before running commands
+that require authentication.`,
+	Example: `  # Log out a specific user
+  datumctl auth logout user@example.com
+
+  # Log out all authenticated users
+  datumctl auth logout --all`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		// Custom args validation
 		all, _ := cmd.Flags().GetBool("all")
@@ -28,7 +37,7 @@ Use the --all flag to log out all known users.`, // Updated Long description
 			return errors.New("cannot specify a user argument when using the --all flag")
 		}
 		if !all && len(args) != 1 {
-			return errors.New("must specify exactly one user (email@hostname) or use the --all flag")
+			return errors.New("must specify exactly one user email or use the --all flag")
 		}
 		return nil
 	},

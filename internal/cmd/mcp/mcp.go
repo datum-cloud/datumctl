@@ -26,16 +26,42 @@ func Command() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "Start the Datum MCP server",
-		Long: `Start a local MCP server exposing tools to:
-  • list & inspect CRDs
-  • validate manifests via server-side dry run
-  • generic CRUD (create/get/update/delete) for any served CRD
-  • switch context at runtime via datum/change_context
+		Short: "Start a Model Context Protocol (MCP) server for Datum Cloud",
+		Long: `Start a local MCP server that exposes Datum Cloud resource management
+capabilities to AI agents and MCP-compatible clients (e.g., Claude).
 
-MCP clients (e.g., Claude) connect over STDIO.
-Use --port to also expose a local HTTP debug API on 127.0.0.1:<port>.
-Select a Datum context with exactly one of --organization or --project.`,
+Available tools:
+  list_crds, get_crd                  Discover and inspect resource type schemas
+  validate_yaml                       Validate manifests via server-side dry run
+  create_resource, get_resource,      Generic CRUD for any Datum Cloud resource type
+  update_resource, delete_resource,
+  list_resources
+  change_context                      Switch between organization and project contexts
+                                      at runtime
+
+Safety: all write operations default to dry-run mode. Pass dryRun: false
+in the tool arguments to apply changes for real.
+
+MCP clients connect over STDIO. Use --port to also expose a local HTTP
+debug API on 127.0.0.1:<port> for testing tool calls with curl.
+
+Exactly one of --organization or --project is required.`,
+		Example: `  # Start MCP server targeting an organization
+  datumctl mcp --organization my-org-id
+
+  # Start MCP server targeting a specific project with a debug HTTP port
+  datumctl mcp --project my-project-id --port 8080
+
+  # Start MCP server with a default namespace for resource operations
+  datumctl mcp --organization my-org-id --namespace default
+
+  # Claude Desktop config (macOS) — add to mcpServers in claude_desktop_config.json:
+  # {
+  #   "datum_mcp": {
+  #     "command": "/usr/local/bin/datumctl",
+  #     "args": ["mcp", "--organization", "my-org-id", "--namespace", "default"]
+  #   }
+  # }`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Exactly one of --organization or --project is required.
 			if (organization == "") == (project == "") {
