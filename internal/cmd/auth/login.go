@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	kubectlcmd "k8s.io/kubectl/pkg/cmd"
 
@@ -36,6 +39,7 @@ var (
 	hostname     string // Variable to store hostname flag
 	apiHostname  string // Variable to store api-hostname flag
 	clientIDFlag string // Variable to store client-id flag
+	noBrowser    bool   // Variable to store no-browser flag
 )
 
 var LoginCmd = &cobra.Command{
@@ -53,7 +57,7 @@ var LoginCmd = &cobra.Command{
 			// Return an error if no client ID could be determined
 			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
 		}
-		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, (kubectlcmd.GetLogVerbosity(os.Args) != "0"))
+		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, noBrowser, (kubectlcmd.GetLogVerbosity(os.Args) != "0"))
 	},
 }
 
@@ -64,6 +68,8 @@ func init() {
 	LoginCmd.Flags().StringVar(&apiHostname, "api-hostname", "", "Hostname of the Datum Cloud API server (if not specified, will be derived from auth hostname)")
 	// Add the client-id flag
 	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
+	// Add the no-browser flag
+	LoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Do not open a browser; use the device authorization flow")
 }
 
 // Generates a random PKCE code verifier
@@ -94,7 +100,7 @@ func generateRandomState(length int) (string, error) {
 }
 
 // runLoginFlow now accepts context, hostname, apiHostname, clientID, and verbose flag
-func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, clientID string, verbose bool) error {
+func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, clientID string, noBrowser bool, verbose bool) error {
 	fmt.Printf("Starting login process for %s ...\n", authHostname)
 
 	// Determine the final API hostname to use
@@ -121,6 +127,14 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 
 	// Define scopes
 	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
+
+	if noBrowser {
+		token, err := runDeviceFlow(ctx, providerURL, clientID, scopes)
+		if err != nil {
+			return err
+		}
+		return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose)
+	}
 
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -262,6 +276,10 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	// Wait for server shutdown *after* successful exchange (or failed exchange)
 	<-serverClosed
 
+	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose)
+}
+
+func completeLogin(ctx context.Context, provider *oidc.Provider, clientID string, authHostname string, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose bool) error {
 	// Verify ID token and extract claims
 	idTokenString, ok := token.Extra("id_token").(string)
 	if !ok {
@@ -360,6 +378,201 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	}
 
 	return nil
+}
+
+type deviceAuthorizationResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int64  `json:"expires_in"`
+	Interval                int64  `json:"interval"`
+}
+
+type deviceTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	Scope        string `json:"scope"`
+}
+
+type oauthErrorResponse struct {
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+}
+
+func runDeviceFlow(ctx context.Context, providerURL string, clientID string, scopes []string) (*oauth2.Token, error) {
+	base := strings.TrimRight(providerURL, "/")
+	deviceEndpoint := base + "/oauth/v2/device_authorization"
+	tokenURL := base + "/oauth/v2/token"
+
+	deviceResp, err := requestDeviceAuthorization(ctx, deviceEndpoint, clientID, scopes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Force the v2 UI login path regardless of what the server returns.
+	verificationURI := base + "/ui/v2/login/device"
+	verificationURIComplete := verificationURI
+	if deviceResp.UserCode != "" {
+		verificationURIComplete += "?user_code=" + url.QueryEscape(deviceResp.UserCode)
+	}
+
+	fmt.Println("\nTo authenticate, visit:")
+	fmt.Printf("\n%s\n\n", verificationURIComplete)
+	if deviceResp.UserCode != "" {
+		fmt.Printf("And enter code: %s\n\n", deviceResp.UserCode)
+	}
+
+	fmt.Println("Waiting for authorization...")
+
+	token, err := pollDeviceToken(ctx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
+	if err != nil {
+		return nil, err
+	}
+
+	return token, nil
+}
+
+func requestDeviceAuthorization(ctx context.Context, endpoint string, clientID string, scopes []string) (*deviceAuthorizationResponse, error) {
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("scope", strings.Join(scopes, " "))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create device authorization request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("device authorization request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read device authorization response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var oauthErr oauthErrorResponse
+		_ = json.Unmarshal(body, &oauthErr)
+		if oauthErr.Error != "" {
+			return nil, fmt.Errorf("device authorization failed: %s (%s)", oauthErr.Error, oauthErr.ErrorDescription)
+		}
+		return nil, fmt.Errorf("device authorization failed with status %s", resp.Status)
+	}
+
+	var deviceResp deviceAuthorizationResponse
+	if err := json.Unmarshal(body, &deviceResp); err != nil {
+		return nil, fmt.Errorf("failed to parse device authorization response: %w", err)
+	}
+	if deviceResp.DeviceCode == "" {
+		return nil, fmt.Errorf("device authorization response missing device_code")
+	}
+
+	return &deviceResp, nil
+}
+
+func pollDeviceToken(ctx context.Context, tokenURL string, clientID string, deviceCode string, intervalSeconds int64, expiresIn int64) (*oauth2.Token, error) {
+	interval := time.Duration(intervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+
+	var deadline time.Time
+	if expiresIn > 0 {
+		deadline = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	}
+
+	for {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			return nil, fmt.Errorf("device authorization expired before completion")
+		}
+
+		token, errType, err := requestDeviceToken(ctx, tokenURL, clientID, deviceCode)
+		if err != nil {
+			return nil, err
+		}
+		switch errType {
+		case "":
+			return token, nil
+		case "authorization_pending":
+			// Keep polling
+		case "slow_down":
+			interval += 5 * time.Second
+		case "access_denied":
+			return nil, fmt.Errorf("device authorization denied by user")
+		case "expired_token":
+			return nil, fmt.Errorf("device authorization expired")
+		default:
+			return nil, fmt.Errorf("device authorization failed: %s", errType)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+func requestDeviceToken(ctx context.Context, tokenURL string, clientID string, deviceCode string) (*oauth2.Token, string, error) {
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", deviceCode)
+	form.Set("client_id", clientID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create device token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("device token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read device token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var oauthErr oauthErrorResponse
+		_ = json.Unmarshal(body, &oauthErr)
+		if oauthErr.Error != "" {
+			return nil, oauthErr.Error, nil
+		}
+		return nil, "", fmt.Errorf("device token request failed with status %s", resp.Status)
+	}
+
+	var tokenResp deviceTokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, "", fmt.Errorf("failed to parse device token response: %w", err)
+	}
+
+	token := &oauth2.Token{
+		AccessToken:  tokenResp.AccessToken,
+		TokenType:    tokenResp.TokenType,
+		RefreshToken: tokenResp.RefreshToken,
+		ExpiresIn:    tokenResp.ExpiresIn,
+	}
+	if tokenResp.ExpiresIn > 0 {
+		token.Expiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	}
+	token = token.WithExtra(map[string]any{
+		"id_token": tokenResp.IDToken,
+		"scope":    tokenResp.Scope,
+	})
+
+	return token, "", nil
 }
 
 // addKnownUser adds a userKey (now email@hostname) to the known_users list in the keyring.
