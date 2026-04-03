@@ -6,8 +6,16 @@ import "github.com/spf13/cobra"
 func Command(root *cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "docs",
-		Short: "Documentation and API exploration commands",
-		Long:  `Commands for exploring and browsing API documentation.`,
+		Short: "Explore API documentation and generate CLI reference docs",
+		Long: `The docs group provides tools for discovering and exploring the Datum Cloud
+API, as well as generating offline documentation for datumctl itself.
+
+Subcommands:
+  openapi               Launch a local Swagger UI to browse OpenAPI specs
+                        for any API group available in the current context.
+  generate-cli-docs     Generate markdown documentation files for all
+                        datumctl commands (used to build the published
+                        CLI reference at datum.net/docs).`,
 	}
 	cmd.AddCommand(OpenAPICmd())
 

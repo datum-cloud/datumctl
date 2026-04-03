@@ -44,7 +44,35 @@ var (
 
 var LoginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with Datum Cloud via OAuth2 PKCE flow",
+	Short: "Log in to Datum Cloud",
+	Long: `Authenticate with Datum Cloud using a secure browser-based login flow.
+
+Running this command will:
+  1. Open your default web browser to the Datum Cloud authentication page.
+     If the browser cannot open automatically, a URL is printed for manual use.
+  2. Complete authentication in the browser (username/password or SSO).
+  3. Return to datumctl, which stores your credentials (including a refresh
+     token) securely in the system keyring.
+
+After login, credentials are associated with your email address and
+automatically refreshed when they expire. Use 'datumctl auth list' to see
+all stored sessions.
+
+By default, logs into auth.datum.net (the production Datum Cloud environment).
+Use --hostname to target a different environment (e.g., staging).
+Use --api-hostname to explicitly specify the API server hostname when it
+cannot be derived from the auth hostname (e.g., in self-hosted environments).`,
+	Example: `  # Log in to Datum Cloud (opens browser)
+  datumctl auth login
+
+  # Log in to a staging environment
+  datumctl auth login --hostname auth.staging.env.datum.net
+
+  # Log in to a self-hosted environment with an explicit client ID
+  datumctl auth login --hostname auth.example.com --client-id 123456789
+
+  # Log in to a self-hosted environment with explicit API hostname
+  datumctl auth login --hostname auth.example.com --api-hostname api.example.com --client-id 123456789`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var actualClientID string
 		if clientIDFlag != "" {

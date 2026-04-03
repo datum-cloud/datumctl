@@ -41,27 +41,33 @@ func OpenAPICmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "openapi",
 		Short: "Browse OpenAPI specs for platform APIs",
-		Long: `Discovers available API groups from the platform and serves
-Swagger UI for interactive API exploration.
+		Long: `Start a local Swagger UI server that lets you browse and interact with
+the OpenAPI specifications for any Datum Cloud API group.
 
-A dropdown in the UI allows switching between different API groups
-without restarting the server.
+A dropdown in the Swagger UI allows switching between API groups without
+restarting the server. Your browser opens automatically unless --no-browser
+is specified (useful for headless or CI environments).
 
-By default, discovers APIs from the platform root. Use --organization or
---project to browse APIs from a specific control plane.
+By default, browses APIs available at the platform root. Use --organization
+or --project to explore the APIs of a specific control plane, which may
+include additional resource types beyond the platform-wide ones.
 
-Examples:
-  # Browse platform-wide APIs (default)
+Use --platform-wide to explicitly request platform-wide APIs (mutually
+exclusive with --organization and --project).`,
+		Example: `  # Browse platform-wide APIs (opens browser automatically)
   datumctl docs openapi
 
-  # Browse APIs for an organization
-  datumctl docs openapi --organization my-org
+  # Browse APIs available in an organization's control plane
+  datumctl docs openapi --organization my-org-id
 
-  # Browse APIs for a project
-  datumctl docs openapi --project my-project
+  # Browse APIs available in a project's control plane
+  datumctl docs openapi --project my-project-id
 
-  # Use a specific port
-  datumctl docs openapi --port 8080`,
+  # Use a fixed port
+  datumctl docs openapi --port 8080
+
+  # Browse platform-wide APIs without opening a browser (headless/CI)
+  datumctl docs openapi --platform-wide --no-browser`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runOpenAPI(cmd.Context(), cmd, opts)
 		},

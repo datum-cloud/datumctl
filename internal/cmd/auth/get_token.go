@@ -22,12 +22,33 @@ const (
 // getTokenCmd retrieves tokens based on the --output flag.
 var getTokenCmd = &cobra.Command{
 	Use:   "get-token",
-	Short: "Retrieve access token for active user (raw or K8s format)",
-	Long: `Retrieves credentials for the currently active datumctl user.
+	Short: "Print the active user's access token (advanced / kubectl integration)",
+	Long: `Print the current access token for the active Datum Cloud user.
 
-Default behavior (--output=token) prints the raw access token to stdout.
-With --output=client.authentication.k8s.io/v1, prints a K8s ExecCredential JSON object
-suitable for use as a kubectl credential plugin.`, // Updated description
+Most datumctl users do not need this command — datumctl handles
+authentication automatically for all its own commands.
+
+This command exists for two advanced use cases:
+
+  1. kubectl credential plugin: invoked automatically by kubectl after you
+     run 'datumctl auth update-kubeconfig'. You do not need to call it
+     directly in that case.
+
+  2. Scripting or direct API calls: use --output=token to get a raw bearer
+     token to pass to curl or other HTTP clients.
+
+If the stored token is expired, datumctl automatically uses the stored
+refresh token to obtain a new one before printing.
+
+Output formats (--output / -o):
+  token                         Print the raw access token (default).
+  client.authentication.k8s.io/v1  Print a Kubernetes ExecCredential JSON
+                                object for kubectl credential plugin use.`,
+	Example: `  # Get a raw token for use in a script or direct API call
+  datumctl auth get-token
+
+  # Get a Kubernetes ExecCredential JSON object (used by kubectl automatically)
+  datumctl auth get-token --output=client.authentication.k8s.io/v1`,
 	Args: cobra.NoArgs,
 	RunE: runGetToken, // Use single function
 }

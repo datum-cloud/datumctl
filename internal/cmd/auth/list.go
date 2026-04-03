@@ -16,6 +16,20 @@ var listCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List locally authenticated users",
 	Aliases: []string{"ls"},
+	Long: `Display a table of all Datum Cloud users whose credentials are stored
+locally in the system keyring, along with their status.
+
+Columns:
+  Name    The display name from the user's Datum Cloud account.
+  Email   The email address used to log in. Pass this to 'datumctl auth switch'
+          or 'datumctl auth logout' to act on a specific account.
+  Status  "Active" marks the account whose credentials are used by default
+          for all subsequent datumctl commands.`,
+	Example: `  # Show all logged-in users
+  datumctl auth list
+
+  # Alias
+  datumctl auth ls`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runList()
 	},
