@@ -36,10 +36,12 @@ const (
 )
 
 var (
-	hostname     string // Variable to store hostname flag
-	apiHostname  string // Variable to store api-hostname flag
-	clientIDFlag string // Variable to store client-id flag
-	noBrowser    bool   // Variable to store no-browser flag
+	hostname         string // Variable to store hostname flag
+	apiHostname      string // Variable to store api-hostname flag
+	clientIDFlag     string // Variable to store client-id flag
+	noBrowser        bool   // Variable to store no-browser flag
+	credentialsFile  string // Variable to store credentials file path flag
+	debugCredentials bool   // Variable to store debug flag for credentials flow
 )
 
 var LoginCmd = &cobra.Command{
@@ -74,6 +76,10 @@ cannot be derived from the auth hostname (e.g., in self-hosted environments).`,
   # Log in to a self-hosted environment with explicit API hostname
   datumctl auth login --hostname auth.example.com --api-hostname api.example.com --client-id 123456789`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if credentialsFile != "" {
+			return runMachineAccountLogin(cmd.Context(), credentialsFile, debugCredentials)
+		}
+
 		var actualClientID string
 		if clientIDFlag != "" {
 			actualClientID = clientIDFlag
@@ -98,6 +104,9 @@ func init() {
 	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
 	// Add the no-browser flag
 	LoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Do not open a browser; use the device authorization flow")
+	// Add the credentials flag for machine account (non-interactive) login
+	LoginCmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a machine account credentials JSON file downloaded from the Datum Cloud portal")
+	LoginCmd.Flags().BoolVar(&debugCredentials, "debug", false, "Print JWT claims and token request details (credentials flow only)")
 }
 
 // Generates a random PKCE code verifier
