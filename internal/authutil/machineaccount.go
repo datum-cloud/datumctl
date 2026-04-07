@@ -108,10 +108,22 @@ func MintJWT(clientID, privateKeyID, privateKeyPEM, tokenURI string) (string, er
 	return signed, nil
 }
 
+// tokenHTTPClient is used for all JWT bearer token exchanges.
+// A dedicated client with a timeout prevents indefinite hangs on slow endpoints.
+var tokenHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // ExchangeJWT POSTs a signed JWT to tokenURI using the jwt-bearer grant and
 // returns the resulting oauth2.Token. The token will have no RefreshToken.
 // If scope is empty, "openid profile email" is used as the default.
 func ExchangeJWT(ctx context.Context, tokenURI, signedJWT, scope string) (*oauth2.Token, error) {
+	u, err := url.Parse(tokenURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token URI: %w", err)
+	}
+	if u.Scheme != "https" {
+		return nil, fmt.Errorf("token_uri must use HTTPS, got %q", u.Scheme)
+	}
+
 	if scope == "" {
 		scope = "openid profile email"
 	}
@@ -126,13 +138,13 @@ func ExchangeJWT(ctx context.Context, tokenURI, signedJWT, scope string) (*oauth
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := tokenHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("JWT bearer token request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB cap
 	if err != nil {
 		return nil, fmt.Errorf("failed to read JWT bearer response: %w", err)
 	}
