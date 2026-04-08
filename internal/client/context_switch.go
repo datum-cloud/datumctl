@@ -11,6 +11,13 @@ import (
 	"go.datum.net/datumctl/internal/authutil"
 )
 
+// RestConfigForContext constructs a *rest.Config scoped to exactly one of
+// organizationID or projectID. It is the shared implementation used by both
+// internal/cmd/mcp and internal/cmd/ai.
+func RestConfigForContext(ctx context.Context, organizationID, projectID string) (*rest.Config, error) {
+	return restConfigFor(ctx, organizationID, projectID)
+}
+
 func NewForProject(ctx context.Context, projectID, defaultNamespace string) (*K8sClient, error) {
 	cfg, err := restConfigFor(ctx, "", projectID)
 	if err != nil {

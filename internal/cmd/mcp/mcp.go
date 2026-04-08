@@ -2,16 +2,10 @@
 package mcp
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"net/http"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-	"k8s.io/client-go/rest"
 
-	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/client"
 	serversvc "go.datum.net/datumctl/internal/mcp"
 )
@@ -69,7 +63,7 @@ Exactly one of --organization or --project is required.`,
 			}
 
 			// Build *rest.Config from Datum context (no kubeconfig reliance).
-			cfg, err := restConfigFromFlags(cmd.Context(), organization, project)
+			cfg, err := client.RestConfigForContext(cmd.Context(), organization, project)
 			if err != nil {
 				return err
 			}
@@ -105,37 +99,3 @@ Exactly one of --organization or --project is required.`,
 	return cmd
 }
 
-// restConfigFromFlags constructs a client-go *rest.Config using the same auth + host
-// pattern as internal/client/user_context.go, but scoped to an org OR a project.
-func restConfigFromFlags(ctx context.Context, organizationID, projectID string) (*rest.Config, error) {
-	// OIDC token & API hostname from stored credentials
-	tknSrc, err := authutil.GetTokenSource(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get token source: %w", err)
-	}
-	apiHostname, err := authutil.GetAPIHostname()
-	if err != nil {
-		return nil, fmt.Errorf("get API hostname: %w", err)
-	}
-
-	if (organizationID == "") == (projectID == "") {
-		return nil, errors.New("exactly one of organizationID or projectID must be provided")
-	}
-
-	// Build the control-plane endpoint similar to user_context.go
-	var host string
-	if organizationID != "" {
-		host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
-			apiHostname, organizationID)
-	} else {
-		host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
-			apiHostname, projectID)
-	}
-
-	return &rest.Config{
-		Host: host,
-		WrapTransport: func(rt http.RoundTripper) http.RoundTripper {
-			return &oauth2.Transport{Source: tknSrc, Base: rt}
-		},
-	}, nil
-}

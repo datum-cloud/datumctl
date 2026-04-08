@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -84,6 +86,78 @@ func (c *K8sClient) GetCRD(ctx context.Context, name string) (*apiextv1.CustomRe
 		return nil, err
 	}
 	return crd, nil
+}
+
+// DiscoverResourceTypes returns all API resource types using the discovery API.
+// Unlike ListCRDs, this does not require access to the apiextensions.k8s.io API
+// and works with any authenticated user.
+func (c *K8sClient) DiscoverResourceTypes() ([]map[string]any, error) {
+	_, lists, err := c.disco.ServerGroupsAndResources()
+	if err != nil {
+		return nil, fmt.Errorf("discovery: %w", err)
+	}
+	var items []map[string]any
+	for _, list := range lists {
+		gv := list.GroupVersion
+		var group, version string
+		if idx := strings.LastIndex(gv, "/"); idx >= 0 {
+			group, version = gv[:idx], gv[idx+1:]
+		} else {
+			version = gv
+		}
+		for _, r := range list.APIResources {
+			if strings.Contains(r.Name, "/") {
+				continue // skip subresources
+			}
+			items = append(items, map[string]any{
+				"name":     r.Name + "." + group,
+				"group":    group,
+				"kind":     r.Kind,
+				"versions": []string{version},
+			})
+		}
+	}
+	return items, nil
+}
+
+// GetOpenAPISchema fetches the OpenAPI V3 schema for a specific API group/version
+// directly from the server. This is accessible to any authenticated user and does
+// not require CRD access. Returns the raw JSON schema document.
+func (c *K8sClient) GetOpenAPISchema(groupVersion string) (string, error) {
+	// Build the OpenAPI v3 path: /openapi/v3/apis/{group}/{version}
+	// For core group (e.g. "v1"): /openapi/v3/api/v1
+	var path string
+	parts := strings.SplitN(groupVersion, "/", 2)
+	if len(parts) == 2 {
+		path = fmt.Sprintf("/openapi/v3/apis/%s/%s", parts[0], parts[1])
+	} else {
+		path = fmt.Sprintf("/openapi/v3/api/%s", groupVersion)
+	}
+
+	httpClient, err := rest.HTTPClientFor(c.cfg)
+	if err != nil {
+		return "", fmt.Errorf("build http client: %w", err)
+	}
+	url := strings.TrimRight(c.cfg.Host, "/") + path
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("openapi request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read openapi response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("openapi HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return string(body), nil
 }
 
 // ValidateYAML validates one or more YAML documents using Create with server-side dry-run.

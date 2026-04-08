@@ -16,6 +16,11 @@ Subcommands:
   generate-cli-docs     Generate markdown documentation files for all
                         datumctl commands (used to build the published
                         CLI reference at datum.net/docs).`,
+		Example: `  # Browse platform-wide APIs in a local Swagger UI
+  datumctl docs openapi
+
+  # Generate CLI reference docs into a local directory
+  datumctl docs generate-cli-docs --output-dir /tmp/datumctl-docs`,
 	}
 	cmd.AddCommand(OpenAPICmd())
 

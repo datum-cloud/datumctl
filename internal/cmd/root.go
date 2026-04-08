@@ -8,6 +8,7 @@ import (
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/create"
 	"go.datum.net/datumctl/internal/cmd/docs"
+	aicmd "go.datum.net/datumctl/internal/cmd/ai"
 	"go.datum.net/datumctl/internal/cmd/mcp"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -212,6 +213,24 @@ what would be deleted before committing.`
 	rootCmd.AddCommand(WrapResourceCommand(deleteCmd))
 
 	createCmd := create.NewCmdCreate(factory, ioStreams)
+	createCmd.Short = "Create a Datum Cloud resource from a file or stdin"
+	createCmd.Long = `Create a new Datum Cloud resource by providing a manifest in YAML or JSON
+format, either from a file or piped through stdin.
+
+datumctl create accepts Datum Cloud resource manifests — not Kubernetes
+built-in resources. Use 'datumctl apply' for idempotent creation or updates.
+
+Resource manifests must specify the correct apiVersion and kind for the
+Datum Cloud resource type. Use 'datumctl explain <type>' to see the schema
+for a resource type and 'datumctl api-resources' to list available types.`
+	createCmd.Example = `  # Create a project from a manifest file
+  datumctl create -f ./project.yaml --organization <org-id>
+
+  # Create a resource from stdin
+  cat dnszone.yaml | datumctl create -f - --project <project-id>
+
+  # Validate the resource without creating it
+  datumctl create -f ./project.yaml --organization <org-id> --dry-run=server`
 	hideFlags(createCmd,
 		"allow-missing-template-keys", "kustomize", "template", "save-config",
 	)
@@ -431,6 +450,7 @@ the server.`
 	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.AddCommand(mcp.Command())
+	rootCmd.AddCommand(aicmd.Command())
 
 	activityCmd := activity.NewActivityCommand(activity.ActivityCommandOptions{
 		Factory:   factory,
