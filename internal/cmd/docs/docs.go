@@ -18,6 +18,11 @@ Subcommands:
                         CLI reference at datum.net/docs).
   generate-man-pages    Generate man page files for all datumctl commands,
                         following the kubectl naming convention (e.g. datumctl-get.1).`,
+		Example: `  # Browse platform-wide APIs in a local Swagger UI
+  datumctl docs openapi
+
+  # Generate CLI reference docs into a local directory
+  datumctl docs generate-cli-docs --output-dir /tmp/datumctl-docs`,
 	}
 	cmd.AddCommand(OpenAPICmd())
 
