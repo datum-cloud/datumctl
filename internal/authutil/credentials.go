@@ -30,6 +30,17 @@ var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"Please login first using: `datumctl auth login`",
 )
 
+// MachineAccountState holds fields needed to re-mint a JWT when the access token expires.
+// Only populated when CredentialType == "machine_account".
+type MachineAccountState struct {
+	ClientEmail  string `json:"client_email"`
+	ClientID     string `json:"client_id"`
+	PrivateKeyID string `json:"private_key_id"`
+	PrivateKey   string `json:"private_key"`
+	TokenURI     string `json:"token_uri"`
+	Scope        string `json:"scope,omitempty"`
+}
+
 // StoredCredentials holds all necessary information for a single authenticated session.
 type StoredCredentials struct {
 	Hostname         string        `json:"hostname"`           // The auth server hostname used (e.g., auth.datum.net)
@@ -42,6 +53,11 @@ type StoredCredentials struct {
 	UserName         string        `json:"user_name"`          // User's Name (e.g., from 'name' claim)
 	UserEmail        string        `json:"user_email"`         // User's Email (e.g., from 'email' claim)
 	Subject          string        `json:"subject"`            // User's Subject ID (sub claim from JWT)
+	// CredentialType distinguishes how stored credentials should be refreshed.
+	// "" or "interactive" → standard oauth2 refresh token path.
+	// "machine_account"  → re-mint JWT and re-exchange on expiry.
+	CredentialType string               `json:"credential_type,omitempty"`
+	MachineAccount *MachineAccountState `json:"machine_account,omitempty"`
 }
 
 // GetActiveCredentials retrieves the StoredCredentials for the currently active user.
@@ -150,6 +166,17 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	creds, userKey, err := GetActiveCredentials()
 	if err != nil {
 		return nil, err
+	}
+
+	if creds.CredentialType == "machine_account" {
+		if creds.MachineAccount == nil {
+			return nil, fmt.Errorf("machine account credentials are missing from stored session")
+		}
+		return &machineAccountTokenSource{
+			ctx:     ctx,
+			creds:   creds,
+			userKey: userKey,
+		}, nil
 	}
 
 	// Rebuild the oauth2.Config needed for refreshing
