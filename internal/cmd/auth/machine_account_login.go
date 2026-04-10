@@ -5,18 +5,29 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
+
+	"github.com/coreos/go-oidc/v3/oidc"
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/keyring"
 )
 
+// defaultMachineAccountScope is used when the credentials file does not
+// specify a scope. The file's scope field is still honored for backward
+// compatibility; new credentials files should omit it.
+const defaultMachineAccountScope = "openid profile email offline_access"
+
 // runMachineAccountLogin handles the --credentials flag path for `datumctl auth login`.
-// It reads a machine account credentials file, mints a JWT, exchanges it for an
-// initial access token, and stores the resulting session in the keyring.
-func runMachineAccountLogin(ctx context.Context, credentialsPath string, debug bool) error {
+// It reads a machine account credentials file, discovers the token endpoint via OIDC
+// well-known config, mints a JWT, exchanges it for an initial access token, and stores
+// the resulting session in the keyring.
+//
+// hostname is the auth server hostname (e.g., "auth.datum.net"), taken from the --hostname
+// flag. apiHostname is the API server hostname; when empty, it is derived from hostname
+// using authutil.DeriveAPIHostname.
+func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiHostname string, debug bool) error {
 	data, err := os.ReadFile(credentialsPath)
 	if err != nil {
 		return fmt.Errorf("failed to read credentials file %q: %w", credentialsPath, err)
@@ -32,14 +43,8 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath string, debug b
 		return fmt.Errorf("unsupported credentials type %q: expected \"datum_machine_account\"", creds.Type)
 	}
 
-	// Validate all required fields are present.
+	// Validate only the fields that cannot be discovered or derived.
 	missing := []string{}
-	if creds.TokenURI == "" {
-		missing = append(missing, "token_uri")
-	}
-	if creds.ClientEmail == "" {
-		missing = append(missing, "client_email")
-	}
 	if creds.ClientID == "" {
 		missing = append(missing, "client_id")
 	}
@@ -50,11 +55,38 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath string, debug b
 		missing = append(missing, "private_key")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("credentials file is missing required fields: %v", missing)
+		return fmt.Errorf("credentials file is missing required fields: %s", strings.Join(missing, ", "))
 	}
 
-	// Mint the initial JWT assertion.
-	signedJWT, err := authutil.MintJWT(creds.ClientID, creds.PrivateKeyID, creds.PrivateKey, creds.TokenURI)
+	// Discover the token endpoint from the OIDC provider's well-known config.
+	// This mirrors the pattern used by the interactive login flow in login.go.
+	providerURL := fmt.Sprintf("https://%s", hostname)
+	provider, err := oidc.NewProvider(ctx, providerURL)
+	if err != nil {
+		return fmt.Errorf("failed to discover OIDC provider at %s: %w (pass --hostname to point datumctl at your Datum Cloud auth server)", providerURL, err)
+	}
+	tokenURI := provider.Endpoint().TokenURL
+
+	// Resolve the scope to use. Honor the file's scope for backward compatibility;
+	// otherwise fall back to the default that mirrors the interactive login flow.
+	scope := creds.Scope
+	if scope == "" {
+		scope = defaultMachineAccountScope
+	}
+
+	// Resolve the API hostname. Use the flag value when provided; otherwise derive
+	// it from the auth hostname using the same logic as the interactive login flow.
+	finalAPIHostname := apiHostname
+	if finalAPIHostname == "" {
+		derived, err := authutil.DeriveAPIHostname(hostname)
+		if err != nil {
+			return fmt.Errorf("failed to derive API hostname from auth hostname %q: %w", hostname, err)
+		}
+		finalAPIHostname = derived
+	}
+
+	// Mint the initial JWT assertion using the discovered token URI.
+	signedJWT, err := authutil.MintJWT(creds.ClientID, creds.PrivateKeyID, creds.PrivateKey, tokenURI)
 	if err != nil {
 		return fmt.Errorf("failed to mint JWT: %w", err)
 	}
@@ -68,39 +100,28 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath string, debug b
 			fmt.Fprintf(os.Stderr, "\n--- JWT header ---\n%s\n", hdr)
 			fmt.Fprintf(os.Stderr, "--- JWT claims ---\n%s\n", claims)
 		}
-		fmt.Fprintf(os.Stderr, "\n--- Token request ---\nPOST %s\nassertion=%s...\n", creds.TokenURI, signedJWT[:40])
+		fmt.Fprintf(os.Stderr, "\n--- Token request ---\nPOST %s\nassertion=%s...\n", tokenURI, signedJWT[:40])
 	}
 
-	// Exchange for an access token.
-	token, err := authutil.ExchangeJWT(ctx, creds.TokenURI, signedJWT, creds.Scope)
+	// Exchange for an access token using the discovered token URI.
+	token, err := authutil.ExchangeJWT(ctx, tokenURI, signedJWT, scope)
 	if err != nil {
 		return fmt.Errorf("failed to exchange JWT for access token: %w", err)
 	}
 
-	// Derive auth hostname from token_uri (e.g. "auth.datum.net").
-	tokenURIParsed, err := url.Parse(creds.TokenURI)
-	if err != nil {
-		return fmt.Errorf("failed to parse token_uri %q: %w", creds.TokenURI, err)
-	}
-	authHostname := tokenURIParsed.Host
-
-	// Derive api hostname from api_endpoint (e.g. "api.datum.net").
-	var apiHostname string
-	if creds.APIEndpoint != "" {
-		apiEndpointParsed, err := url.Parse(creds.APIEndpoint)
-		if err != nil {
-			return fmt.Errorf("failed to parse api_endpoint %q: %w", creds.APIEndpoint, err)
-		}
-		apiHostname = apiEndpointParsed.Host
+	// Determine the display name. Prefer client_email if present; fall back to client_id.
+	displayName := creds.ClientEmail
+	if displayName == "" {
+		displayName = creds.ClientID
 	}
 
 	stored := authutil.StoredCredentials{
-		Hostname:         authHostname,
-		APIHostname:      apiHostname,
+		Hostname:         hostname,
+		APIHostname:      finalAPIHostname,
 		ClientID:         creds.ClientID,
-		EndpointTokenURL: creds.TokenURI,
+		EndpointTokenURL: tokenURI,
 		Token:            token,
-		UserName:         creds.ClientEmail,
+		UserName:         displayName,
 		UserEmail:        creds.ClientEmail,
 		Subject:          creds.ClientID,
 		CredentialType:   "machine_account",
@@ -109,12 +130,19 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath string, debug b
 			ClientID:     creds.ClientID,
 			PrivateKeyID: creds.PrivateKeyID,
 			PrivateKey:   creds.PrivateKey,
-			TokenURI:     creds.TokenURI,
-			Scope:        creds.Scope,
+			// Store the discovered token URI and resolved scope so that the
+			// machineAccountTokenSource can refresh tokens without re-reading
+			// the credentials file.
+			TokenURI: tokenURI,
+			Scope:    scope,
 		},
 	}
 
+	// Use client_email as the keyring key when available; fall back to client_id.
 	userKey := creds.ClientEmail
+	if userKey == "" {
+		userKey = creds.ClientID
+	}
 
 	credsJSON, err := json.Marshal(stored)
 	if err != nil {
@@ -133,6 +161,6 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath string, debug b
 		fmt.Printf("Warning: Failed to update list of known users: %v\n", err)
 	}
 
-	fmt.Printf("Authenticated as machine account: %s\n", creds.ClientEmail)
+	fmt.Printf("Authenticated as machine account: %s\n", displayName)
 	return nil
 }

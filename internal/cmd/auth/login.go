@@ -74,10 +74,14 @@ cannot be derived from the auth hostname (e.g., in self-hosted environments).`,
   datumctl auth login --hostname auth.example.com --client-id 123456789
 
   # Log in to a self-hosted environment with explicit API hostname
-  datumctl auth login --hostname auth.example.com --api-hostname api.example.com --client-id 123456789`,
+  datumctl auth login --hostname auth.example.com --api-hostname api.example.com --client-id 123456789
+
+  # Log in with a machine account credentials file (hostname is required
+  # to tell datumctl which environment to authenticate against)
+  datumctl auth login --credentials ./my-key.json --hostname auth.staging.env.datum.net`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if credentialsFile != "" {
-			return runMachineAccountLogin(cmd.Context(), credentialsFile, debugCredentials)
+			return runMachineAccountLogin(cmd.Context(), credentialsFile, hostname, apiHostname, debugCredentials)
 		}
 
 		var actualClientID string
