@@ -14,9 +14,9 @@ import (
 	"go.datum.net/datumctl/internal/keyring"
 )
 
-// defaultMachineAccountScope is the scope string used for machine account token exchanges
-// when the credentials file does not specify one. It mirrors the scopes requested by the
-// interactive login flow.
+// defaultMachineAccountScope is used when the credentials file does not
+// specify a scope. The file's scope field is still honored for backward
+// compatibility; new credentials files should omit it.
 const defaultMachineAccountScope = "openid profile email offline_access"
 
 // runMachineAccountLogin handles the --credentials flag path for `datumctl auth login`.
@@ -55,7 +55,7 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 		missing = append(missing, "private_key")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("credentials file is missing required fields: %v", missing)
+		return fmt.Errorf("credentials file is missing required fields: %s", strings.Join(missing, ", "))
 	}
 
 	// Discover the token endpoint from the OIDC provider's well-known config.
@@ -63,7 +63,7 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 	providerURL := fmt.Sprintf("https://%s", hostname)
 	provider, err := oidc.NewProvider(ctx, providerURL)
 	if err != nil {
-		return fmt.Errorf("failed to discover OIDC provider at %s: %w", providerURL, err)
+		return fmt.Errorf("failed to discover OIDC provider at %s: %w (pass --hostname to point datumctl at your Datum Cloud auth server)", providerURL, err)
 	}
 	tokenURI := provider.Endpoint().TokenURL
 
