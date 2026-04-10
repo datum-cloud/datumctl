@@ -77,7 +77,7 @@ cannot be derived from the auth hostname (e.g., in self-hosted environments).`,
   datumctl auth login --hostname auth.example.com --api-hostname api.example.com --client-id 123456789`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if credentialsFile != "" {
-			return runMachineAccountLogin(cmd.Context(), credentialsFile, debugCredentials)
+			return runMachineAccountLogin(cmd.Context(), credentialsFile, hostname, apiHostname, debugCredentials)
 		}
 
 		var actualClientID string
