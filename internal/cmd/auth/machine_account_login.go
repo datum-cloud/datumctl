@@ -115,6 +115,20 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 		displayName = creds.ClientID
 	}
 
+	// Use client_email as the keyring key when available; fall back to client_id.
+	userKey := creds.ClientEmail
+	if userKey == "" {
+		userKey = creds.ClientID
+	}
+
+	// Write the PEM private key to disk to keep the keyring blob small.
+	// On macOS the Keychain has a per-item size limit (~4 KB); embedding the
+	// PEM (~2.5 KB) alongside the access token pushes the blob over the limit.
+	keyFilePath, err := authutil.WriteMachineAccountKeyFile(userKey, creds.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to write machine account private key to disk: %w", err)
+	}
+
 	stored := authutil.StoredCredentials{
 		Hostname:         hostname,
 		APIHostname:      finalAPIHostname,
@@ -129,7 +143,9 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 			ClientEmail:  creds.ClientEmail,
 			ClientID:     creds.ClientID,
 			PrivateKeyID: creds.PrivateKeyID,
-			PrivateKey:   creds.PrivateKey,
+			// PrivateKey is intentionally left empty; the key lives on disk at
+			// PrivateKeyPath so the keyring blob stays under the macOS size limit.
+			PrivateKeyPath: keyFilePath,
 			// Store the discovered token URI and resolved scope so that the
 			// machineAccountTokenSource can refresh tokens without re-reading
 			// the credentials file.
@@ -138,18 +154,17 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 		},
 	}
 
-	// Use client_email as the keyring key when available; fall back to client_id.
-	userKey := creds.ClientEmail
-	if userKey == "" {
-		userKey = creds.ClientID
-	}
-
 	credsJSON, err := json.Marshal(stored)
 	if err != nil {
 		return fmt.Errorf("failed to serialize credentials: %w", err)
 	}
 
 	if err := keyring.Set(authutil.ServiceName, userKey, string(credsJSON)); err != nil {
+		// The PEM key was written to disk but the keyring write failed. Remove the
+		// key file as best-effort cleanup so we don't leave crypto material behind.
+		if cleanupErr := authutil.RemoveMachineAccountKeyFile(userKey); cleanupErr != nil {
+			fmt.Printf("Warning: failed to remove machine account key file after keyring error for %s: %v\n", userKey, cleanupErr)
+		}
 		return fmt.Errorf("failed to store credentials in keyring for %s: %w", userKey, err)
 	}
 

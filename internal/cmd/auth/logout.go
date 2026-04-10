@@ -91,6 +91,11 @@ func logoutSingleUser(userKeyToLogout string) error {
 		if err := keyring.Delete(authutil.ServiceName, userKeyToLogout); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			fmt.Printf("Warning: attempt to delete potential stray key for %s failed: %v\n", userKeyToLogout, err)
 		}
+		// Also remove any stray on-disk PEM file. This is the exact cleanup path
+		// users hit after a failed login left crypto material behind (issue #146).
+		if removeErr := authutil.RemoveMachineAccountKeyFile(userKeyToLogout); removeErr != nil {
+			fmt.Printf("Warning: failed to remove machine account key file for '%s': %v\n", userKeyToLogout, removeErr)
+		}
 		return nil
 	}
 
@@ -98,6 +103,14 @@ func logoutSingleUser(userKeyToLogout string) error {
 	err = keyring.Delete(authutil.ServiceName, userKeyToLogout)
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		fmt.Printf("Warning: failed to delete credentials for user '%s' from keyring: %v\n", userKeyToLogout, err)
+	}
+
+	// Remove the on-disk PEM key file for machine account sessions.
+	// This is a best-effort cleanup: ignore "not found" (interactive sessions
+	// never write a file) and only warn on other errors since the keyring entry
+	// is already gone.
+	if removeErr := authutil.RemoveMachineAccountKeyFile(userKeyToLogout); removeErr != nil {
+		fmt.Printf("Warning: failed to remove machine account key file for '%s': %v\n", userKeyToLogout, removeErr)
 	}
 
 	// 4. Update and save the known users list
@@ -163,6 +176,11 @@ func logoutAllUsers() error {
 		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			fmt.Printf("Warning: failed to delete credentials for user '%s' from keyring: %v\n", userKey, err)
 			logoutErrors = true // Mark that at least one error occurred
+		}
+
+		// Remove the on-disk PEM key file for machine account sessions (best-effort).
+		if removeErr := authutil.RemoveMachineAccountKeyFile(userKey); removeErr != nil {
+			fmt.Printf("Warning: failed to remove machine account key file for '%s': %v\n", userKey, removeErr)
 		}
 	}
 

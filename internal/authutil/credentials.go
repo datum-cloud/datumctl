@@ -36,9 +36,14 @@ type MachineAccountState struct {
 	ClientEmail  string `json:"client_email"`
 	ClientID     string `json:"client_id"`
 	PrivateKeyID string `json:"private_key_id"`
-	PrivateKey   string `json:"private_key"`
+	PrivateKey   string `json:"private_key,omitempty"`
 	TokenURI     string `json:"token_uri"`
 	Scope        string `json:"scope,omitempty"`
+	// PrivateKeyPath is the path to an on-disk file containing the PEM-encoded
+	// private key. Used when the key is too large to store in the keyring (e.g.
+	// on macOS where the Keychain has a per-item size limit). If non-empty, the
+	// token source reads the key from this path instead of PrivateKey.
+	PrivateKeyPath string `json:"private_key_path,omitempty"`
 }
 
 // StoredCredentials holds all necessary information for a single authenticated session.

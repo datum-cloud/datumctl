@@ -194,7 +194,31 @@ func (m *machineAccountTokenSource) Token() (*oauth2.Token, error) {
 	}
 
 	ma := m.creds.MachineAccount
-	signedJWT, err := MintJWT(ma.ClientID, ma.PrivateKeyID, ma.PrivateKey, ma.TokenURI)
+
+	// Resolve the PEM key. New sessions store the key on disk (PrivateKeyPath)
+	// to stay within the macOS Keychain per-item size limit; older sessions
+	// (Linux, pre-fix) may still have the key inline in PrivateKey.
+	pemKey := ma.PrivateKey
+	if pemKey == "" && ma.PrivateKeyPath != "" {
+		var readErr error
+		pemKey, readErr = ReadMachineAccountKeyFile(ma.PrivateKeyPath)
+		if readErr != nil {
+			return nil, customerrors.WrapUserErrorWithHint(
+				"failed to read machine account private key from "+ma.PrivateKeyPath,
+				"re-run 'datumctl auth login --credentials <file>'; you may need to download a new machine account credentials file from the Datum portal if the original is no longer available",
+				readErr,
+			)
+		}
+	}
+	if pemKey == "" {
+		return nil, customerrors.WrapUserErrorWithHint(
+			"machine account session is missing its private key",
+			"re-run 'datumctl auth login --credentials <file>'; you may need to download a new machine account credentials file from the Datum portal if the original is no longer available",
+			nil,
+		)
+	}
+
+	signedJWT, err := MintJWT(ma.ClientID, ma.PrivateKeyID, pemKey, ma.TokenURI)
 	if err != nil {
 		return nil, customerrors.WrapUserErrorWithHint(
 			"Failed to mint JWT for machine account authentication.",
