@@ -3,6 +3,7 @@ package authutil
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,20 +44,54 @@ func WriteMachineAccountKeyFile(userKey, pemKey string) (string, error) {
 		return "", fmt.Errorf("failed to create machine account key directory %s: %w", dir, err)
 	}
 
+	// Tighten perms on the directory even when it already existed with looser ones.
+	if err := os.Chmod(dir, 0700); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("failed to set permissions on machine account key directory %s: %w", dir, err)
+	}
+
 	destPath, err := MachineAccountKeyFilePath(userKey)
 	if err != nil {
 		return "", err
 	}
 
-	tmpPath := destPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(pemKey), 0600); err != nil {
-		return "", fmt.Errorf("failed to write machine account key to %s: %w", tmpPath, err)
+	// Use a unique temp filename so concurrent logins for the same account
+	// do not race on the same .tmp path and corrupt each other's writes.
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(destPath)+".tmp.*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file for machine account key in %s: %w", dir, err)
+	}
+	tmpName := tmpFile.Name()
+
+	// Ensure the temp file is removed on any error path. After a successful
+	// Rename the file no longer exists at tmpName, so Remove is a no-op.
+	var writeErr error
+	defer func() {
+		if writeErr != nil {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	// Be explicit about mode even though CreateTemp already uses 0600.
+	if writeErr = tmpFile.Chmod(0600); writeErr != nil {
+		_ = tmpFile.Close()
+		writeErr = fmt.Errorf("failed to set permissions on temp key file %s: %w", tmpName, writeErr)
+		return "", writeErr
 	}
 
-	if err := os.Rename(tmpPath, destPath); err != nil {
-		// Best-effort cleanup of the temp file on rename failure.
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to move machine account key to %s: %w", destPath, err)
+	if _, writeErr = tmpFile.Write([]byte(pemKey)); writeErr != nil {
+		_ = tmpFile.Close()
+		writeErr = fmt.Errorf("failed to write machine account key to %s: %w", tmpName, writeErr)
+		return "", writeErr
+	}
+
+	if writeErr = tmpFile.Close(); writeErr != nil {
+		writeErr = fmt.Errorf("failed to close temp key file %s: %w", tmpName, writeErr)
+		return "", writeErr
+	}
+
+	if writeErr = os.Rename(tmpName, destPath); writeErr != nil {
+		writeErr = fmt.Errorf("failed to move machine account key to %s: %w", destPath, writeErr)
+		return "", writeErr
 	}
 
 	return destPath, nil

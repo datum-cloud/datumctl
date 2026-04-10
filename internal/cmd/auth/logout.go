@@ -91,6 +91,11 @@ func logoutSingleUser(userKeyToLogout string) error {
 		if err := keyring.Delete(authutil.ServiceName, userKeyToLogout); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			fmt.Printf("Warning: attempt to delete potential stray key for %s failed: %v\n", userKeyToLogout, err)
 		}
+		// Also remove any stray on-disk PEM file. This is the exact cleanup path
+		// users hit after a failed login left crypto material behind (issue #146).
+		if removeErr := authutil.RemoveMachineAccountKeyFile(userKeyToLogout); removeErr != nil {
+			fmt.Printf("Warning: failed to remove machine account key file for '%s': %v\n", userKeyToLogout, removeErr)
+		}
 		return nil
 	}
 

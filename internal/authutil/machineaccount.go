@@ -203,11 +203,19 @@ func (m *machineAccountTokenSource) Token() (*oauth2.Token, error) {
 		var readErr error
 		pemKey, readErr = ReadMachineAccountKeyFile(ma.PrivateKeyPath)
 		if readErr != nil {
-			return nil, fmt.Errorf("failed to read machine account private key from %s: %w (try logging in again with 'datumctl auth login --credentials')", ma.PrivateKeyPath, readErr)
+			return nil, customerrors.WrapUserErrorWithHint(
+				"failed to read machine account private key from "+ma.PrivateKeyPath,
+				"re-run 'datumctl auth login --credentials <file>'; you may need to download a new machine account credentials file from the Datum portal if the original is no longer available",
+				readErr,
+			)
 		}
 	}
 	if pemKey == "" {
-		return nil, fmt.Errorf("machine account session is missing its private key; log in again with 'datumctl auth login --credentials'")
+		return nil, customerrors.WrapUserErrorWithHint(
+			"machine account session is missing its private key",
+			"re-run 'datumctl auth login --credentials <file>'; you may need to download a new machine account credentials file from the Datum portal if the original is no longer available",
+			nil,
+		)
 	}
 
 	signedJWT, err := MintJWT(ma.ClientID, ma.PrivateKeyID, pemKey, ma.TokenURI)

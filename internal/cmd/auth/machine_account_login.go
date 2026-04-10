@@ -160,6 +160,11 @@ func runMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 	}
 
 	if err := keyring.Set(authutil.ServiceName, userKey, string(credsJSON)); err != nil {
+		// The PEM key was written to disk but the keyring write failed. Remove the
+		// key file as best-effort cleanup so we don't leave crypto material behind.
+		if cleanupErr := authutil.RemoveMachineAccountKeyFile(userKey); cleanupErr != nil {
+			fmt.Printf("Warning: failed to remove machine account key file after keyring error for %s: %v\n", userKey, cleanupErr)
+		}
 		return fmt.Errorf("failed to store credentials in keyring for %s: %w", userKey, err)
 	}
 
