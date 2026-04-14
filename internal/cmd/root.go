@@ -8,7 +8,6 @@ import (
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/create"
 	"go.datum.net/datumctl/internal/cmd/docs"
-	"go.datum.net/datumctl/internal/cmd/mcp"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -429,8 +428,6 @@ the server.`
   datumctl version -o json`
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
-
-	rootCmd.AddCommand(mcp.Command())
 
 	activityCmd := activity.NewActivityCommand(activity.ActivityCommandOptions{
 		Factory:   factory,

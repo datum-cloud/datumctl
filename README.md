@@ -12,7 +12,6 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
 *   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
 *   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
-*   **MCP Server (optional):** Start an MCP server (`datumctl mcp`) for Datum Cloud so AI agents (e.g., Claude) can discover resources, inspect schemas, validate manifests, and perform CRUD operations via server-side dry-run.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -46,10 +45,6 @@ See the [Installation Guide](https://www.datum.net/docs/quickstart/datumctl/) fo
     ```
     Now you can use `kubectl` to interact with your Datum Cloud control plane.
 
-### MCP Setup
-
-MCP can target either an **organization** or **project** control plane. For maximum flexibility, we recommend starting with an organization context.
-
 **A) If you already have a project:**
 ```bash
 # Ensure your kube context points at an organization control plane
@@ -81,75 +76,6 @@ PRJ_ID="$(kubectl get projects -o jsonpath='{.items[-1:].metadata.name}')"
 kubectl wait --for=condition=Ready --timeout=15m project/$PRJ_ID
 echo "Project ready: $PRJ_ID"
 ```
-
-#### MCP subcommand (optional)
-
-Start the Model Context Protocol (MCP) server targeting a specific Datum Cloud context:
-```bash
-# Exactly one of --organization or --project is required.
-datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
-# or
-datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
-```
-
-##### Available Tools
-
-- **Discovery:** `list_crds`, `get_crd` - Discover and inspect Custom Resource Definitions
-- **Validation:** `validate_yaml` - Validate manifests via server-side dry-run
-- **Context:** `change_context` - Switch between organization and project contexts
-- **CRUD Operations:** `create_resource`, `get_resource`, `update_resource`, `delete_resource`, `list_resources`
-- **Safety:** All write operations default to dry-run mode; use `dryRun: false` to apply changes
-
-##### Startup & safety
-
-- **Preflight:** On startup, `datumctl mcp` verifies connectivity and auth by calling Kubernetes discovery (e.g., `GET /version`). If this check fails, the server exits.
-- **Dry-run by default:** All write operations use server-side dry-run (`dryRun=true`) by default for safety.
-
-> [!NOTE]
-> The MCP server builds its own Kubernetes connection for the selected Datum context; it does **not** depend on your local kubeconfig or `--kube-context`. Provide either `--organization` or `--project`.
-
-##### Scope: organization vs. project
-
-> [!IMPORTANT]
-> **Organization scope** provides access to all projects within the organization and allows switching between them using `change_context`.  
-> **Project scope** provides direct access to project-specific resources but limits visibility to that single project.
-
-**Recommended (organization scope)**
-```bash
-datumctl mcp --organization <org-id> --namespace <ns> [--port 8080]
-```
-
-##### Claude config (macOS)
-```json
-{
-  "mcpServers": {
-    "datum_mcp": {
-      "command": "/absolute/path/to/datumctl",
-      "args": ["mcp", "--organization", "your-org-id", "--namespace", "default"]
-    }
-  }
-}
-```
-
-**Project scope (alternative)**
-```bash
-datumctl mcp --project <project-id> --namespace <ns> [--port 8080]
-```
-
-**HTTP debug (if `--port` is set):**
-```bash
-# List CRDs
-curl -s localhost:8080/datum/list_crds | jq
-
-# List resources
-curl -s localhost:8080/datum/list_resources -H 'Content-Type: application/json' -d '{"kind":"Project"}' | jq
-
-# Validate a YAML file (wrap safely into JSON)
-printf '{"yaml":%s}\n' "$(jq -Rs . </path/to/file.yaml)" | curl -s -X POST localhost:8080/datum/validate_yaml -H 'Content-Type: application/json' -d @- | jq
-```
-
-For more detailed tool setup instructions, refer to the official
-[Set Up Tools](https://docs.datum.net/docs/tasks/tools/) guide on docs.datum.net.
 
 ## Documentation
 
