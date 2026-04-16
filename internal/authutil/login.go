@@ -195,13 +195,12 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 	}()
 
 	fmt.Println("\nAttempting to open your default browser for authentication...")
-	fmt.Printf("\nOpen this URL in your browser: %s\n", authURL)
 	if err := browser.OpenURL(authURL); err != nil {
 		fmt.Println("\nCould not open browser automatically.")
 		fmt.Println("Please visit this URL manually to authenticate:")
 		fmt.Printf("\n%s\n\n", authURL)
-		fmt.Println("If you are in a headless environment (CI, SSH without forwarding, or a container) consider")
-		fmt.Println("'datumctl auth login --no-browser' instead — it uses a device-code flow that doesn't need a browser on this machine.")
+		fmt.Println("Tip: in a headless environment (CI, SSH without forwarding, or a container) use")
+		fmt.Println("'datumctl auth login --no-browser' — it uses a device-code flow that doesn't need a local browser.")
 	} else {
 		fmt.Println("Please complete the authentication in your browser.")
 	}
