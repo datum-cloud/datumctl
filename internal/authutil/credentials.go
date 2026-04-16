@@ -269,13 +269,23 @@ func GetAPIHostname() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return apiHostnameFromCreds(creds)
+}
 
-	// If API hostname is explicitly stored, use it
+// GetAPIHostnameForUser returns the API hostname from stored credentials for
+// a specific user key.
+func GetAPIHostnameForUser(userKey string) (string, error) {
+	creds, err := GetStoredCredentials(userKey)
+	if err != nil {
+		return "", err
+	}
+	return apiHostnameFromCreds(creds)
+}
+
+func apiHostnameFromCreds(creds *StoredCredentials) (string, error) {
 	if creds.APIHostname != "" {
 		return creds.APIHostname, nil
 	}
-
-	// Fall back to deriving from auth hostname
 	return DeriveAPIHostname(creds.Hostname)
 }
 
