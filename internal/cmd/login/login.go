@@ -126,7 +126,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 					projCount++
 				}
 			}
-			fmt.Printf("  %s (%d project(s))\n", o.Name, projCount)
+			fmt.Printf("  %s (%d project(s))\n", o.DisplayName, projCount)
 		}
 		fmt.Println()
 	}
