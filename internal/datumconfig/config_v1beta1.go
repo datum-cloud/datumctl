@@ -102,6 +102,22 @@ func (c *ConfigV1Beta1) DisplayRef(ctx *DiscoveredContext) string {
 	return orgLabel + "/" + projLabel
 }
 
+// ContextDescription returns a human-friendly description of the context type
+// and name, distinguishing between org and project contexts.
+//
+// Examples:
+//
+//	org Datum Technology, Inc (datum)
+//	project Datum Cloud in Datum Technology, Inc (datum/datum-cloud)
+func (c *ConfigV1Beta1) ContextDescription(ctx *DiscoveredContext) string {
+	orgName := c.OrgDisplayName(ctx.OrganizationID)
+	if ctx.ProjectID == "" {
+		return fmt.Sprintf("org %s (%s)", orgName, ctx.OrganizationID)
+	}
+	projName := c.ProjectDisplayName(ctx.ProjectID)
+	return fmt.Sprintf("project %s in %s (%s)", projName, orgName, ctx.Ref())
+}
+
 // OrgDisplayName returns the cached display name for an org, or the ID if none.
 func (c *ConfigV1Beta1) OrgDisplayName(orgID string) string {
 	for _, o := range c.Cache.Organizations {

@@ -126,7 +126,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 					projCount++
 				}
 			}
-			fmt.Printf("  %s (%d project(s))\n", o.Name, projCount)
+			fmt.Printf("  %s (%d project(s))\n", o.DisplayName, projCount)
 		}
 		fmt.Println()
 	}
@@ -158,7 +158,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 
 	ctxEntry := cfg.ContextByName(selected)
 	if ctxEntry != nil {
-		fmt.Printf("\n\u2713 Context set to %s\n", datumconfig.FormatWithID(cfg.DisplayRef(ctxEntry), ctxEntry.Ref()))
+		fmt.Printf("\n\u2713 Context set to %s\n", cfg.ContextDescription(ctxEntry))
 	} else {
 		fmt.Printf("\n\u2713 Context set to %s\n", selected)
 	}

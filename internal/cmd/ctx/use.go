@@ -66,6 +66,6 @@ func runUse(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	fmt.Printf("\n\u2713 Switched to %s\n", datumconfig.FormatWithID(cfg.DisplayRef(resolved), resolved.Ref()))
+	fmt.Printf("\n\u2713 Switched to %s\n", cfg.ContextDescription(resolved))
 	return nil
 }
