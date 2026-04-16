@@ -14,10 +14,10 @@ func Command() *cobra.Command {
 user sessions, and retrieve tokens for scripting.
 
 Typical workflow:
-  1. Log in:          datumctl auth login
+  1. Log in:          datumctl login
   2. Verify sessions: datumctl auth list
   3. Switch accounts: datumctl auth switch <email>
-  4. Log out:         datumctl auth logout <email>
+  4. Log out:         datumctl logout [email]
 
 Advanced — kubectl integration:
   If you use kubectl and want to point it at a Datum Cloud control plane,
@@ -26,9 +26,7 @@ Advanced — kubectl integration:
 
 	cmd.AddCommand(
 		getTokenCmd,
-		LoginCmd,
 		listCmd,
-		logoutCmd,
 		switchCmd,
 		updateKubeconfigCmd(),
 	)

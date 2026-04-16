@@ -172,7 +172,20 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	if err != nil {
 		return nil, err
 	}
+	return tokenSourceFor(ctx, userKey, creds)
+}
 
+// GetTokenSourceForUser creates an oauth2.TokenSource for a specific user key.
+// Used by multi-user flows (sessions, kubectl exec plugin, MCP).
+func GetTokenSourceForUser(ctx context.Context, userKey string) (oauth2.TokenSource, error) {
+	creds, err := GetStoredCredentials(userKey)
+	if err != nil {
+		return nil, err
+	}
+	return tokenSourceFor(ctx, userKey, creds)
+}
+
+func tokenSourceFor(ctx context.Context, userKey string, creds *StoredCredentials) (oauth2.TokenSource, error) {
 	if creds.CredentialType == "machine_account" {
 		if creds.MachineAccount == nil {
 			return nil, fmt.Errorf("machine account credentials are missing from stored session")
@@ -213,11 +226,22 @@ func GetUserIDFromToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return userIDFromCreds(creds)
+}
 
+// GetUserIDFromTokenForUser extracts the user ID (sub claim) for a specific user key.
+func GetUserIDFromTokenForUser(userKey string) (string, error) {
+	creds, err := GetStoredCredentials(userKey)
+	if err != nil {
+		return "", err
+	}
+	return userIDFromCreds(creds)
+}
+
+func userIDFromCreds(creds *StoredCredentials) (string, error) {
 	if creds.Subject == "" {
 		return "", errors.New("subject (user ID) not found in stored credentials")
 	}
-
 	return creds.Subject, nil
 }
 
@@ -245,13 +269,23 @@ func GetAPIHostname() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return apiHostnameFromCreds(creds)
+}
 
-	// If API hostname is explicitly stored, use it
+// GetAPIHostnameForUser returns the API hostname from stored credentials for
+// a specific user key.
+func GetAPIHostnameForUser(userKey string) (string, error) {
+	creds, err := GetStoredCredentials(userKey)
+	if err != nil {
+		return "", err
+	}
+	return apiHostnameFromCreds(creds)
+}
+
+func apiHostnameFromCreds(creds *StoredCredentials) (string, error) {
 	if creds.APIHostname != "" {
 		return creds.APIHostname, nil
 	}
-
-	// Fall back to deriving from auth hostname
 	return DeriveAPIHostname(creds.Hostname)
 }
 

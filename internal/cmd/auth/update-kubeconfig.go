@@ -61,25 +61,31 @@ environments where the hostname cannot be derived from stored credentials).`,
 
 			var apiHostname string
 			var activeUserKey string
+			var sessionName string
 
 			// Use override hostname if provided, otherwise get from stored credentials
 			if hostname != "" {
 				apiHostname = hostname
 			} else {
-				var err error
-				apiHostname, err = authutil.GetAPIHostname()
+				userKey, session, err := authutil.GetUserKeyForCurrentSession()
 				if err != nil {
-					return fmt.Errorf("failed to get API hostname: %w", err)
-				}
-
-				activeUserKey, err = authutil.GetActiveUserKey()
-				if err != nil {
-					// We only expect an error here if the user is not logged in.
 					if errors.Is(err, authutil.ErrNoActiveUser) {
-						return errors.New("no active user found. Please login using 'datumctl auth login'")
+						return errors.New("no active user found. Please login using 'datumctl login'")
 					}
-					// For other errors, provide more context.
-					return fmt.Errorf("failed to get active user for kubeconfig message: %w", err)
+					return fmt.Errorf("failed to resolve active session: %w", err)
+				}
+				activeUserKey = userKey
+				if session != nil {
+					sessionName = session.Name
+					if session.Endpoint.Server != "" {
+						apiHostname = session.Endpoint.Server
+					}
+				}
+				if apiHostname == "" {
+					apiHostname, err = authutil.GetAPIHostnameForUser(userKey)
+					if err != nil {
+						return fmt.Errorf("failed to get API hostname: %w", err)
+					}
 				}
 			}
 
@@ -122,15 +128,19 @@ environments where the hostname cannot be derived from stored credentials).`,
 				AuthInfo: "datum-user",
 			}
 			cfg.CurrentContext = clusterName
+			execArgs := []string{
+				"auth",
+				"get-token",
+				"--output=client.authentication.k8s.io/v1",
+			}
+			if sessionName != "" {
+				execArgs = append(execArgs, "--session="+sessionName)
+			}
 			cfg.AuthInfos["datum-user"] = &api.AuthInfo{
 				Exec: &api.ExecConfig{
 					InstallHint: execPluginInstallHint,
 					Command:     executablePath, // Use absolute path
-					Args: []string{
-						"auth",
-						"get-token",
-						"--output=client.authentication.k8s.io/v1",
-					},
+					Args:        execArgs,
 					APIVersion:         "client.authentication.k8s.io/v1",
 					ProvideClusterInfo: false,
 					InteractiveMode:    "IfAvailable",

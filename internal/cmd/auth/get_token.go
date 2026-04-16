@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/authutil"
+	"golang.org/x/oauth2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientauthv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
 )
@@ -56,25 +57,39 @@ Output formats (--output / -o):
 func init() {
 	// Add flags for direct execution mode
 	getTokenCmd.Flags().StringP("output", "o", outputFormatToken, fmt.Sprintf("Output format. One of: %s|%s", outputFormatToken, outputFormatK8sV1Creds))
+	getTokenCmd.Flags().String("session", "", "Look up a specific session by name (defaults to the active session). Used by the kubectl exec plugin path so each kubeconfig entry pins to its own datumctl session.")
 }
 
 // runGetToken implements the logic based on the --output flag.
 func runGetToken(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	outputFormat, _ := cmd.Flags().GetString("output") // Ignore error, handled by validation
+	sessionName, _ := cmd.Flags().GetString("session")
 
 	if outputFormat != outputFormatToken && outputFormat != outputFormatK8sV1Creds {
 		// Return error here so Cobra prints usage
 		return fmt.Errorf("invalid --output format %q. Must be %s or %s", outputFormat, outputFormatToken, outputFormatK8sV1Creds)
 	}
 
-	// Get the token source (which handles refresh and persistence automatically)
-	tokenSource, err := authutil.GetTokenSource(ctx)
-	if err != nil {
-		if errors.Is(err, authutil.ErrNoActiveUser) {
-			return errors.New("no active user found in keyring. Please login first using 'datumctl auth login'")
+	var tokenSource oauth2.TokenSource
+	if sessionName != "" {
+		userKey, err := authutil.GetUserKeyForSession(sessionName)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("failed to get token source: %w", err)
+		tokenSource, err = authutil.GetTokenSourceForUser(ctx, userKey)
+		if err != nil {
+			return fmt.Errorf("failed to get token source: %w", err)
+		}
+	} else {
+		var err error
+		tokenSource, err = authutil.GetTokenSource(ctx)
+		if err != nil {
+			if errors.Is(err, authutil.ErrNoActiveUser) {
+				return errors.New("no active user found in keyring. Please login first using 'datumctl auth login'")
+			}
+			return fmt.Errorf("failed to get token source: %w", err)
+		}
 	}
 
 	// Get fresh token (will refresh if needed and persist automatically)
