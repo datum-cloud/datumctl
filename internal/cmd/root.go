@@ -7,7 +7,11 @@ import (
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/create"
+	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
 	"go.datum.net/datumctl/internal/cmd/docs"
+	"go.datum.net/datumctl/internal/cmd/login"
+	"go.datum.net/datumctl/internal/cmd/logout"
+	"go.datum.net/datumctl/internal/cmd/whoami"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -51,9 +55,9 @@ projects, organizations, networking, compute, and more — directly from the
 terminal. No knowledge of Kubernetes or kubectl required.
 
 Get started:
-  datumctl auth login
+  datumctl login
   datumctl get organizations
-  datumctl get projects --organization <org-id>`,
+  datumctl get dnszones`,
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
@@ -88,8 +92,29 @@ Get started:
 	)
 
 	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
+	rootCmd.AddGroup(&cobra.Group{ID: "context", Title: "Context"})
 	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})
 	rootCmd.AddGroup(&cobra.Group{ID: "resource", Title: "Resource Management"})
+
+	// Top-level auth entry points. Promoted out of the 'auth' subgroup so that
+	// new users find 'datumctl login' at the root of the CLI, while experienced
+	// users can still reach 'datumctl auth login' for advanced options
+	// (machine-account, device flow).
+	loginCmd := login.Command()
+	loginCmd.GroupID = "auth"
+	rootCmd.AddCommand(loginCmd)
+
+	logoutCmd := logout.Command()
+	logoutCmd.GroupID = "auth"
+	rootCmd.AddCommand(logoutCmd)
+
+	whoamiCmd := whoami.Command()
+	whoamiCmd.GroupID = "auth"
+	rootCmd.AddCommand(whoamiCmd)
+
+	ctxCmd := datumctx.Command()
+	ctxCmd.GroupID = "context"
+	rootCmd.AddCommand(ctxCmd)
 
 	authCommand := auth.Command()
 	whoami := kubeauth.NewCmdWhoAmI(factory, ioStreams)

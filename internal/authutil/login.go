@@ -167,7 +167,9 @@ func RunPKCELogin(ctx context.Context, authHostname, apiHostname, clientID strin
 	}()
 
 	if err := browser.OpenURL(authURL); err != nil {
-		fmt.Printf("\nOpen this URL in your browser:\n\n  %s\n\n", authURL)
+		fmt.Printf("\nCould not open a browser automatically. Open this URL to continue:\n\n  %s\n\n", authURL)
+		fmt.Println("If you are in a headless environment (CI, SSH without forwarding, or a container) consider")
+		fmt.Println("'datumctl auth login --no-browser' instead — it uses a device-code flow that doesn't need a browser on this machine.")
 	} else {
 		fmt.Println("\nBrowser opened. Please complete the authentication.")
 	}
