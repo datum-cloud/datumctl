@@ -12,6 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"go.datum.net/datumctl/internal/authutil"
+	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/miloapi"
 )
 
 // NewUserContextualClient creates a new controller-runtime client configured for the current user's context.
@@ -30,24 +32,32 @@ func NewUserContextualClient(ctx context.Context) (client.Client, error) {
 }
 
 func NewRestConfig(ctx context.Context) (*rest.Config, error) {
-	tknSrc, err := authutil.GetTokenSource(ctx)
+	userKey, session, err := authutil.GetUserKeyForCurrentSession()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user key: %w", err)
+	}
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, userKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token source: %w", err)
 	}
 	// Get user ID from stored credentials
-	userID, err := authutil.GetUserIDFromToken(ctx)
+	userID, err := authutil.GetUserIDFromTokenForUser(userKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user ID from token: %w", err)
 	}
 
-	// Get API hostname from stored credentials
-	apiHostname, err := authutil.GetAPIHostname()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get API hostname: %w", err)
+	// Get API hostname — prefer session endpoint, fall back to credentials.
+	var apiHostname string
+	if session != nil && session.Endpoint.Server != "" {
+		apiHostname = datumconfig.StripScheme(session.Endpoint.Server)
+	} else {
+		apiHostname, err = authutil.GetAPIHostnameForUser(userKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get API hostname: %w", err)
+		}
 	}
 
-	// Build the user-contextual API endpoint
-	userContextAPI := fmt.Sprintf("https://%s/apis/iam.miloapis.com/v1alpha1/users/%s/control-plane", apiHostname, userID)
+	userContextAPI := miloapi.UserControlPlaneURL(apiHostname, userID)
 
 	// Create Kubernetes client configuration with scheme
 	config := &rest.Config{
@@ -63,3 +73,4 @@ func NewRestConfig(ctx context.Context) (*rest.Config, error) {
 
 	return config, nil
 }
+

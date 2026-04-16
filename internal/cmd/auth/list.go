@@ -1,112 +1,69 @@
 package auth
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 
 	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
-	"go.datum.net/datumctl/internal/authutil"
-	"go.datum.net/datumctl/internal/keyring"
+
+	"go.datum.net/datumctl/internal/datumconfig"
 )
 
 var listCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List locally authenticated users",
 	Aliases: []string{"ls"},
-	Long: `Display a table of all Datum Cloud users whose credentials are stored
-locally in the system keyring, along with their status.
+	Short:   "List locally authenticated users",
+	Long: `Display a table of all Datum Cloud users whose sessions are stored
+locally, along with their status.
 
 Columns:
-  Name    The display name from the user's Datum Cloud account.
-  Email   The email address used to log in. Pass this to 'datumctl auth switch'
-          or 'datumctl auth logout' to act on a specific account.
-  Status  "Active" marks the account whose credentials are used by default
-          for all subsequent datumctl commands.`,
+  User       The email address used to log in. Pass this to 'datumctl auth switch'
+             or 'datumctl logout' to act on a specific account.
+  Endpoint   Shown only when sessions span more than one API endpoint.
+  Status     "Active" marks the account whose credentials are used by default
+             for all subsequent datumctl commands.`,
 	Example: `  # Show all logged-in users
   datumctl auth list
 
   # Alias
   datumctl auth ls`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runList()
-	},
+	Args: cobra.NoArgs,
+	RunE: runList,
 }
 
-func runList() error {
-	// Get the list of known user keys
-	knownUsers := []string{}
-	knownUsersJSON, err := keyring.Get(authutil.ServiceName, authutil.KnownUsersKey)
+func runList(_ *cobra.Command, _ []string) error {
+	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
-		if errors.Is(err, keyring.ErrNotFound) {
-			// No users known yet
-			fmt.Println("No users have been logged in yet.")
-			return nil
-		}
-		// Other error getting the list
-		return fmt.Errorf("failed to get known users list from keyring: %w", err)
+		return err
 	}
 
-	if knownUsersJSON != "" {
-		if err := json.Unmarshal([]byte(knownUsersJSON), &knownUsers); err != nil {
-			return fmt.Errorf("failed to unmarshal known users list: %w", err)
-		}
-	}
-
-	if len(knownUsers) == 0 {
-		fmt.Println("No users have been logged in yet.")
+	if len(cfg.Sessions) == 0 {
+		fmt.Println("No authenticated users. Run 'datumctl login' to get started.")
 		return nil
 	}
 
-	// Get the active user key
-	activeUserKey, err := keyring.Get(authutil.ServiceName, authutil.ActiveUserKey)
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		// Don't fail if active user key is missing, just proceed without marking active
-		fmt.Printf("Warning: could not determine active user: %v\n", err)
-		activeUserKey = ""
+	showEndpoint := cfg.HasMultipleEndpoints()
+
+	var tbl table.Table
+	if showEndpoint {
+		tbl = table.New("User", "Endpoint", "Status")
+	} else {
+		tbl = table.New("User", "Status")
 	}
+	tbl.WithWriter(os.Stdout)
 
-	// Initialize table
-	tbl := table.New("Name", "Email", "Status").WithWriter(os.Stdout)
-
-	for _, userKey := range knownUsers {
-		// Retrieve the stored credentials for this user to get name/email
-		credsJSON, err := keyring.Get(authutil.ServiceName, userKey)
-		if err != nil {
-			// Add row with error message if details retrieval fails
-			tbl.AddRow("<Unknown>", userKey, fmt.Sprintf("Error: %v", err))
-			continue
-		}
-
-		var creds authutil.StoredCredentials
-		if err := json.Unmarshal([]byte(credsJSON), &creds); err != nil {
-			// Add row with error message if unmarshal fails
-			tbl.AddRow("<Unknown>", userKey, fmt.Sprintf("Error parsing: %v", err))
-			continue
-		}
-
-		// Prepare display values
-		displayName := creds.UserName
-		if displayName == "" {
-			displayName = "<N/A>"
-		}
-		displayEmail := creds.UserEmail
-		if displayEmail == "" {
-			displayEmail = "<N/A>"
-		}
+	for _, s := range cfg.Sessions {
 		status := ""
-		if userKey == activeUserKey {
+		if s.Name == cfg.ActiveSession {
 			status = "Active"
 		}
-
-		// Add row to table
-		tbl.AddRow(displayName, displayEmail, status)
+		if showEndpoint {
+			tbl.AddRow(s.UserEmail, datumconfig.StripScheme(s.Endpoint.Server), status)
+		} else {
+			tbl.AddRow(s.UserEmail, status)
+		}
 	}
-
-	// Print the table
 	tbl.Print()
-
 	return nil
 }

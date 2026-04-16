@@ -8,10 +8,12 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 
 ## Features
 
-*   **Secure Authentication:** Uses modern OAuth 2.0 and OIDC PKCE flow for secure, browser-based login. No static API keys required.
-*   **Multi-User Support:** Manage credentials for multiple Datum Cloud user accounts.
-*   **Resource Management:** Interact with Datum Cloud resources (e.g., list organizations).
-*   **Kubernetes Integration:** Seamlessly configure `kubectl` to use your Datum Cloud credentials for accessing Kubernetes clusters.
+*   **Secure Authentication:** Modern OAuth 2.0 / OIDC PKCE with device-code fallback for headless environments. No static API keys.
+*   **Context Discovery:** After login, `datumctl` fetches the organizations and projects you can access and lets you pick a default context — no more passing `--organization` or `--project` on every command.
+*   **Multi-User Support:** Manage credentials for multiple Datum Cloud accounts and switch between them with `datumctl auth switch`.
+*   **Resource Management:** Interact with Datum Cloud resources with a kubectl-style interface (`get`, `apply`, `describe`, `delete`, ...).
+*   **Kubernetes Integration:** Configure `kubectl` to use your Datum Cloud credentials for accessing control planes.
+*   **AI Agents / MCP:** The standalone [`datum-mcp`](https://github.com/datum-cloud/datum-mcp) project provides a Model Context Protocol server for integrating Datum Cloud with Claude and other AI tools.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -22,60 +24,47 @@ See the [Installation Guide](https://www.datum.net/docs/quickstart/datumctl/) fo
 
 ### Basic Usage
 
-1.  **Log in to Datum Cloud:**
+1.  **Log in and pick a context:**
     ```bash
-    datumctl auth login
+    datumctl login
     ```
-    (This will open your web browser to complete authentication.)
+    Opens your browser for authentication, then fetches your organizations and projects and prompts you to pick a default context. If you only have a single project, the picker is skipped.
 
-2.  **List your organizations:**
+2.  **Work with resources:**
     ```bash
-    datumctl get organizations
+    datumctl get dnszones        # uses the active context automatically
+    datumctl get organizations   # list your org memberships
+    datumctl api-resources       # discover available resource types
     ```
 
-3.  **Configure `kubectl` access (optional):**
-    Use the organization ID (or a specific project ID) from the previous step
-    to configure `kubectl`.
+3.  **Switch contexts or accounts:**
     ```bash
-    # Example using an organization ID
+    datumctl ctx                 # list contexts (tree view by org)
+    datumctl ctx use my-org/my-project
+    datumctl auth list           # list accounts
+    datumctl auth switch alice@example.com
+    ```
+
+4.  **Configure `kubectl` access (optional):**
+    ```bash
+    # Point kubectl at your organization's control plane
     datumctl auth update-kubeconfig --organization <org-id>
 
-    # Example using a project ID
+    # Or at a specific project's control plane
     datumctl auth update-kubeconfig --project <project-id>
     ```
-    Now you can use `kubectl` to interact with your Datum Cloud control plane.
+    kubectl then uses `datumctl auth get-token` automatically to refresh credentials.
 
-**A) If you already have a project:**
+### CI and scripting
+
+For non-interactive use, environment variables override the active context per-invocation:
+
 ```bash
-# Ensure your kube context points at an organization control plane
-datumctl auth update-kubeconfig --organization <org-id>
-
-# List projects; copy the NAME column (that is the Project ID)
-kubectl get projects
-# Or JSON-friendly:
-kubectl get projects -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+DATUM_PROJECT=my-project datumctl get dnszones
+DATUM_ORGANIZATION=my-org datumctl get projects
 ```
 
-**B) If you need to create a project:**
-```bash
-# Make sure your kube context targets an organization control plane
-datumctl auth update-kubeconfig --organization <org-id>
-
-cat > intro-project.yaml <<'YAML'
-apiVersion: resourcemanager.miloapis.com/v1alpha1
-kind: Project
-metadata:
-  generateName: intro-project-
-spec: {}
-YAML
-
-kubectl create -f intro-project.yaml
-
-# Wait until Ready
-PRJ_ID="$(kubectl get projects -o jsonpath='{.items[-1:].metadata.name}')"
-kubectl wait --for=condition=Ready --timeout=15m project/$PRJ_ID
-echo "Project ready: $PRJ_ID"
-```
+`--project` and `--organization` flags work too. For machine-to-machine auth, see `datumctl auth login --credentials` for the machine-account flow.
 
 ## Documentation
 

@@ -1,4 +1,4 @@
-package auth
+package authutil
 
 import (
 	"context"
@@ -6,180 +6,119 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
-	kubectlcmd "k8s.io/kubectl/pkg/cmd"
-
-	"github.com/coreos/go-oidc/v3/oidc" // OIDC discovery
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/pkg/browser"
-	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-
-	"go.datum.net/datumctl/internal/authutil" // Import new authutil package
+	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/keyring"
+	"golang.org/x/oauth2"
 )
 
 const (
-	stagingClientID = "325848904128073754" // Client ID for staging
-	prodClientID    = "328728232771788043" // Client ID for prod
+	StagingClientID = "325848904128073754"
+	ProdClientID    = "328728232771788043"
 	redirectPath    = "/datumctl/auth/callback"
-	// Listen on a random port
-	listenAddr = "localhost:0"
+	listenAddr      = "localhost:0"
 )
 
-var (
-	hostname         string // Variable to store hostname flag
-	apiHostname      string // Variable to store api-hostname flag
-	clientIDFlag     string // Variable to store client-id flag
-	noBrowser        bool   // Variable to store no-browser flag
-	credentialsFile  string // Variable to store credentials file path flag
-	debugCredentials bool   // Variable to store debug flag for credentials flow
-)
-
-var LoginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Log in to Datum Cloud",
-	Long: `Authenticate with Datum Cloud using a secure browser-based login flow.
-
-Running this command will:
-  1. Open your default web browser to the Datum Cloud authentication page.
-     If the browser cannot open automatically, a URL is printed for manual use.
-  2. Complete authentication in the browser (username/password or SSO).
-  3. Return to datumctl, which stores your credentials (including a refresh
-     token) securely in the system keyring.
-
-After login, credentials are associated with your email address and
-automatically refreshed when they expire. Use 'datumctl auth list' to see
-all stored sessions.
-
-By default, logs into auth.datum.net (the production Datum Cloud environment).
-Use --hostname to target a different environment (e.g., staging).
-Use --api-hostname to explicitly specify the API server hostname when it
-cannot be derived from the auth hostname (e.g., in self-hosted environments).`,
-	Example: `  # Log in to Datum Cloud (opens browser)
-  datumctl auth login
-
-  # Log in to a staging environment
-  datumctl auth login --hostname auth.staging.env.datum.net
-
-  # Log in to a self-hosted environment with an explicit client ID
-  datumctl auth login --hostname auth.example.com --client-id 123456789
-
-  # Log in to a self-hosted environment with explicit API hostname
-  datumctl auth login --hostname auth.example.com --api-hostname api.example.com --client-id 123456789
-
-  # Log in with a machine account credentials file (hostname is required
-  # to tell datumctl which environment to authenticate against)
-  datumctl auth login --credentials ./my-key.json --hostname auth.staging.env.datum.net`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if credentialsFile != "" {
-			return runMachineAccountLogin(cmd.Context(), credentialsFile, hostname, apiHostname, debugCredentials)
-		}
-
-		var actualClientID string
-		if clientIDFlag != "" {
-			actualClientID = clientIDFlag
-		} else if strings.HasSuffix(hostname, ".staging.env.datum.net") {
-			actualClientID = stagingClientID
-		} else if strings.HasSuffix(hostname, ".datum.net") {
-			actualClientID = prodClientID
-		} else {
-			// Return an error if no client ID could be determined
-			return fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", hostname)
-		}
-		return runLoginFlow(cmd.Context(), hostname, apiHostname, actualClientID, noBrowser, (kubectlcmd.GetLogVerbosity(os.Args) != "0"))
-	},
+// LoginResult holds the output of a successful login flow.
+type LoginResult struct {
+	UserKey     string
+	UserEmail   string
+	UserName    string
+	Subject     string
+	APIHostname string
 }
 
-func init() {
-	// Add the hostname flag
-	LoginCmd.Flags().StringVar(&hostname, "hostname", "auth.datum.net", "Hostname of the Datum Cloud authentication server")
-	// Add the api-hostname flag
-	LoginCmd.Flags().StringVar(&apiHostname, "api-hostname", "", "Hostname of the Datum Cloud API server (if not specified, will be derived from auth hostname)")
-	// Add the client-id flag
-	LoginCmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
-	// Add the no-browser flag
-	LoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Do not open a browser; use the device authorization flow")
-	// Add the credentials flag for machine account (non-interactive) login
-	LoginCmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a machine account credentials JSON file downloaded from the Datum Cloud portal")
-	LoginCmd.Flags().BoolVar(&debugCredentials, "debug", false, "Print JWT claims and token request details (credentials flow only)")
-}
-
-// Generates a random PKCE code verifier
-func generateCodeVerifier() (string, error) {
-	const length = 64
-	randomBytes := make([]byte, length)
-	_, err := rand.Read(randomBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+// BuildSession constructs a v1beta1 Session from a login result.
+// The caller is responsible for upserting it into the config and saving.
+func BuildSession(result *LoginResult, authHostname string) datumconfig.Session {
+	apiHostname := result.APIHostname
+	return datumconfig.Session{
+		Name:      datumconfig.SessionName(result.UserEmail, apiHostname),
+		UserKey:   result.UserKey,
+		UserEmail: result.UserEmail,
+		UserName:  result.UserName,
+		Endpoint: datumconfig.Endpoint{
+			Server:       datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname)),
+			AuthHostname: authHostname,
+		},
 	}
-	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(randomBytes), nil
 }
 
-// Generates the PKCE code challenge from the verifier
-func generateCodeChallenge(verifier string) string {
-	hash := sha256.Sum256([]byte(verifier))
-	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(hash[:])
-}
-
-// generateRandomState generates a cryptographically random string for CSRF protection.
-func generateRandomState(length int) (string, error) {
-	b := make([]byte, length)
-	_, err := rand.Read(b)
-	if err != nil {
-		return "", err
+// ResolveClientID determines the OAuth2 client ID for a given auth hostname.
+func ResolveClientID(clientIDFlag, authHostname string) (string, error) {
+	if clientIDFlag != "" {
+		return clientIDFlag, nil
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	if strings.HasSuffix(authHostname, ".staging.env.datum.net") {
+		return StagingClientID, nil
+	}
+	if strings.HasSuffix(authHostname, ".datum.net") {
+		return ProdClientID, nil
+	}
+	return "", fmt.Errorf("client ID not configured for hostname '%s'. Please specify one with the --client-id flag", authHostname)
 }
 
-// runLoginFlow now accepts context, hostname, apiHostname, clientID, and verbose flag
-func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, clientID string, noBrowser bool, verbose bool) error {
+// RunInteractiveLogin executes an interactive OAuth2 login flow (PKCE or device) and stores
+// credentials in the keyring. It returns the login result on success.
+//
+// When noBrowser is true the device authorization flow is used, which does not
+// require a browser on the local machine. When false the PKCE flow is used and
+// the user's default browser is opened automatically.
+func RunInteractiveLogin(ctx context.Context, authHostname, apiHostname, clientID string, noBrowser, verbose bool) (*LoginResult, error) {
 	fmt.Printf("Starting login process for %s ...\n", authHostname)
 
-	// Determine the final API hostname to use
 	var finalAPIHostname string
 	if apiHostname != "" {
-		// Use the explicitly provided API hostname
 		finalAPIHostname = apiHostname
 		fmt.Printf("Using specified API hostname: %s\n", finalAPIHostname)
 	} else {
-		// Derive API hostname from auth hostname
-		derivedAPI, err := authutil.DeriveAPIHostname(authHostname)
+		derived, err := DeriveAPIHostname(authHostname)
 		if err != nil {
-			return fmt.Errorf("failed to derive API hostname from auth hostname '%s': %w", authHostname, err)
+			return nil, fmt.Errorf("failed to derive API hostname from '%s': %w", authHostname, err)
 		}
-		finalAPIHostname = derivedAPI
+		finalAPIHostname = derived
 		fmt.Printf("Derived API hostname: %s\n", finalAPIHostname)
 	}
 
 	providerURL := fmt.Sprintf("https://%s", authHostname)
 	provider, err := oidc.NewProvider(ctx, providerURL)
 	if err != nil {
-		return fmt.Errorf("failed to discover OIDC provider at %s: %w", providerURL, err)
+		return nil, fmt.Errorf("failed to discover OIDC provider at %s: %w", providerURL, err)
 	}
 
-	// Define scopes
 	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
 
+	var token *oauth2.Token
 	if noBrowser {
-		token, err := runDeviceFlow(ctx, providerURL, clientID, scopes)
+		token, err = runDeviceFlow(ctx, providerURL, clientID, scopes)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose)
+	} else {
+		token, err = runPKCEFlow(ctx, provider, clientID, scopes)
+		if err != nil {
+			return nil, err
+		}
 	}
 
+	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose)
+}
+
+// runPKCEFlow executes the OAuth2 PKCE authorization code flow and returns the
+// resulting token. It starts a local HTTP server to receive the callback.
+func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, scopes []string) (*oauth2.Token, error) {
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
+		return nil, fmt.Errorf("failed to listen on %s: %w", listenAddr, err)
 	}
 	defer listener.Close()
 
@@ -192,39 +131,33 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 		RedirectURL: fmt.Sprintf("http://%s%s", actualListenAddr, redirectPath),
 	}
 
-	// Generate PKCE parameters
 	codeVerifier, err := generateCodeVerifier()
 	if err != nil {
-		return fmt.Errorf("failed to generate code verifier: %w", err)
+		return nil, fmt.Errorf("failed to generate code verifier: %w", err)
 	}
 	codeChallenge := generateCodeChallenge(codeVerifier)
 
-	// Generate random state
 	state, err := generateRandomState(32)
 	if err != nil {
-		return fmt.Errorf("failed to generate state: %w", err)
+		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
 
-	// Construct the authorization URL
 	authURL := conf.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oauth2.SetAuthURLParam("prompt", "select_account"),
 	)
 
-	// Channel to receive the authorization code
 	codeChan := make(chan string)
 	errChan := make(chan error)
-	serverClosed := make(chan struct{}) // To signal server shutdown completion
+	serverClosed := make(chan struct{})
 
-	// Start local server to handle the callback
 	server := &http.Server{}
-	mux := http.NewServeMux() // Use a mux to avoid conflicts if other handlers exist
+	mux := http.NewServeMux()
 	mux.HandleFunc(redirectPath, func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
 		receivedState := r.URL.Query().Get("state")
 
-		// Validate received state against the original state
 		if receivedState != state {
 			http.Error(w, "Invalid state parameter", http.StatusBadRequest)
 			errChan <- fmt.Errorf("invalid state parameter received (expected %q, got %q)", state, receivedState)
@@ -246,34 +179,29 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 			return
 		}
 
-		// Redirect to documentation site upon success
 		http.Redirect(w, r, "https://www.datum.net/docs/datumctl/cli-reference/#see-also", http.StatusFound)
-
-		codeChan <- code // Send code
-		// Server shutdown will be initiated by the main goroutine now
+		codeChan <- code
 	})
 	server.Handler = mux
 
 	go func() {
 		if err := server.Serve(listener); err != http.ErrServerClosed {
-			// Don't send error if context is cancelled (which might happen on success)
 			select {
 			case <-ctx.Done():
-				// Expected shutdown due to successful auth or cancellation
 			default:
 				errChan <- fmt.Errorf("failed to start callback server: %w", err)
 			}
 		}
 	}()
 
-	// Attempt to open browser
 	fmt.Println("\nAttempting to open your default browser for authentication...")
 	fmt.Printf("\nOpen this URL in your browser: %s\n", authURL)
-	err = browser.OpenURL(authURL)
-	if err != nil {
+	if err := browser.OpenURL(authURL); err != nil {
 		fmt.Println("\nCould not open browser automatically.")
 		fmt.Println("Please visit this URL manually to authenticate:")
 		fmt.Printf("\n%s\n\n", authURL)
+		fmt.Println("If you are in a headless environment (CI, SSH without forwarding, or a container) consider")
+		fmt.Println("'datumctl auth login --no-browser' instead — it uses a device-code flow that doesn't need a browser on this machine.")
 	} else {
 		fmt.Println("Please complete the authentication in your browser.")
 	}
@@ -284,55 +212,45 @@ func runLoginFlow(ctx context.Context, authHostname string, apiHostname string, 
 	select {
 	case code := <-codeChan:
 		authCode = code
-		// Initiate server shutdown *after* receiving the code
 		go func() {
 			if err := server.Shutdown(context.Background()); err != nil {
-				// Log error if needed
+				// Best-effort shutdown; ignore error.
 			}
 			close(serverClosed)
 		}()
 	case err := <-errChan:
-		// Don't wait for serverClosed here if auth already failed
-		return fmt.Errorf("authentication failed: %w", err)
+		return nil, fmt.Errorf("authentication failed: %w", err)
 	case <-ctx.Done():
-		// If context is cancelled, still try to shut down gracefully
-		go server.Shutdown(context.Background()) // Best effort
-		// Don't necessarily wait for serverClosed here either
-		return ctx.Err()
+		go server.Shutdown(context.Background())
+		return nil, ctx.Err()
 	}
 
-	// Remove the blocking wait before exchange
-	// <-serverClosed
-
-	// Exchange code for token (now happens sooner)
 	token, err := conf.Exchange(ctx, authCode,
 		oauth2.SetAuthURLParam("code_verifier", codeVerifier),
 	)
 	if err != nil {
-		// If exchange fails, wait for server shutdown before returning for cleaner exit
 		<-serverClosed
-		return fmt.Errorf("failed to exchange code for token: %w", err)
+		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}
-
-	// Wait for server shutdown *after* successful exchange (or failed exchange)
 	<-serverClosed
 
-	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose)
+	return token, nil
 }
 
-func completeLogin(ctx context.Context, provider *oidc.Provider, clientID string, authHostname string, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose bool) error {
-	// Verify ID token and extract claims
+// completeLogin verifies the ID token, stores credentials in the keyring, sets
+// the active user, registers the user in the known-users list, and returns a
+// LoginResult.
+func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authHostname, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose bool) (*LoginResult, error) {
 	idTokenString, ok := token.Extra("id_token").(string)
 	if !ok {
-		return fmt.Errorf("id_token not found in token response")
+		return nil, fmt.Errorf("id_token not found in token response")
 	}
 
-	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(ctx, idTokenString) // Use passed-in clientID
+	idToken, err := provider.Verifier(&oidc.Config{ClientID: clientID}).Verify(ctx, idTokenString)
 	if err != nil {
-		return fmt.Errorf("failed to verify ID token: %w", err)
+		return nil, fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
-	// Extract claims, including the subject ('sub')
 	var claims struct {
 		Subject       string `json:"sub"`
 		Email         string `json:"email"`
@@ -340,23 +258,23 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID string
 		Name          string `json:"name"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
-		return fmt.Errorf("failed to extract claims from ID token: %w", err)
+		return nil, fmt.Errorf("failed to extract claims from ID token: %w", err)
 	}
 
-	// Ensure essential claims are present
 	if claims.Subject == "" {
-		return fmt.Errorf("could not extract subject (sub) claim from ID token")
+		return nil, fmt.Errorf("could not extract subject (sub) claim from ID token")
 	}
 	if claims.Email == "" {
-		return fmt.Errorf("could not extract email claim from ID token, which is required for user identification")
+		return nil, fmt.Errorf("could not extract email claim from ID token, which is required for user identification")
 	}
 
 	fmt.Printf("\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
 
-	// Use email directly as the key, as it already contains the hostname from the claim
+	// Use email as the keyring key for interactive logins, matching the
+	// behaviour of the original cmd/auth/login.go implementation.
 	userKey := claims.Email
 
-	creds := authutil.StoredCredentials{
+	creds := StoredCredentials{
 		Hostname:         authHostname,
 		APIHostname:      finalAPIHostname,
 		ClientID:         clientID,
@@ -364,41 +282,35 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID string
 		EndpointTokenURL: provider.Endpoint().TokenURL,
 		Scopes:           scopes,
 		Token:            token,
-		UserName:         claims.Name,    // Store name
-		UserEmail:        claims.Email,   // Store email
-		Subject:          claims.Subject, // Store subject (sub claim)
+		UserName:         claims.Name,
+		UserEmail:        claims.Email,
+		Subject:          claims.Subject,
 	}
 
 	credsJSON, err := json.Marshal(creds)
 	if err != nil {
-		return fmt.Errorf("failed to serialize credentials: %w", err)
+		return nil, fmt.Errorf("failed to serialize credentials: %w", err)
 	}
 
-	err = keyring.Set(authutil.ServiceName, userKey, string(credsJSON))
-	if err != nil {
-		return fmt.Errorf("failed to store credentials in keyring for user %s: %w", userKey, err)
+	if err := keyring.Set(ServiceName, userKey, string(credsJSON)); err != nil {
+		return nil, fmt.Errorf("failed to store credentials in keyring for user %s: %w", userKey, err)
 	}
 
-	activeUserKey := "" // Temp variable to check if active user was set
-	err = keyring.Set(authutil.ServiceName, authutil.ActiveUserKey, userKey)
-	if err != nil {
+	activeUserSet := false
+	if err := keyring.Set(ServiceName, ActiveUserKey, userKey); err != nil {
 		fmt.Printf("Warning: Failed to set '%s' as active user in keyring: %v\n", userKey, err)
 		fmt.Printf("Credentials for '%s' were stored successfully.\n", userKey)
 	} else {
-		// fmt.Printf("Credentials stored and set as active for user '%s'.\n", userKey) // Old message
-		activeUserKey = userKey // Mark success
+		activeUserSet = true
 	}
 
-	// Update confirmation messages
-	if activeUserKey == userKey { // Check if we successfully set the active user
+	if activeUserSet {
 		fmt.Println("Authentication successful. Credentials stored and set as active.")
 	} else {
-		// This case handles if setting the active user key failed but creds were stored
 		fmt.Println("Authentication successful. Credentials stored.")
 	}
 
-	// Update the list of known users (using the new key format)
-	if err := addKnownUser(userKey); err != nil {
+	if err := AddKnownUserKey(userKey); err != nil {
 		fmt.Printf("Warning: Failed to update list of known users: %v\n", err)
 	}
 
@@ -418,8 +330,16 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID string
 		}
 	}
 
-	return nil
+	return &LoginResult{
+		UserKey:     userKey,
+		UserEmail:   claims.Email,
+		UserName:    claims.Name,
+		Subject:     claims.Subject,
+		APIHostname: finalAPIHostname,
+	}, nil
 }
+
+// ---- Device flow ----
 
 type deviceAuthorizationResponse struct {
 	DeviceCode              string `json:"device_code"`
@@ -469,12 +389,7 @@ func runDeviceFlow(ctx context.Context, providerURL string, clientID string, sco
 
 	fmt.Println("Waiting for authorization...")
 
-	token, err := pollDeviceToken(ctx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
-	if err != nil {
-		return nil, err
-	}
-
-	return token, nil
+	return pollDeviceToken(ctx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
 }
 
 func requestDeviceAuthorization(ctx context.Context, endpoint string, clientID string, scopes []string) (*deviceAuthorizationResponse, error) {
@@ -543,7 +458,7 @@ func pollDeviceToken(ctx context.Context, tokenURL string, clientID string, devi
 		case "":
 			return token, nil
 		case "authorization_pending":
-			// Keep polling
+			// Keep polling.
 		case "slow_down":
 			interval += 5 * time.Second
 		case "access_denied":
@@ -603,7 +518,6 @@ func requestDeviceToken(ctx context.Context, tokenURL string, clientID string, d
 		AccessToken:  tokenResp.AccessToken,
 		TokenType:    tokenResp.TokenType,
 		RefreshToken: tokenResp.RefreshToken,
-		ExpiresIn:    tokenResp.ExpiresIn,
 	}
 	if tokenResp.ExpiresIn > 0 {
 		token.Expiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
@@ -616,47 +530,26 @@ func requestDeviceToken(ctx context.Context, tokenURL string, clientID string, d
 	return token, "", nil
 }
 
-// addKnownUser adds a userKey (now email@hostname) to the known_users list in the keyring.
-func addKnownUser(newUserKey string) error {
-	knownUsers := []string{}
+// ---- Crypto helpers ----
 
-	// Get current list
-	knownUsersJSON, err := keyring.Get(authutil.ServiceName, authutil.KnownUsersKey)
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		// Only return error if it's not ErrNotFound
-		return fmt.Errorf("failed to get known users list from keyring: %w", err)
+func generateCodeVerifier() (string, error) {
+	const length = 64
+	randomBytes := make([]byte, length)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
+	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(randomBytes), nil
+}
 
-	if err == nil && knownUsersJSON != "" {
-		if err := json.Unmarshal([]byte(knownUsersJSON), &knownUsers); err != nil {
-			return fmt.Errorf("failed to unmarshal known users list: %w", err)
-		}
+func generateCodeChallenge(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(hash[:])
+}
+
+func generateRandomState(length int) (string, error) {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
 	}
-
-	// Check if user already exists
-	found := false
-	for _, key := range knownUsers {
-		if key == newUserKey {
-			found = true
-			break
-		}
-	}
-
-	// Add if not found
-	if !found {
-		knownUsers = append(knownUsers, newUserKey)
-
-		// Marshal updated list
-		updatedJSON, err := json.Marshal(knownUsers)
-		if err != nil {
-			return fmt.Errorf("failed to marshal updated known users list: %w", err)
-		}
-
-		// Store updated list
-		if err := keyring.Set(authutil.ServiceName, authutil.KnownUsersKey, string(updatedJSON)); err != nil {
-			return fmt.Errorf("failed to store updated known users list: %w", err)
-		}
-	}
-
-	return nil
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

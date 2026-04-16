@@ -2,11 +2,15 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/spf13/pflag"
 	"go.datum.net/datumctl/internal/authutil"
+	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/miloapi"
 	"golang.org/x/oauth2"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/rest"
@@ -44,6 +48,10 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctxEntry, session, err := c.loadDatumContext()
+	if err != nil {
+		return nil, err
+	}
 	if c.APIServer != nil && *c.APIServer != "" {
 		config.Host = *c.APIServer
 	}
@@ -54,7 +62,11 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		config.ServerName = *c.TLSServerName
 	}
 
-	tknSrc, err := authutil.GetTokenSource(c.Context)
+	userKey, err := c.resolveUserKey(session)
+	if err != nil {
+		return nil, err
+	}
+	tknSrc, err := authutil.GetTokenSourceForUser(c.Context, userKey)
 	if err != nil {
 		return nil, err
 	}
@@ -63,35 +75,46 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		return &oauth2.Transport{Source: tknSrc, Base: rt}
 	}
 
-	apiHostname, err := authutil.GetAPIHostname()
+	baseServer, err := c.resolveBaseServer(userKey, session)
 	if err != nil {
 		return nil, err
 	}
 
-	// Handle platform-wide mode
-	isPlatformWide := c.PlatformWide != nil && *c.PlatformWide
-	hasProject := c.Project != nil && *c.Project != ""
-	hasOrganization := c.Organization != nil && *c.Organization != ""
+	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
+	if err != nil {
+		return nil, err
+	}
 
 	switch {
-	case isPlatformWide:
-		// Platform-wide mode: access the root of the platform
-		if hasProject || hasOrganization {
-			return nil, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
-		}
-		config.Host = fmt.Sprintf("https://%s", apiHostname)
-	case !hasProject && !hasOrganization:
-		// No context specified - default behavior
-	case hasOrganization && !hasProject:
-		// Organization context
-		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/organizations/%s/control-plane",
-			apiHostname, *c.Organization)
-	case hasProject && !hasOrganization:
-		// Project context
-		config.Host = fmt.Sprintf("https://%s/apis/resourcemanager.miloapis.com/v1alpha1/projects/%s/control-plane",
-			apiHostname, *c.Project)
+	case platformWide:
+		config.Host = baseServer
+	case organizationID != "":
+		config.Host = miloapi.OrgControlPlaneURL(baseServer, organizationID)
+	case projectID != "":
+		config.Host = miloapi.ProjectControlPlaneURL(baseServer, projectID)
 	default:
-		return nil, fmt.Errorf("exactly one of organizationID or projectID must be provided")
+		userID, err := authutil.GetUserIDFromTokenForUser(userKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user ID from token: %w", err)
+		}
+		config.Host = miloapi.UserControlPlaneURL(baseServer, userID)
+	}
+
+	if session != nil {
+		ep := session.Endpoint
+		if (c.TLSServerName == nil || *c.TLSServerName == "") && ep.TLSServerName != "" {
+			config.ServerName = ep.TLSServerName
+		}
+		if (c.Insecure == nil || !*c.Insecure) && ep.InsecureSkipTLSVerify {
+			config.Insecure = true
+		}
+		if len(config.CAData) == 0 && ep.CertificateAuthorityData != "" {
+			decoded, err := base64.StdEncoding.DecodeString(ep.CertificateAuthorityData)
+			if err != nil {
+				return nil, fmt.Errorf("decode certificate authority data for session %q: %w", session.Name, err)
+			}
+			config.CAData = decoded
+		}
 	}
 
 	return config, nil
@@ -127,14 +150,17 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 		CurrentContext: "inmemory",
 	}
 
-	// Create overrides from ConfigFlags - THIS IS THE KEY
 	overrides := &clientcmd.ConfigOverrides{}
 
 	if c.ConfigFlags.Namespace != nil && *c.ConfigFlags.Namespace != "" {
 		overrides.Context.Namespace = *c.ConfigFlags.Namespace
+	} else {
+		ctxEntry, _, err := c.loadDatumContext()
+		if err == nil && ctxEntry != nil && ctxEntry.Namespace != "" {
+			overrides.Context.Namespace = ctxEntry.Namespace
+		}
 	}
 
-	// Apply cluster overrides if set
 	if c.APIServer != nil && *c.APIServer != "" {
 		overrides.ClusterInfo.Server = *c.APIServer
 	}
@@ -156,6 +182,91 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	}
 
 	return clientcmd.NewDefaultClientConfig(*kubeConfig, overrides)
+}
+
+// loadDatumContext resolves the active v1beta1 session and current context,
+// if any. Returns (nil, nil, nil) when no session exists, letting callers
+// fall back to the user-key path which bootstraps from keyring if needed.
+func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.DiscoveredContext, *datumconfig.Session, error) {
+	cfg, err := datumconfig.LoadAuto()
+	if err != nil {
+		return nil, nil, err
+	}
+	ctxEntry := cfg.CurrentContextEntry()
+	if ctxEntry == nil {
+		return nil, nil, nil
+	}
+	session := cfg.SessionByName(ctxEntry.Session)
+	return ctxEntry, session, nil
+}
+
+func (c *CustomConfigFlags) resolveUserKey(session *datumconfig.Session) (string, error) {
+	if session != nil && session.UserKey != "" {
+		return session.UserKey, nil
+	}
+	return authutil.GetUserKey()
+}
+
+func (c *CustomConfigFlags) resolveBaseServer(userKey string, session *datumconfig.Session) (string, error) {
+	if c.APIServer != nil && *c.APIServer != "" {
+		return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(*c.APIServer)), nil
+	}
+	if session != nil && session.Endpoint.Server != "" {
+		return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(session.Endpoint.Server)), nil
+	}
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
+	if err != nil {
+		return "", err
+	}
+	return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname)), nil
+}
+
+// resolveScope picks the org/project/platform-wide scope for the request. It
+// tries, in order: flags → environment variables → active context. Returns an
+// error if the inputs are contradictory.
+func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext) (string, string, bool, error) {
+	platformWide := c.PlatformWide != nil && *c.PlatformWide
+	projectID := ""
+	organizationID := ""
+
+	if c.Project != nil && *c.Project != "" {
+		projectID = *c.Project
+	}
+	if c.Organization != nil && *c.Organization != "" {
+		organizationID = *c.Organization
+	}
+
+	if platformWide && (projectID != "" || organizationID != "") {
+		return "", "", false, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
+	}
+
+	if projectID == "" && organizationID == "" && !platformWide {
+		if envProject := os.Getenv("DATUM_PROJECT"); envProject != "" {
+			projectID = envProject
+		}
+		if envOrg := os.Getenv("DATUM_ORGANIZATION"); envOrg != "" {
+			organizationID = envOrg
+		}
+		if projectID != "" && organizationID != "" {
+			return "", "", false, fmt.Errorf("DATUM_PROJECT and DATUM_ORGANIZATION cannot both be set")
+		}
+	}
+
+	// Active context fills in when flags/env don't. Project scope wins over
+	// org scope when the context is project-scoped.
+	if projectID == "" && organizationID == "" && !platformWide && ctxEntry != nil {
+		if ctxEntry.ProjectID != "" {
+			projectID = ctxEntry.ProjectID
+		} else {
+			organizationID = ctxEntry.OrganizationID
+		}
+	}
+
+	if projectID != "" && organizationID != "" {
+		return "", "", false, fmt.Errorf("exactly one of --project or --organization must be provided")
+	}
+
+	return projectID, organizationID, platformWide, nil
 }
 
 func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
