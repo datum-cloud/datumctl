@@ -58,6 +58,7 @@ Get started:
   datumctl login
   datumctl get organizations
   datumctl get dnszones`,
+		Run: runLanding,
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
