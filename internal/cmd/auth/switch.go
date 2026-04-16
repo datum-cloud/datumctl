@@ -1,89 +1,96 @@
 package auth
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"go.datum.net/datumctl/internal/authutil"
-	"go.datum.net/datumctl/internal/keyring"
+
+	"go.datum.net/datumctl/internal/datumconfig"
+	customerrors "go.datum.net/datumctl/internal/errors"
+	"go.datum.net/datumctl/internal/picker"
 )
 
 var switchCmd = &cobra.Command{
-	Use:   "switch <user-email>",
-	Short: "Switch the active Datum Cloud user session",
-	Long: `Change which locally stored user account is treated as active.
+	Use:   "switch [email]",
+	Short: "Switch the active user",
+	Long: `Switch the active user to a different authenticated session.
 
-The active user's credentials are used for all datumctl commands that
-require authentication.
-
-The email address must match an account shown by 'datumctl auth list'.
-To add a new account, run 'datumctl auth login' first.`,
-	Example: `  # See which accounts are available
-  datumctl auth list
-
-  # Switch to a different account
-  datumctl auth switch user@example.com`,
-	Args: cobra.ExactArgs(1), // Requires exactly one argument: the user email
-	RunE: func(cmd *cobra.Command, args []string) error {
-		targetUserKey := args[0]
-		return runSwitch(targetUserKey)
-	},
+If no email is provided, an interactive picker is shown.
+If the email exists on multiple endpoints, you will be prompted to choose.
+The last-used context for that session is restored.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runSwitch,
 }
 
-func runSwitch(targetUserKey string) error {
-	// 1. Get the list of known users to validate the target user exists
-	knownUsers := []string{}
-	knownUsersJSON, err := keyring.Get(authutil.ServiceName, authutil.KnownUsersKey)
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		// Don't fail if list is missing, but we won't be able to validate.
-		// Print a warning?
-		fmt.Printf("Warning: could not retrieve known users list to validate target: %v\n", err)
-	} else if knownUsersJSON != "" {
-		if err := json.Unmarshal([]byte(knownUsersJSON), &knownUsers); err != nil {
-			// Also don't fail, but warn.
-			fmt.Printf("Warning: could not parse known users list to validate target: %v\n", err)
-		}
+func runSwitch(_ *cobra.Command, args []string) error {
+	cfg, err := datumconfig.LoadAuto()
+	if err != nil {
+		return err
 	}
 
-	// 2. Validate the target user key exists in the known list (if available)
-	found := false
-	if len(knownUsers) > 0 {
-		for _, key := range knownUsers {
-			if key == targetUserKey {
-				found = true
-				break
-			}
+	var sessionName string
+
+	if len(args) == 0 {
+		// Interactive picker of all sessions.
+		if len(cfg.Sessions) == 0 {
+			return customerrors.NewUserErrorWithHint(
+				"No authenticated sessions.",
+				"Run 'datumctl login' to authenticate.",
+			)
 		}
-		if !found {
-			return fmt.Errorf("user '%s' not found in the list of locally authenticated users. Use 'datumctl auth list' to see available users", targetUserKey)
+		allSessions := make([]*datumconfig.Session, len(cfg.Sessions))
+		for i := range cfg.Sessions {
+			allSessions[i] = &cfg.Sessions[i]
+		}
+		sessionName, err = picker.SelectSession(allSessions)
+		if err != nil {
+			return err
 		}
 	} else {
-		// If known users list wasn't available or parseable, try to get the specific credential as a fallback validation
-		_, err := keyring.Get(authutil.ServiceName, targetUserKey)
-		if err != nil {
-			if errors.Is(err, keyring.ErrNotFound) {
-				return fmt.Errorf("credentials for user '%s' not found. Use 'datumctl auth list' to see available users", targetUserKey)
+		email := args[0]
+		sessions := cfg.SessionByEmail(email)
+		if len(sessions) == 0 {
+			return customerrors.NewUserErrorWithHint(
+				fmt.Sprintf("No sessions found for %s.", email),
+				"Run 'datumctl auth list' to see authenticated users, or 'datumctl login' to add a new one.",
+			)
+		}
+		if len(sessions) == 1 {
+			sessionName = sessions[0].Name
+		} else {
+			sessionName, err = picker.SelectSession(sessions)
+			if err != nil {
+				return err
 			}
-			return fmt.Errorf("failed to check credentials for user '%s': %w", targetUserKey, err)
 		}
 	}
 
-	// 3. Get current active user (optional, for comparison message)
-	currentActiveUser, _ := keyring.Get(authutil.ServiceName, authutil.ActiveUserKey)
-
-	if currentActiveUser == targetUserKey {
-		fmt.Printf("User '%s' is already the active user.\n", targetUserKey)
-		return nil
+	session := cfg.SessionByName(sessionName)
+	if session == nil {
+		return fmt.Errorf("session %q not found", sessionName)
 	}
 
-	// 4. Set the new active user
-	err = keyring.Set(authutil.ServiceName, authutil.ActiveUserKey, targetUserKey)
-	if err != nil {
-		return fmt.Errorf("failed to set '%s' as active user in keyring: %w", targetUserKey, err)
+	cfg.ActiveSession = sessionName
+
+	// Restore last context for this session.
+	if session.LastContext != "" {
+		if cfg.ContextByName(session.LastContext) != nil {
+			cfg.CurrentContext = session.LastContext
+		}
 	}
 
-	fmt.Printf("Switched active user to '%s'\n", targetUserKey)
+	if err := datumconfig.SaveV1Beta1(cfg); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+
+	fmt.Printf("\n\u2713 Switched to %s (%s)\n", session.UserName, session.UserEmail)
+	if ctxEntry := cfg.CurrentContextEntry(); ctxEntry != nil {
+		fmt.Printf("  Context:  %s\n", datumconfig.FormatWithID(cfg.DisplayRef(ctxEntry), ctxEntry.Ref()))
+	}
+	if cfg.HasMultipleEndpoints() {
+		fmt.Printf("  Endpoint: %s\n", datumconfig.StripScheme(session.Endpoint.Server))
+	}
+
 	return nil
 }
+
