@@ -11,6 +11,7 @@ before:
     - go generate ./...
     - ./scripts/generate-cli-docs.sh
     - ./scripts/package-docs.sh
+    - ./scripts/generate-man-pages.sh
 
 builds:
   - env:
@@ -39,6 +40,10 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+    files:
+      - src: .generated/man/man1/*.1
+        dst: share/man/man1
+        strip_parent: true
 
 nfpms:
   - vendor: Datum Technology, Inc
@@ -55,6 +60,11 @@ nfpms:
       - rpm
       - termux.deb
       - archlinux
+    contents:
+      - src: .generated/man/man1/*.1
+        dst: /usr/share/man/man1
+        file_info:
+          mode: 0644
 
 changelog:
   sort: asc
