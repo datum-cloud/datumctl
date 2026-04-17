@@ -56,11 +56,6 @@ func runWhoami(_ *cobra.Command, _ []string) error {
 
 	fmt.Printf("User:         %s (%s)\n", userName, userEmail)
 
-	// Show endpoint only when multiple endpoints are in use.
-	if cfg.HasMultipleEndpoints() {
-		fmt.Printf("Endpoint:     %s\n", datumconfig.StripScheme(session.Endpoint.Server))
-	}
-
 	ctxEntry := cfg.CurrentContextEntry()
 	if ctxEntry != nil {
 		fmt.Printf("Context:      %s\n", ctxEntry.Ref())
@@ -109,10 +104,6 @@ func runWhoamiAmbient() error {
 		fmt.Printf("User:         %s\n", userName)
 	default:
 		fmt.Printf("User:         %s\n", creds.Subject)
-	}
-
-	if creds.APIHostname != "" {
-		fmt.Printf("Endpoint:     %s\n", creds.APIHostname)
 	}
 
 	// Context is implicit in ambient mode — whichever of DATUM_PROJECT /
