@@ -14,6 +14,14 @@ import (
 // bootstrap from existing keyring credentials — for users who logged in
 // before the v1beta1 config layer existed.
 func GetUserKeyForCurrentSession() (string, *datumconfig.Session, error) {
+	if HasAmbientToken() {
+		session, err := ambientSession()
+		if err != nil {
+			return "", nil, err
+		}
+		return AmbientUserKey, session, nil
+	}
+
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
 		return "", nil, err

@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/picker"
@@ -35,6 +36,9 @@ To add a new account, run 'datumctl login' first.`,
 }
 
 func runSwitch(_ *cobra.Command, args []string) error {
+	if err := authutil.GuardAmbientMutation(); err != nil {
+		return err
+	}
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
 		return err

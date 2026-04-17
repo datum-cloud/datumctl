@@ -5,3 +5,4 @@ dist/
 # Nix stuff
 /result
 .generated/
+bin/

@@ -67,6 +67,14 @@ type StoredCredentials struct {
 
 // GetActiveCredentials retrieves the StoredCredentials for the currently active user.
 func GetActiveCredentials() (*StoredCredentials, string, error) {
+	if HasAmbientToken() {
+		creds, err := ambientCredentials()
+		if err != nil {
+			return nil, "", err
+		}
+		return creds, AmbientUserKey, nil
+	}
+
 	activeUserKey, err := keyring.Get(ServiceName, ActiveUserKey)
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
@@ -88,6 +96,10 @@ func GetActiveCredentials() (*StoredCredentials, string, error) {
 
 // GetStoredCredentials retrieves and unmarshals credentials for a specific user key.
 func GetStoredCredentials(userKey string) (*StoredCredentials, error) {
+	if HasAmbientToken() && userKey == AmbientUserKey {
+		return ambientCredentials()
+	}
+
 	credsJSON, err := keyring.Get(ServiceName, userKey)
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
@@ -168,6 +180,9 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 // GetTokenSource creates an oauth2.TokenSource for the active user.
 // This source will automatically refresh the token if it's expired and persist updates to the keyring.
 func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
+	if HasAmbientToken() {
+		return ambientTokenSource{}, nil
+	}
 	creds, userKey, err := GetActiveCredentials()
 	if err != nil {
 		return nil, err
@@ -178,6 +193,9 @@ func GetTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 // GetTokenSourceForUser creates an oauth2.TokenSource for a specific user key.
 // Used by multi-user flows (sessions, kubectl exec plugin, MCP).
 func GetTokenSourceForUser(ctx context.Context, userKey string) (oauth2.TokenSource, error) {
+	if HasAmbientToken() {
+		return ambientTokenSource{}, nil
+	}
 	creds, err := GetStoredCredentials(userKey)
 	if err != nil {
 		return nil, err
@@ -247,6 +265,10 @@ func userIDFromCreds(creds *StoredCredentials) (string, error) {
 
 // GetActiveUserKey retrieves the key for the currently active user (e.g., email@example.com).
 func GetActiveUserKey() (string, error) {
+	if HasAmbientToken() {
+		return AmbientUserKey, nil
+	}
+
 	activeUserKey, err := keyring.Get(ServiceName, ActiveUserKey)
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
@@ -265,6 +287,9 @@ func GetActiveUserKey() (string, error) {
 // GetAPIHostname returns the API hostname from stored credentials.
 // If no API hostname is stored, it attempts to derive it from the auth hostname.
 func GetAPIHostname() (string, error) {
+	if HasAmbientToken() {
+		return ambientAPIHostname()
+	}
 	creds, _, err := GetActiveCredentials()
 	if err != nil {
 		return "", err
@@ -275,6 +300,9 @@ func GetAPIHostname() (string, error) {
 // GetAPIHostnameForUser returns the API hostname from stored credentials for
 // a specific user key.
 func GetAPIHostnameForUser(userKey string) (string, error) {
+	if HasAmbientToken() {
+		return ambientAPIHostname()
+	}
 	creds, err := GetStoredCredentials(userKey)
 	if err != nil {
 		return "", err

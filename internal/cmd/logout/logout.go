@@ -36,6 +36,9 @@ Use --all to log out all users.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := authutil.GuardAmbientMutation(); err != nil {
+				return err
+			}
 			if all {
 				return logoutAll()
 			}
