@@ -7,8 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"os"
+
 	"github.com/spf13/cobra"
 
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 )
 
@@ -17,6 +20,15 @@ import (
 // the logged-out landing rather than a hard error.
 func runLanding(cmd *cobra.Command, _ []string) {
 	out := cmd.OutOrStdout()
+
+	// Ambient mode short-circuits config loading: the keyring and on-disk
+	// config are intentionally not available in embedded terminals, so
+	// LoadAuto would bounce us to the logged-out landing with a misleading
+	// "run datumctl login" prompt.
+	if authutil.HasAmbientToken() {
+		printAmbientLanding(out)
+		return
+	}
 
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil || cfg == nil {
@@ -31,6 +43,50 @@ func runLanding(cmd *cobra.Command, _ []string) {
 	}
 
 	printLoggedInLanding(out, cfg, session)
+}
+
+// printAmbientLanding renders a trimmed landing for embedded terminals. The
+// identity and context are pinned by the host, so suggestions for
+// login/logout/ctx-switching are deliberately omitted — those commands are
+// also hidden from --help via applyAmbientHelpFilter and blocked at runtime
+// via GuardAmbientMutation.
+func printAmbientLanding(out io.Writer) {
+	email := os.Getenv(authutil.AmbientUserEmailEnv)
+	org := os.Getenv("DATUM_ORGANIZATION")
+	project := os.Getenv("DATUM_PROJECT")
+
+	greeting := timeOfDayGreeting(time.Now())
+	if name := firstName(email); name != "" {
+		fmt.Fprintf(out, "%s, %s.\n", greeting, name)
+	} else {
+		fmt.Fprintf(out, "%s.\n", greeting)
+	}
+	fmt.Fprintln(out)
+
+	if email != "" {
+		fmt.Fprintf(out, "  Signed in as   %s\n", email)
+	}
+	switch {
+	case project != "":
+		fmt.Fprintf(out, "  Context        project/%s\n", project)
+	case org != "":
+		fmt.Fprintf(out, "  Context        organization/%s\n", org)
+	}
+	fmt.Fprintln(out)
+
+	fmt.Fprintln(out, "What would you like to do?")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "  Explore what's there   datumctl get <resource>")
+	fmt.Fprintln(out, "                         datumctl describe <resource> <name>")
+	fmt.Fprintln(out, "  Ship something         datumctl apply -f file.yaml")
+	fmt.Fprintln(out, "                         datumctl create <resource> ...")
+	fmt.Fprintln(out, "  Explore the API        datumctl api-resources")
+	fmt.Fprintln(out, "  Follow the audit trail datumctl activity")
+	fmt.Fprintln(out)
+
+	fmt.Fprintf(out, "Tip: %s\n", pickAmbientTip(time.Now().UnixNano()))
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Run 'datumctl --help' for the full command reference.")
 }
 
 func printLoggedOutLanding(out io.Writer) {
@@ -173,4 +229,43 @@ var landingTips = []string{
 func pickTip(seed int64) string {
 	r := rand.New(rand.NewSource(seed))
 	return landingTips[r.Intn(len(landingTips))]
+}
+
+// ambientTipBlocklist lists substrings that disqualify a tip from ambient-mode
+// rotation. These reference commands hidden in ambient mode (ctx, auth *) or
+// env vars that are pinned by the host and not user-overridable.
+var ambientTipBlocklist = []string{
+	"datumctl ctx",
+	"datumctl auth",
+	"DATUM_PROJECT",
+	"DATUM_ORGANIZATION",
+}
+
+// pickAmbientTip is the ambient-mode counterpart of pickTip — it skips any tip
+// whose text references commands or env vars that don't apply to an embedded
+// terminal.
+func pickAmbientTip(seed int64) string {
+	filtered := make([]string, 0, len(landingTips))
+	for _, t := range landingTips {
+		if tipBlocked(t) {
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	if len(filtered) == 0 {
+		// Defensive fallback: if the blocklist ever eats every tip we still
+		// want *something* in the "Tip:" slot rather than a panic on Intn(0).
+		return "'datumctl get <resource>' is the fastest way to list what's available."
+	}
+	r := rand.New(rand.NewSource(seed))
+	return filtered[r.Intn(len(filtered))]
+}
+
+func tipBlocked(tip string) bool {
+	for _, needle := range ambientTipBlocklist {
+		if strings.Contains(tip, needle) {
+			return true
+		}
+	}
+	return false
 }

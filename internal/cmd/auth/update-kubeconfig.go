@@ -49,6 +49,9 @@ environments where the hostname cannot be derived from stored credentials).`,
   # Write to a custom kubeconfig file
   datumctl auth update-kubeconfig --organization my-org-id --kubeconfig ~/.kube/datum-config`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := authutil.GuardAmbientMutation(); err != nil {
+				return err
+			}
 			// Determine kubeconfig path
 			var kubeconfigPath string
 			if kubeconfig != "" {

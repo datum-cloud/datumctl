@@ -62,6 +62,9 @@ Use --credentials to authenticate as a machine account (non-interactive).`,
 }
 
 func runLogin(cmd *cobra.Command, _ []string) error {
+	if err := authutil.GuardAmbientMutation(); err != nil {
+		return err
+	}
 	ctx := cmd.Context()
 
 	var result *authutil.LoginResult
