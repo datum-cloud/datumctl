@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/create"
@@ -44,10 +45,11 @@ func hidePersistentFlags(cmd *cobra.Command, flags ...string) {
 }
 
 func RootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "datumctl",
-		Short: "The official CLI for Datum Cloud",
-		Long: `datumctl is the official command-line interface for Datum Cloud, the connectivity
+	// Ambient-token mode gates several UX concerns (help text, group
+	// registration, flag visibility) so compute it once up front.
+	ambient := authutil.HasAmbientToken()
+
+	long := `datumctl is the official command-line interface for Datum Cloud, the connectivity
 infrastructure platform for developers and forward-thinking companies.
 
 Use datumctl to authenticate and manage all your Datum Cloud resources —
@@ -57,8 +59,29 @@ terminal. No knowledge of Kubernetes or kubectl required.
 Get started:
   datumctl login
   datumctl get organizations
-  datumctl get dnszones`,
-		Run: runLanding,
+  datumctl get dnszones`
+	if ambient {
+		// In embedded terminals the user is already signed in and pinned to a
+		// context, so the "datumctl login" / "datumctl get organizations"
+		// getting-started lines are misleading.
+		long = `datumctl is the official command-line interface for Datum Cloud, the connectivity
+infrastructure platform for developers and forward-thinking companies.
+
+This session is running inside an embedded terminal: you're already signed in
+and pinned to the current organization or project. Use datumctl to explore
+resources, apply manifests, and query activity in that context.
+
+Get started:
+  datumctl get dnszones
+  datumctl apply -f file.yaml
+  datumctl api-resources`
+	}
+
+	rootCmd := &cobra.Command{
+		Use:   "datumctl",
+		Short: "The official CLI for Datum Cloud",
+		Long:  long,
+		Run:   runLanding,
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
@@ -93,7 +116,12 @@ Get started:
 	)
 
 	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
-	rootCmd.AddGroup(&cobra.Group{ID: "context", Title: "Context"})
+	// Skip the "Context" group in ambient mode — its only member (`ctx`) is
+	// hidden, and Cobra still prints the group title for empty groups, which
+	// would leave a bare "Context" header with nothing under it.
+	if !ambient {
+		rootCmd.AddGroup(&cobra.Group{ID: "context", Title: "Context"})
+	}
 	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})
 	rootCmd.AddGroup(&cobra.Group{ID: "resource", Title: "Resource Management"})
 
@@ -114,7 +142,13 @@ Get started:
 	rootCmd.AddCommand(whoamiCmd)
 
 	ctxCmd := datumctx.Command()
-	ctxCmd.GroupID = "context"
+	// In ambient mode the Context group is not registered (see RootCmd comment
+	// above), so GroupID must stay empty — Cobra panics if a command
+	// references a group that isn't registered. ctx is also Hidden in ambient
+	// mode, so it won't surface under "Additional Commands" either.
+	if !ambient {
+		ctxCmd.GroupID = "context"
+	}
 	rootCmd.AddCommand(ctxCmd)
 
 	authCommand := auth.Command()
@@ -531,5 +565,41 @@ Specify the resource type and name to view its history.`
 	docsCmd.GroupID = "other"
 	rootCmd.AddCommand(docsCmd)
 
+	// Ambient-token mode (embedded terminals): the caller has already pinned
+	// user, org/project, and endpoint via env vars and cannot switch away, so
+	// the authentication, context, and platform-root surfaces of the CLI are
+	// nonsensical in this context. Hide them from --help output and the
+	// landing-page listing; GuardAmbientMutation still blocks the mutation
+	// paths if anyone invokes them directly by name.
+	if ambient {
+		applyAmbientHelpFilter(rootCmd)
+	}
+
 	return rootCmd
+}
+
+// applyAmbientHelpFilter hides commands and flags that don't make sense when
+// datumctl is embedded with an ambient token. Commands remain reachable by
+// name (so automation that shells out to e.g. `datumctl auth whoami` doesn't
+// break on older hosts) — they just don't appear in help text. Flags are
+// hidden via MarkHidden which leaves them functional if explicitly passed.
+func applyAmbientHelpFilter(root *cobra.Command) {
+	// Commands that mutate or switch authentication / context / platform scope.
+	// `whoami` is intentionally kept: it's read-only and already has ambient
+	// support that surfaces the pinned user + context.
+	hideCommandNames := map[string]bool{
+		"login":  true,
+		"logout": true,
+		"auth":   true,
+		"ctx":    true,
+	}
+	for _, c := range root.Commands() {
+		if hideCommandNames[c.Name()] {
+			c.Hidden = true
+		}
+	}
+
+	// Context-selection flags. `--namespace` is kept because it's a
+	// resource-level concern, not a context-switch.
+	hidePersistentFlags(root, "organization", "project", "platform-wide")
 }
