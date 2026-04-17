@@ -15,12 +15,16 @@ Subcommands:
                         for any API group available in the current context.
   generate-cli-docs     Generate markdown documentation files for all
                         datumctl commands (used to build the published
-                        CLI reference at datum.net/docs).`,
+                        CLI reference at datum.net/docs).
+  generate-man-pages    Generate man page files for all datumctl commands,
+                        following the kubectl naming convention (e.g. datumctl-get.1).`,
 	}
 	cmd.AddCommand(OpenAPICmd())
 
 	genDoc := GenerateDocumentationCmd(root)
 	cmd.AddCommand(genDoc)
+
+	cmd.AddCommand(GenerateManPagesCmd(root))
 
 	return cmd
 }
