@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 )
 
@@ -19,5 +21,18 @@ func WrapResourceCommand(cmd *cobra.Command) *cobra.Command {
 	}
 	cmd.PreRunE = preRunFunc
 	cmd.GroupID = "resource"
+
+	// Wrap the existing ValidArgsFunction so the "organizations" alias also
+	// appears as a completion option alongside the real resource types.
+	if inner := cmd.ValidArgsFunction; inner != nil {
+		cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			comps, directive := inner(cmd, args, toComplete)
+			if len(args) == 0 && strings.HasPrefix("organizations", toComplete) {
+				comps = append(comps, "organizations")
+			}
+			return comps, directive
+		}
+	}
+
 	return cmd
 }
