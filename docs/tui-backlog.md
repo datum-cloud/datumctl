@@ -5576,7 +5576,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
 
 ### FB-135 — `LoadErrorMsg` 10s auto-clear silently erases persistent `BucketsErrorMsg` signal
 
-**Status: PENDING ENGINEER** — filed 2026-04-20 by product-experience from FB-071 user-persona P2.
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20 (retroactive closeout)** — engineer implemented Option B at `internal/tui/model.go:570–585` (`ClearStatusErrMsg` handler re-checks `m.bucketErr != nil` and restores bucket error + severity via `m.bucketUnauthorized` re-derivation instead of blanking). Commit `787dab5` on `feat/console` — "Bucket errors remain visible after transient errors clear". AC4 test `TestFB135_AC4_Unauthorized_SeverityPreservedThroughClear` at `model_test.go:15972` addresses the compound unauthorized-severity path and closes FB-137; committed separately as `d8e6bfb` — "Test coverage confirms unauthorized bucket errors keep the ✕ glyph through an auto-clearing transient error". Persona eval (pre-compaction) delivered 1 P3 filed as **FB-137** (test-coverage gap on unauthorized severity through the restore cycle — now closed by the AC4 test). Gate-check independent reproduction 2026-04-20: `go install ./...` exit 0; 4/4 `TestFB135_*` tests PASS (AC1 Observable `stripANSIModel(appM.View())` substring check; AC2 Input-changed BucketsLoadedMsg clears; AC3 Anti-regression pure-LoadError clear; AC4 Observable unauthorized severity preserved); 4/4 `TestFB071_*` anti-regression PASS; full suite green. Axis-coverage table submitter-owned, mapped to brief ACs 1-5 (brief AC4 = FB-071 suite green treated as anti-regression coverage; engineer bundled additional `TestFB135_AC4` for FB-137 closure as test-only scope addition — per `feedback_scope_addition_fold_vs_new_brief` this is same-thesis bundling and accepted). Prior Status: PENDING ENGINEER — filed 2026-04-20 by product-experience from FB-071 user-persona P2.
 **Priority: P2** — a permanent bucket-loading failure can leave the global status bar silent after any transient resource-list error clears, contradicting the "universally visible" contract FB-071 just established.
 
 #### User problem
@@ -5691,7 +5691,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
 
 ### FB-137 — FB-135 restore path: unauthorized severity through auto-clear cycle is untested
 
-**Status: PENDING TEST-ENGINEER** — filed 2026-04-20 by product-experience from FB-135 user-persona P3 #1. Test-coverage gap; code is correct.
+**Status: ACCEPTED 2026-04-20 (retroactive closeout — bundled with FB-135 AC4)** — `TestFB135_AC4_Unauthorized_SeverityPreservedThroughClear` at `internal/tui/model_test.go:15972` closes the coverage gap. Test exercises the full compound path: `BucketsErrorMsg{Unauthorized: true}` → `LoadErrorMsg{Severity: Warning}` → `ClearStatusErrMsg` → assertions on `statusBar.ErrSeverity == ErrorSeverityError` + `stripANSIModel(appM.View())` contains `"✕"`. Both ACs (Observable + Integration) satisfied. Commit `d8e6bfb` on `feat/console` — "Test coverage confirms unauthorized bucket errors keep the ✕ glyph through an auto-clearing transient error". Test-only addition; no production-code changes. Prior Status: PENDING TEST-ENGINEER — filed 2026-04-20 by product-experience from FB-135 user-persona P3 #1. Test-coverage gap; code is correct.
 **Priority: P3** — no current bug; latent risk that a future refactor silently downgrades severity without a test catching it.
 
 #### Gap
