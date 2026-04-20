@@ -277,7 +277,7 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 
 	// FB-074: no bucket client wired — disambiguate from "configured but zero governed types".
 	if !m.bucketConfigured {
-		return leftHeader + "\n\n" + muted.Render("Platform health unavailable (quota service not configured)")
+		return leftHeader + "\n\n" + muted.Render("Quota service not configured")
 	}
 
 	ak, an := m.activeConsumer()

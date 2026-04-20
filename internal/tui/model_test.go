@@ -15950,8 +15950,8 @@ func TestFB074_AC1_Observable_BcNil_UnconfiguredCopy(t *testing.T) {
 	if strings.Contains(got, "No governed resource types") {
 		t.Errorf("AC1: S2 shows 'No governed resource types' when bc==nil, want unconfigured copy:\n%s", got)
 	}
-	if !strings.Contains(got, "quota service not configured") {
-		t.Errorf("AC1: S2 does not contain 'quota service not configured' when bc==nil:\n%s", got)
+	if !strings.Contains(got, "Quota service not configured") {
+		t.Errorf("AC1: S2 does not contain 'Quota service not configured' when bc==nil:\n%s", got)
 	}
 }
 
@@ -15967,7 +15967,7 @@ func TestFB074_AC2_Observable_BcNotNil_ZeroGovCopy(t *testing.T) {
 	if !strings.Contains(got, "No governed resource types") {
 		t.Errorf("AC2: S2 does not contain 'No governed resource types' when bc!=nil and zero governed:\n%s", got)
 	}
-	if strings.Contains(got, "quota service not configured") {
+	if strings.Contains(got, "Quota service not configured") {
 		t.Errorf("AC2: S2 shows unconfigured copy when bc!=nil — should show zero-governed copy:\n%s", got)
 	}
 }
@@ -15989,3 +15989,61 @@ func TestFB074_AC12_InputChanged_BcNilVsZeroGov(t *testing.T) {
 }
 
 // ==================== End FB-074 ====================
+
+// ==================== FB-139: S2 unconfigured state leading phrase ====================
+//
+// Fix: resourcetable.go:280 copy shortened from
+// "Platform health unavailable (quota service not configured)" → "Quota service not configured".
+// Removes shared "Platform health unavailable" prefix with the unauthorized branch at line 273.
+//
+// Axis-coverage:
+// AC  | Observable                                              | Input-changed                                   | Anti-regression                                     | Integration
+// ----+---------------------------------------------------------+-------------------------------------------------+-----------------------------------------------------+-------------
+// AC1 | TestFB139_AC1_Observable_NewCopy                        | TestFB139_AC2_InputChanged_OldPhraseAbsent      | -                                                   | -
+// AC2 | -                                                       | TestFB139_AC2_InputChanged_OldPhraseAbsent      | -                                                   | -
+// AC3 | -                                                       | -                                               | TestFB139_AC3_AntiRegression_UnauthorizedUnchanged  | -
+// AC4 | (FB-074 suite — TestFB074_AC1/AC2/AC12 pass unmodified) | -                                               | -                                                   | -
+// AC5 | -                                                       | -                                               | -                                                   | go install ✓
+
+// TestFB139_AC1_Observable_NewCopy: !bucketConfigured → S2 renders "Quota service not configured".
+func TestFB139_AC1_Observable_NewCopy(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(nil, nil)
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if !strings.Contains(got, "Quota service not configured") {
+		t.Errorf("AC1: S2 does not contain 'Quota service not configured' when bc==nil:\n%s", got)
+	}
+}
+
+// TestFB139_AC2_InputChanged_OldPhraseAbsent: old leading phrase no longer present in unconfigured state.
+func TestFB139_AC2_InputChanged_OldPhraseAbsent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(nil, nil)
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if strings.Contains(got, "Platform health unavailable") {
+		t.Errorf("AC2: S2 still contains old 'Platform health unavailable' prefix in unconfigured state:\n%s", got)
+	}
+}
+
+// TestFB139_AC3_AntiRegression_UnauthorizedUnchanged: unauthorized bucket error still renders
+// "Platform health unavailable" (line 273 unchanged) and NOT "Quota service not configured".
+func TestFB139_AC3_AntiRegression_UnauthorizedUnchanged(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("forbidden"), Unauthorized: true})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.table.View())
+	if !strings.Contains(got, "Platform health unavailable") {
+		t.Errorf("AC3: unauthorized error no longer renders 'Platform health unavailable':\n%s", got)
+	}
+	if strings.Contains(got, "Quota service not configured") {
+		t.Errorf("AC3: unauthorized error shows unconfigured copy — wrong branch:\n%s", got)
+	}
+}
+
+// ==================== End FB-139 ====================
