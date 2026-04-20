@@ -1029,3 +1029,113 @@ func TestFB025_AC7_RenderEventsTable_EmptyStateDivergesByAge(t *testing.T) {
 }
 
 // ==================== End FB-025 (component layer) ====================
+
+// ==================== FB-122: Events age label suppressed during loading ====================
+
+// AC1 [Observable] — age label absent when eventsLoading=true (even with non-zero fetchedAt).
+func TestFB122_AC1_Observable_AgeLabel_Suppressed_WhenLoading(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Now().Add(-2 * time.Minute))
+	dv.SetEventsLoading(true)
+
+	got := stripANSI(dv.View())
+	if strings.Contains(got, " · ") {
+		t.Errorf("AC1 [Observable]: age separator ' · ' present when eventsLoading=true, want absent:\n%s", got)
+	}
+}
+
+// AC2 [Observable] — age label present when eventsLoading=false with non-zero fetchedAt.
+func TestFB122_AC2_Observable_AgeLabel_Present_WhenNotLoading(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Now())
+	dv.SetEventsLoading(false)
+
+	got := stripANSI(dv.View())
+	if !strings.Contains(got, " · ") {
+		t.Errorf("AC2 [Observable]: age separator ' · ' absent when eventsLoading=false and fetchedAt set:\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — toggling eventsLoading true→false changes View() output:
+// v1 (loading=true) has no age label; v2 (loading=false) does.
+func TestFB122_AC3_InputChanged_Toggle_LoadingToNotLoading(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Now().Add(-1 * time.Minute))
+	dv.SetEventsLoading(true)
+
+	v1 := stripANSI(dv.View())
+	if strings.Contains(v1, " · ") {
+		t.Fatal("AC3 setup invalid: age label present with eventsLoading=true")
+	}
+
+	dv.SetEventsLoading(false)
+	v2 := stripANSI(dv.View())
+
+	if v1 == v2 {
+		t.Errorf("AC3 [Input-changed]: View() unchanged after SetEventsLoading(false), want different output")
+	}
+	if !strings.Contains(v2, " · ") {
+		t.Errorf("AC3 [Input-changed]: age label absent after SetEventsLoading(false):\n%s", v2)
+	}
+}
+
+// AC4 [Anti-regression] — eventsLoading has no effect on View() outside events mode.
+func TestFB122_AC4_AntiRegression_NonEventsMode_Unaffected(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"", "yaml", "conditions"} {
+		mode := mode
+		t.Run("mode="+mode, func(t *testing.T) {
+			t.Parallel()
+			dv := NewDetailViewModel(160, 20)
+			dv.SetResourceContext("Pod", "my-pod")
+			dv.SetMode(mode)
+			dv.SetEventsFetchedAt(time.Now())
+
+			dv.SetEventsLoading(false)
+			v1 := stripANSI(dv.View())
+			dv.SetEventsLoading(true)
+			v2 := stripANSI(dv.View())
+
+			if strings.Contains(v1, " · ") || strings.Contains(v2, " · ") {
+				t.Errorf("AC4 [Anti-regression]: age label ' · ' present in mode=%q — must only appear in events mode", mode)
+			}
+			if v1 != v2 {
+				t.Errorf("AC4 [Anti-regression]: View() changed when eventsLoading toggled in mode=%q — must be unaffected", mode)
+			}
+		})
+	}
+}
+
+// AC5 [Anti-regression] — eventsLoading=true + fetchedAt.IsZero(): no age label for the right reason.
+// The eventsFetchedAt.IsZero() check short-circuits before eventsLoading is evaluated.
+func TestFB122_AC5_AntiRegression_ZeroFetchedAt_NoAgeLabel(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Time{}) // zero
+	dv.SetEventsLoading(true)
+
+	got := stripANSI(dv.View())
+	if strings.Contains(got, " · ") {
+		t.Errorf("AC5 [Anti-regression]: age label present with zero fetchedAt + eventsLoading=true:\n%s", got)
+	}
+	// Cross-check: with non-zero fetchedAt + eventsLoading=true, label is also absent (AC1).
+	// This confirms AC5 is "absent for right reason (IsZero)" not vacuously absent.
+	dv.SetEventsFetchedAt(time.Now())
+	gotWithFetchedAt := stripANSI(dv.View())
+	if strings.Contains(gotWithFetchedAt, " · ") {
+		t.Errorf("AC5 cross-check: age label present with non-zero fetchedAt + eventsLoading=true — AC1 should catch this:\n%s", gotWithFetchedAt)
+	}
+}
+
+// ==================== End FB-122 (component layer) ====================

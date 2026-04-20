@@ -27,6 +27,7 @@ type DetailViewModel struct {
 	mode             string // "describe", "yaml", or "conditions"; empty treated as "describe" (FB-018 adds "conditions")
 	describeAvailable bool
 	eventsFetchedAt  time.Time // FB-025: timestamp of last successful events fetch; zero = never
+	eventsLoading    bool      // FB-122: true while LoadEventsCmd is in flight
 }
 
 func NewDetailViewModel(width, height int) DetailViewModel {
@@ -114,6 +115,8 @@ func (m *DetailViewModel) SetDescribeAvailable(available bool) {
 
 func (m *DetailViewModel) SetEventsFetchedAt(t time.Time) { m.eventsFetchedAt = t }
 func (m DetailViewModel) EventsFetchedAt() time.Time      { return m.eventsFetchedAt }
+func (m *DetailViewModel) SetEventsLoading(loading bool)  { m.eventsLoading = loading }
+func (m DetailViewModel) EventsLoading() bool             { return m.eventsLoading }
 
 func (m *DetailViewModel) ScrollToTop() {
 	m.vp.GotoTop()
@@ -166,7 +169,7 @@ func (m DetailViewModel) titleBar() string {
 		rightText = muted.Render(hintRow)
 	}
 
-	if m.mode == "events" && !m.eventsFetchedAt.IsZero() {
+	if m.mode == "events" && !m.eventsFetchedAt.IsZero() && !m.eventsLoading {
 		age := muted.Render(" · " + eventsAgeLabel(m.eventsFetchedAt))
 		candidate := leftText + age
 		if w-lipgloss.Width(candidate)-lipgloss.Width(rightText) >= 1 {

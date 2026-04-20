@@ -358,6 +358,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case data.EventsLoadedMsg: // FB-019 // AC#24
 		m.eventsLoading = false
+		m.detail.SetEventsLoading(false) // FB-122
 		if msg.Err != nil {
 			m.eventsErr = msg.Err
 			m.events = nil
@@ -619,6 +620,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventsMode = false     // AC#5 FB-019
 		m.events = nil
 		m.eventsLoading = false
+		m.detail.SetEventsLoading(false) // FB-122
 		m.eventsErr = nil
 		m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 		m.detail.SetMode("")
@@ -1175,6 +1177,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 				// Re-dispatch if no events cached or prior fetch failed, and no fetch in flight. // AC#3, FB-024 D4
 				if (m.events == nil || m.eventsErr != nil) && !m.eventsLoading {
 					m.eventsLoading = true
+					m.detail.SetEventsLoading(true) // FB-122
 					ns := ""
 					if m.describeRT.Namespaced {
 						ns = m.tuiCtx.Namespace
@@ -1336,6 +1339,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			}
 			if m.activePane == DetailPane && (m.eventsMode || m.events != nil) && !m.eventsLoading {
 				m.eventsLoading = true
+				m.detail.SetEventsLoading(true) // FB-122
 				evNS := ""
 				if m.describeRT.Namespaced {
 					evNS = m.tuiCtx.Namespace
@@ -1466,6 +1470,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.eventsMode = false     // AC#4 FB-019
 			m.events = nil
 			m.eventsLoading = false
+			m.detail.SetEventsLoading(false) // FB-122
 			m.eventsErr = nil
 			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.detail.SetMode("")
@@ -1479,6 +1484,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.eventsMode = false     // AC#4 FB-019
 			m.events = nil
 			m.eventsLoading = false
+			m.detail.SetEventsLoading(false) // FB-122
 			m.eventsErr = nil
 			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.detail.SetMode("")
@@ -1527,6 +1533,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.eventsMode = false     // AC#4 FB-019
 			m.events = nil
 			m.eventsLoading = false
+			m.detail.SetEventsLoading(false) // FB-122
 			m.eventsErr = nil
 			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.detail.SetMode("")
@@ -1544,6 +1551,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.eventsMode = false     // AC#4 FB-019
 			m.events = nil
 			m.eventsLoading = false
+			m.detail.SetEventsLoading(false) // FB-122
 			m.eventsErr = nil
 			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.describeRaw = nil
@@ -1687,6 +1695,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 					m.eventsMode = false     // AC#4 FB-019
 					m.events = nil
 					m.eventsLoading = true
+					m.detail.SetEventsLoading(true) // FB-122
 					m.eventsErr = nil
 					m.detail.SetMode("")
 					m.detail.ScrollToTop()
@@ -1725,6 +1734,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 						m.eventsMode = false     // AC#4 FB-019
 						m.events = nil
 						m.eventsLoading = true
+						m.detail.SetEventsLoading(true) // FB-122
 						m.eventsErr = nil
 						m.detail.SetMode("")
 						m.detail.ScrollToTop()
@@ -1754,6 +1764,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 				m.eventsMode = false     // AC#4 FB-019
 				m.events = nil
 				m.eventsLoading = false
+				m.detail.SetEventsLoading(false) // FB-122
 				m.eventsErr = nil
 				m.detail.SetMode("")
 				// Capture previous values before reassigning.
@@ -1835,6 +1846,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 					m.eventsMode = false     // AC#4 FB-019
 					m.events = nil
 					m.eventsLoading = true
+					m.detail.SetEventsLoading(true) // FB-122
 					m.eventsErr = nil
 					m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 					m.detail.SetMode("")
