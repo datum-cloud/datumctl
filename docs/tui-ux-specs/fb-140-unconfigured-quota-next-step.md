@@ -1,6 +1,6 @@
 # FB-140 — Next-step affordance for unconfigured quota state
 
-**Status:** PENDING UX-DESIGNER
+**Status:** PENDING ENGINEER
 **Priority:** P3
 **Brief source:** `docs/tui-backlog.md` — search `### FB-140`
 **Dependencies:** FB-139 ACCEPTED
@@ -19,52 +19,138 @@ This brief is intentionally scope-limited to the S2 Platform health region. It d
 
 ---
 
-## 2. Design question for UX
+## 2. Pinned design: Option A — symmetric muted sub-line
 
-UX-designer picks one of:
+**Both branches get a muted sub-line below the state message. Different prose per branch. No new keybinds, no HelpOverlay changes.**
 
-- **A. Muted sub-line below the state message.** Example inline prose for the unconfigured branch: `"Run \`datumctl quota setup\` to configure."` (or similar — exact copy designer-pinned). Same treatment for the unauthorized branch with different wording (e.g., `"Contact your project admin for access."`).
-- **B. Keybind hint on the row.** Add `[?] setup` or `[?] help` that opens the existing HelpOverlay scoped to a new "Quota setup" section. Relies on HelpOverlay as the canonical destination (per FB-065/FB-132 convention). Requires HelpOverlay content addition.
-- **C. Muted sub-line with docs URL.** Static link prose: `"See docs.datum.net/quota/setup"` for unconfigured; different URL for unauthorized. Introduces first docs URL in the TUI rendering — sets precedent.
-- **D. Do nothing for unconfigured; do something for unauthorized only.** On the grounds that unconfigured is a one-time setup concern (operator fixes once, doesn't re-encounter) while unauthorized may recur (access revoked mid-session, cross-project switching) and deserves the more prominent affordance.
-- **E. A + B together.** Sub-line prose plus `[?]` keybind. Maximum discoverability; maximum vertical real estate cost in S2.
-- **F. Do nothing.** Welcome S2 is a quick-glance status surface; remedy belongs in a future `datumctl config` wizard or a dedicated first-run onboarding surface. Current copy is sufficient to name the problem.
+### Rationale for Option A
 
-UX-preference signal: **A or B** is the minimum viable change. C sets docs-URL-in-TUI precedent that may want a broader audit. D treats the two branches asymmetrically — viable if the designer judges recurrence frequency. E adds noise for a P3 discoverability lift. F defers to a future surface.
+- Option B/E (keybind hint opening scoped HelpOverlay) rejected: `helpoverlay.go` has no section-anchor mechanism — it's a flat 4-column layout. Adding scoped-section-open would be substantial new capability for a P3 discoverability fix. Cost exceeds benefit.
+- Option C (docs URL) rejected: sets first-docs-URL-in-TUI precedent that warrants a separate audit brief before adoption. Not appropriate for a P3 lift.
+- Option D (asymmetric) considered but rejected: both branches benefit from a sub-line. Unconfigured operators may encounter this state multiple times while setting up environments (especially in CI or multi-project scenarios). Symmetric treatment is simpler and more consistent.
+- Option F (defer) rejected: the copy already names the problem; a single sub-line that names the remedy is minimal and proportionate.
+- Option E (A+B) rejected: same HelpOverlay concern as B; vertical cost unjustified for P3.
 
-**Flag to UX-designer:** the S2 region is already vertically tight on the welcome landing — budget for added sub-lines should be verified against narrow-width rendering (≤50 contentW branch at `resourcetable.go:291`, which currently drops to a different compact layout).
+### Pinned copy
+
+**Unconfigured branch** (`!m.bucketConfigured`, L280):
+
+```
+Quota service not configured
+Ask your platform admin to enable quota.
+```
+
+Both lines rendered with `muted` style (same `lipgloss.NewStyle().Foreground(styles.Muted)`). Second line is the new addition.
+
+Note: does not reference `datumctl quota setup` — that command does not exist in the current CLI. The sub-line is forward-compatible prose that doesn't depend on any specific command name.
+
+**Unauthorized branch** (`m.bucketUnauthorized`, L273):
+
+```
+Platform health unavailable
+Contact your project admin for access.
+```
+
+Same muted style for both lines. Second line is the new addition.
 
 ---
 
-## 3. File locations
+## 3. Narrow-width behavior
+
+The unconfigured (L280) and unauthorized (L273) branches both return before the existing `contentW < 50` narrow check at L291. That narrow check applies only to the populated/healthy path and is irrelevant here.
+
+For the new sub-lines, specify narrow suppression at the site of each early-return:
+
+- **`contentW >= 40`** → render two-line output (state message + sub-line)
+- **`contentW < 40`** → render current single-line output only (no sub-line); avoids wrapping artifacts at very narrow pane widths
+
+This threshold is independent of the `wideEnough` (≥50) gate used for S3/S4/S5 regions.
+
+---
+
+## 4. Render site — exact changes
+
+File: `internal/tui/components/resourcetable.go`
+
+### Unauthorized branch (currently L273)
+
+**Before:**
+```go
+if m.bucketUnauthorized {
+    return leftHeader + "\n\n" + muted.Render("Platform health unavailable")
+}
+```
+
+**After:**
+```go
+if m.bucketUnauthorized {
+    line := muted.Render("Platform health unavailable")
+    if contentW >= 40 {
+        line += "\n" + muted.Render("Contact your project admin for access.")
+    }
+    return leftHeader + "\n\n" + line
+}
+```
+
+### Unconfigured branch (currently L280)
+
+**Before:**
+```go
+if !m.bucketConfigured {
+    return leftHeader + "\n\n" + muted.Render("Quota service not configured")
+}
+```
+
+**After:**
+```go
+if !m.bucketConfigured {
+    line := muted.Render("Quota service not configured")
+    if contentW >= 40 {
+        line += "\n" + muted.Render("Ask your platform admin to enable quota.")
+    }
+    return leftHeader + "\n\n" + line
+}
+```
+
+---
+
+## 5. File locations
 
 - **Render site:** `internal/tui/components/resourcetable.go`
-  - L273 — unauthorized branch: `return leftHeader + "\n\n" + muted.Render("Platform health unavailable")`
-  - L280 — unconfigured branch: `return leftHeader + "\n\n" + muted.Render("Quota service not configured")`
-  - L291 — narrow-width branch (contentW < 50): separate compact layout; designer should specify narrow-width behavior explicitly
-- **HelpOverlay content (if option B or E chosen):** likely `internal/tui/components/helpoverlay.go` — designer to confirm section anchor mechanism
-- **Keybind dispatch (if option B or E chosen):** welcome-panel key handler in `internal/tui/model.go` — `[?]` is already bound globally for HelpOverlay; scoping to a quota-setup section is the new work
+  - L273 — unauthorized branch
+  - L280 — unconfigured branch
+  - L291 — narrow healthy-path branch (unchanged; not involved in this brief)
+- **HelpOverlay:** `internal/tui/components/helpoverlay.go` — **no changes required**
+- **Key handler:** `internal/tui/model.go` — **no changes required**
 
 ---
 
-## 4. Acceptance criteria
+## 6. Acceptance criteria
 
 Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
 
-1. **[Observable]** In the designer's chosen option, when `!m.bucketConfigured`, `stripANSI(welcomePanel().View())` contains the designer-pinned next-step affordance (sub-line text, keybind hint, or both). Test: render with `bc == nil`; assert pinned substring present.
-2. **[Observable]** (Conditional on designer's treatment of unauthorized branch) When `m.bucketErr != nil && m.bucketUnauthorized`, `stripANSI(welcomePanel().View())` contains the designer-pinned unauthorized-branch affordance OR asserts absence (option D's explicit scope). Test: render with forbidden error; assert per designer's choice.
-3. **[Input-changed]** `!bucketConfigured` vs `bucketConfigured && populated` vs `bucketErr unauthorized` produce three visibly distinct View() outputs — new affordance does not collapse the three-way distinction FB-139 established. Test: render each of the three states, assert pairwise inequality of the stripped View() output.
-4. **[Anti-regression]** FB-139 AC1–AC3 tests green unmodified: `TestFB139_AC1_Observable_NewCopy`, `TestFB139_AC2_InputChanged_OldPhraseAbsent`, `TestFB139_AC3_AntiRegression_UnauthorizedUnchanged`. Test: full FB-139 suite runs green.
-5. **[Anti-regression]** FB-074 suite green: `TestFB074_AC1/AC2/AC12`. Test: full FB-074 suite runs green.
-6. **[Anti-regression]** Narrow-width branch (`contentW < 50`) rendering unchanged OR designer-pinned compact variant explicitly asserted. Test: render with narrow width, assert per designer's pinned narrow behavior.
-7. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+1. **[Observable]** When `!m.bucketConfigured` and `contentW >= 40`, `stripANSI(welcomePanel().View())` contains `"Ask your platform admin to enable quota."`. Test: render with `bc == nil` and sufficient width; assert pinned substring present.
+
+2. **[Observable]** When `m.bucketErr != nil && m.bucketUnauthorized` and `contentW >= 40`, `stripANSI(welcomePanel().View())` contains `"Contact your project admin for access."`. Test: render with forbidden error and sufficient width; assert pinned substring present.
+
+3. **[Observable — narrow suppression]** When `!m.bucketConfigured` and `contentW < 40`, `stripANSI(welcomePanel().View())` does NOT contain `"Ask your platform admin to enable quota."` (sub-line suppressed). Test: render with narrow width; assert substring absent.
+
+4. **[Input-changed]** `!bucketConfigured` vs `bucketConfigured && populated` vs `bucketErr unauthorized` produce three visibly distinct `View()` outputs — new sub-lines do not collapse the three-way distinction FB-139 established. Test: render each of the three states at `contentW >= 40`; assert pairwise inequality of stripped View() output.
+
+5. **[Anti-regression]** FB-139 AC1–AC3 tests green unmodified: `TestFB139_AC1_Observable_NewCopy`, `TestFB139_AC2_InputChanged_OldPhraseAbsent`, `TestFB139_AC3_AntiRegression_UnauthorizedUnchanged`. Test: full FB-139 suite runs green.
+
+6. **[Anti-regression]** FB-074 suite green: `TestFB074_AC1/AC2/AC12`. Test: full FB-074 suite runs green.
+
+7. **[Anti-regression]** Narrow healthy-path branch (contentW < 50, populated quota data) rendering unchanged. Test: render with `contentW = 45` and populated buckets; assert no sub-line affordance text appears (that branch is unaffected).
+
+8. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
 
 ---
 
-## 5. Non-goals
+## 7. Non-goals
 
-- Not wiring a `datumctl quota setup` CLI command (if option A or E references it, copy must match actual command OR designer pins placeholder prose that is forward-compatible).
-- Not creating a new help-overlay section unless option B or E is chosen.
+- Not wiring a `datumctl quota setup` CLI command.
+- Not creating a new help-overlay section.
 - Not auditing other "terminal state with no next-step" surfaces elsewhere in the TUI — separate audit brief if the pattern recurs.
-- Not redesigning the S2 Platform health region's layout beyond adding the affordance.
-- Not changing the unauthorized branch copy at L273 unless option A/C/E for the unauthorized branch requires it.
+- Not redesigning the S2 Platform health region's layout beyond the two sub-lines.
+- Not changing the existing unauthorized or unconfigured primary copy (L273, L280 first-line text unchanged).

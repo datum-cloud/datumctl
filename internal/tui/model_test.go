@@ -16047,3 +16047,136 @@ func TestFB139_AC3_AntiRegression_UnauthorizedUnchanged(t *testing.T) {
 }
 
 // ==================== End FB-139 ====================
+
+// ==================== FB-140: Next-step affordance for unconfigured quota state ====================
+//
+// Fix: adds muted sub-line to unauthorized (L273) and unconfigured (L280) branches when contentW>=40.
+// Narrow widths (contentW<40) suppress the sub-line.
+//
+// Axis-coverage:
+// AC  | Observable                                                     | Input-changed                              | Anti-regression                                  | Integration
+// ----+----------------------------------------------------------------+--------------------------------------------+--------------------------------------------------+-------------
+// AC1 | TestFB140_AC1_Observable_Unconfigured_SubLinePresent           | -                                          | -                                                | -
+// AC2 | TestFB140_AC2_Observable_Unauthorized_SubLinePresent           | -                                          | -                                                | -
+// AC3 | TestFB140_AC3_Observable_Narrow_SubLineSuppressed              | -                                          | -                                                | -
+// AC4 | -                                                              | TestFB140_AC4_InputChanged_ThreeWayDistinct | -                                                | -
+// AC5 | -                                                              | -                                          | (FB-139 suite — existing tests run unchanged)    | -
+// AC6 | -                                                              | -                                          | (FB-074 suite — existing tests run unchanged)    | -
+// AC7 | -                                                              | -                                          | TestFB140_AC7_AntiRegression_NarrowHealthyPath   | -
+// AC8 | -                                                              | -                                          | -                                                | go install ✓
+
+// newNarrowWelcomePanelAppModel builds an AppModel with tableWidth=42 → contentW=38 (<40).
+func newNarrowWelcomePanelAppModel(bc data.BucketClient) AppModel {
+	m := AppModel{
+		ctx:         context.Background(),
+		rc:          stubResourceClient{},
+		bc:          bc,
+		activePane:  NavPane,
+		sidebar:     components.NewNavSidebarModel(22, 20),
+		table:       components.NewResourceTableModel(42, 20),
+		detail:      components.NewDetailViewModel(42, 20),
+		filterBar:   components.NewFilterBarModel(),
+		helpOverlay: components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	return m
+}
+
+// TestFB140_AC1_Observable_Unconfigured_SubLinePresent: bc==nil, contentW>=40 → sub-line present.
+func TestFB140_AC1_Observable_Unconfigured_SubLinePresent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(nil, nil)
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if !strings.Contains(got, "Ask your platform admin to enable quota.") {
+		t.Errorf("AC1: unconfigured sub-line absent at contentW>=40:\n%s", got)
+	}
+}
+
+// TestFB140_AC2_Observable_Unauthorized_SubLinePresent: unauthorized error, contentW>=40 → sub-line present.
+func TestFB140_AC2_Observable_Unauthorized_SubLinePresent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("forbidden"), Unauthorized: true})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.table.View())
+	if !strings.Contains(got, "Contact your project admin for access.") {
+		t.Errorf("AC2: unauthorized sub-line absent at contentW>=40:\n%s", got)
+	}
+}
+
+// TestFB140_AC3_Observable_Narrow_SubLineSuppressed: bc==nil, contentW<40 → sub-line absent.
+func TestFB140_AC3_Observable_Narrow_SubLineSuppressed(t *testing.T) {
+	t.Parallel()
+	m := newNarrowWelcomePanelAppModel(nil)
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if strings.Contains(got, "Ask your platform admin to enable quota.") {
+		t.Errorf("AC3: unconfigured sub-line present at contentW<40 — should be suppressed:\n%s", got)
+	}
+}
+
+// TestFB140_AC4_InputChanged_ThreeWayDistinct: unconfigured / configured-zero-governed / unauthorized
+// produce three pairwise-distinct View() outputs at contentW>=40.
+func TestFB140_AC4_InputChanged_ThreeWayDistinct(t *testing.T) {
+	t.Parallel()
+
+	// State 1: unconfigured (bc==nil).
+	m1 := newWelcomePanelAppModel(nil, nil)
+	m1.refreshLandingInputs()
+	v1 := stripANSIModel(m1.table.View())
+
+	// State 2: configured, zero governed types (bc!=nil, no bucket data loaded).
+	m2 := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	m2.refreshLandingInputs()
+	v2 := stripANSIModel(m2.table.View())
+
+	// State 3: unauthorized bucket error.
+	m3 := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	result, _ := m3.Update(data.BucketsErrorMsg{Err: errors.New("forbidden"), Unauthorized: true})
+	appM3 := result.(AppModel)
+	v3 := stripANSIModel(appM3.table.View())
+
+	if v1 == v2 {
+		t.Error("AC4: unconfigured and configured-zero-governed produce identical View()")
+	}
+	if v1 == v3 {
+		t.Error("AC4: unconfigured and unauthorized produce identical View()")
+	}
+	if v2 == v3 {
+		t.Error("AC4: configured-zero-governed and unauthorized produce identical View()")
+	}
+}
+
+// TestFB140_AC7_AntiRegression_NarrowHealthyPath: contentW=45 with configured bc produces no
+// sub-line affordance text — the narrow healthy-path branch (contentW<50) is unaffected.
+func TestFB140_AC7_AntiRegression_NarrowHealthyPath(t *testing.T) {
+	t.Parallel()
+	// tableWidth=49 → contentW=45 (>=40, <50 → narrow healthy-path branch).
+	m := AppModel{
+		ctx:         context.Background(),
+		rc:          stubResourceClient{},
+		bc:          &stubBucketClient{},
+		activePane:  NavPane,
+		sidebar:     components.NewNavSidebarModel(22, 20),
+		table:       components.NewResourceTableModel(49, 20),
+		detail:      components.NewDetailViewModel(49, 20),
+		filterBar:   components.NewFilterBarModel(),
+		helpOverlay: components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if strings.Contains(got, "Ask your platform admin to enable quota.") {
+		t.Errorf("AC7: unconfigured sub-line leaked into narrow healthy-path branch:\n%s", got)
+	}
+	if strings.Contains(got, "Contact your project admin for access.") {
+		t.Errorf("AC7: unauthorized sub-line leaked into narrow healthy-path branch:\n%s", got)
+	}
+}
+
+// ==================== End FB-140 ====================

@@ -270,14 +270,22 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 	}
 	if m.bucketErr != nil {
 		if m.bucketUnauthorized {
-			return leftHeader + "\n\n" + muted.Render("Platform health unavailable")
+			line := muted.Render("Platform health unavailable")
+			if contentW >= 40 {
+				line += "\n" + muted.Render("Contact your project admin for access.")
+			}
+			return leftHeader + "\n\n" + line
 		}
 		return leftHeader + "\n\n" + muted.Render("Platform health temporarily unavailable")
 	}
 
 	// FB-074: no bucket client wired — disambiguate from "configured but zero governed types".
 	if !m.bucketConfigured {
-		return leftHeader + "\n\n" + muted.Render("Quota service not configured")
+		line := muted.Render("Quota service not configured")
+		if contentW >= 40 {
+			line += "\n" + muted.Render("Ask your platform admin to enable quota.")
+		}
+		return leftHeader + "\n\n" + line
 	}
 
 	ak, an := m.activeConsumer()
