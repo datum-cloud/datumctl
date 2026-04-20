@@ -11640,6 +11640,79 @@ func TestFB084_AC5_NonErrorPlaceholder_NoRKey(t *testing.T) {
 
 // ==================== End FB-084 ====================
 
+// ==================== FB-106: Placeholder action row width-aware retry qualifier ====================
+//
+// Fix: placeholderActionRow accepts contentW int; contentW<40 renders "[r] retry", else "[r] retry describe".
+//
+// Axis-coverage:
+// AC  | Axis             | Test
+// ----+------------------+---------------------------------------------------------
+// AC1 | Observable       | TestFB106_AC1_Wide_RetryDescribePresent
+// AC2 | Observable       | TestFB106_AC2_Narrow_RetryShortForm
+// AC3 | Input-changed    | TestFB106_AC3_InputChanged_WideNarrowWide
+// AC4 | Anti-regression  | TestFB084_AC1_NonRetryable_RKeyAbsentFromView (existing)
+// AC5 | Anti-regression  | TestFB084_AC2_Retryable_RKeyAndRetryDescribeInView (existing)
+// AC6 | Integration      | go install ✓
+
+// newNarrowErrorEventPlaceholderModel returns a retryable-error placeholder model
+// with detail width 38 (contentW=38 < 40 → short "retry" form).
+func newNarrowErrorEventPlaceholderModel() AppModel {
+	m := newErrorEventPlaceholderModel()
+	m.detail.SetSize(38, 20)
+	return m
+}
+
+// TestFB106_AC1_Wide_RetryDescribePresent: retryable + detail.Width()>=40 → "retry describe" in View().
+func TestFB106_AC1_Wide_RetryDescribePresent(t *testing.T) {
+	t.Parallel()
+	m := newErrorEventPlaceholderModel() // default detail width 58
+
+	got := stripANSIModel(m.buildDetailContent())
+	if !strings.Contains(got, "retry describe") {
+		t.Errorf("AC1: 'retry describe' missing at wide width (detail.Width()=%d):\n%s", m.detail.Width(), got)
+	}
+}
+
+// TestFB106_AC2_Narrow_RetryShortForm: retryable + detail.Width()<40 → "[r] retry" present, "retry describe" absent.
+func TestFB106_AC2_Narrow_RetryShortForm(t *testing.T) {
+	t.Parallel()
+	m := newNarrowErrorEventPlaceholderModel() // detail width 38
+
+	got := stripANSIModel(m.buildDetailContent())
+	if !strings.Contains(got, "[r]") {
+		t.Errorf("AC2: '[r]' missing from narrow placeholder (detail.Width()=%d):\n%s", m.detail.Width(), got)
+	}
+	if strings.Contains(got, "retry describe") {
+		t.Errorf("AC2: 'retry describe' present at narrow width — should use short form:\n%s", got)
+	}
+	if !strings.Contains(got, "[r]") || !strings.Contains(got, "retry") {
+		t.Errorf("AC2: '[r] retry' short form missing from narrow placeholder:\n%s", got)
+	}
+}
+
+// TestFB106_AC3_InputChanged_WideNarrowWide: same retryable state, resize wide→narrow→wide; View changes.
+func TestFB106_AC3_InputChanged_WideNarrowWide(t *testing.T) {
+	t.Parallel()
+	m := newErrorEventPlaceholderModel()
+
+	wide := stripANSIModel(m.buildDetailContent())
+
+	m.detail.SetSize(38, 20)
+	narrow := stripANSIModel(m.buildDetailContent())
+
+	m.detail.SetSize(58, 20)
+	wideAgain := stripANSIModel(m.buildDetailContent())
+
+	if wide == narrow {
+		t.Error("AC3: wide and narrow produce identical content — threshold not applied")
+	}
+	if wide != wideAgain {
+		t.Error("AC3: content after resize back to wide does not match original wide — not reversible")
+	}
+}
+
+// ==================== End FB-106 ====================
+
 // ==================== FB-077: Quota loading re-queue loop fix ====================
 //
 // Axis-coverage:

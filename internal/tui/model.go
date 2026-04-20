@@ -2090,11 +2090,16 @@ func (m AppModel) detailModeLabel() string {
 
 // placeholderActionRow renders the inline action row for the placeholder body.
 // FB-084: retryable gates [r]; copy qualified to "retry describe". FB-052.
-func placeholderActionRow(errMode bool, retryable bool, accentBold, muted lipgloss.Style) string {
+// FB-106: contentW<40 renders short form "[r] retry" to avoid overflow at narrow widths.
+func placeholderActionRow(errMode bool, retryable bool, contentW int, accentBold, muted lipgloss.Style) string {
 	eKey   := "  " + accentBold.Render("[E]") + muted.Render(" events")
 	escKey := "  " + accentBold.Render("[Esc]") + muted.Render(" back")
 	if errMode && retryable {
-		rKey := "  " + accentBold.Render("[r]") + muted.Render(" retry describe")
+		retryCopy := " retry describe"
+		if contentW < 40 {
+			retryCopy = " retry"
+		}
+		rKey := "  " + accentBold.Render("[r]") + muted.Render(retryCopy)
 		return eKey + rKey + escKey
 	}
 	return eKey + escKey
@@ -2121,7 +2126,7 @@ func (m AppModel) buildDetailContent() string {
 			lines = append(lines, muted.Render("  (describe failed: "+components.SanitizeErrMsg(m.loadErr)+")"))
 		}
 		retryable := errMode && components.ErrorSeverityOf(m.loadErr, m.rc) != data.ErrorSeverityError
-		lines = append(lines, placeholderActionRow(errMode, retryable, accentBold, muted))
+		lines = append(lines, placeholderActionRow(errMode, retryable, m.detail.Width(), accentBold, muted))
 		return strings.Join(lines, "\n")
 	}
 	// FB-005: inline error card when a describe fetch failed.

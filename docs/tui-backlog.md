@@ -4195,7 +4195,9 @@ Consider any combination of:
 
 ### FB-106 — Placeholder action row `[r] retry describe` overflows at narrow detail-pane widths
 
-**Status: PENDING ENGINEER** — engineer-direct. Filed 2026-04-20 by product-experience from FB-084 user-persona P3-2.
+**Status: ACCEPTED — PERSONA-EVAL-PENDING (2026-04-20)** — implementation at `model.go:2094-2106` extends `placeholderActionRow` signature with `contentW int`; below the `contentW < 40` threshold the retry copy falls back to `" retry"`, otherwise `" retry describe"`. Call site at `model.go:2129` passes `m.detail.Width()`. Threshold value matches FB-140's welcome sub-line narrow-suppression cutoff — one consistent narrow-width boundary across the codebase. 3 FB-106 tests cover AC1/AC2 Observable (wide + narrow) and AC3 Input-changed (wide→narrow→wide reversibility) using `stripANSIModel(m.buildDetailContent())` View-level assertions. Anti-regression: `TestFB084_AC1_NonRetryable_RKeyAbsentFromView` + `TestFB084_AC2_Retryable_RKeyAndRetryDescribeInView` green. `go install ./...` clean; full TUI suite `-count=1` green.
+
+**Original Status: PENDING ENGINEER** — engineer-direct. Filed 2026-04-20 by product-experience from FB-084 user-persona P3-2.
 
 **Priority: P3** — narrow-terminal width edge-case. FB-084 shipped Option D uniform qualifier (`[r] retry describe`) across all widths; finding exposes that at ~40-col SSH sessions the retryable action row plain-text (~43 chars) exceeds usable detail-pane content width, so the row wraps or clips depending on `m.detail`'s overflow handling. Ironic gap: FB-084's stated user-problem called out 40-col SSH operators explicitly, but Option D doesn't fit there.
 
@@ -5932,7 +5934,7 @@ This brief moves to PENDING UX-DESIGNER once condition scanning ships AND first-
 
 ### FB-143 — Welcome S2 transient platform-health error has no sub-line affordance
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-140 user-persona P3-1. Routed to ux-designer in parallel with engineer queue per team-lead 2026-04-20 (Option 1: parallel route).
+**Status: PENDING ENGINEER** — spec complete at `docs/tui-ux-specs/fb-143-transient-platform-health-sub-line.md`. Option A (`"Refresh to retry."`) pinned. Routed 2026-04-20 by ux-designer.
 **Priority: P3** — discoverability/asymmetry gap; persona surfaced after FB-140 ACCEPTED.
 
 #### User problem
