@@ -165,7 +165,11 @@ func (m DetailViewModel) titleBar() string {
 			}
 			hintRow += "  " + yHint + "  " + cHint
 		}
-		hintRow += "  " + eHint + "  [x] delete  [Esc] back"
+		rHint := ""
+		if m.mode == "events" && !m.eventsFetchedAt.IsZero() && !m.eventsLoading {
+			rHint = "  [r] refresh"
+		}
+		hintRow += "  " + eHint + rHint + "  [x] delete  [Esc] back"
 		rightText = muted.Render(hintRow)
 	}
 

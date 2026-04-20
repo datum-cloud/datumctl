@@ -1139,3 +1139,142 @@ func TestFB122_AC5_AntiRegression_ZeroFetchedAt_NoAgeLabel(t *testing.T) {
 }
 
 // ==================== End FB-122 (component layer) ====================
+
+// ==================== FB-123: [r] refresh hint in events mode ====================
+
+// AC1 [Observable] — [r] refresh present in events mode with events loaded and not refreshing.
+func TestFB123_AC1_Observable_RHint_Present_EventsLoaded(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Now())
+	dv.SetEventsLoading(false)
+
+	got := stripANSI(dv.View())
+	if !strings.Contains(got, "[r] refresh") {
+		t.Errorf("AC1 [Observable]: '[r] refresh' absent in events mode with fetchedAt set and not loading:\n%s", got)
+	}
+}
+
+// AC2 [Observable] — [r] refresh absent during re-fetch (eventsLoading=true).
+func TestFB123_AC2_Observable_RHint_Absent_DuringRefetch(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Now())
+	dv.SetEventsLoading(true)
+
+	got := stripANSI(dv.View())
+	if strings.Contains(got, "[r] refresh") {
+		t.Errorf("AC2 [Observable]: '[r] refresh' present when eventsLoading=true, want absent:\n%s", got)
+	}
+}
+
+// AC3 [Observable] — [r] refresh absent before first events load (fetchedAt zero).
+func TestFB123_AC3_Observable_RHint_Absent_BeforeFirstLoad(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Time{}) // never loaded
+	dv.SetEventsLoading(false)
+
+	got := stripANSI(dv.View())
+	if strings.Contains(got, "[r] refresh") {
+		t.Errorf("AC3 [Observable]: '[r] refresh' present with zero fetchedAt, want absent:\n%s", got)
+	}
+}
+
+// AC4 [Input-changed] — toggle fetchedAt zero→non-zero causes [r] to appear.
+func TestFB123_AC4_InputChanged_FetchedAt_Zero_To_NonZero(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsLoading(false)
+	dv.SetEventsFetchedAt(time.Time{}) // zero — no hint
+
+	v1 := stripANSI(dv.View())
+	if strings.Contains(v1, "[r] refresh") {
+		t.Fatal("AC4 setup invalid: '[r] refresh' present with zero fetchedAt")
+	}
+
+	dv.SetEventsFetchedAt(time.Now())
+	v2 := stripANSI(dv.View())
+
+	if v1 == v2 {
+		t.Errorf("AC4 [Input-changed]: View() unchanged after fetchedAt set non-zero, want different output")
+	}
+	if !strings.Contains(v2, "[r] refresh") {
+		t.Errorf("AC4 [Input-changed]: '[r] refresh' absent after fetchedAt set non-zero:\n%s", v2)
+	}
+}
+
+// AC5 [Anti-regression] — [r] refresh absent in describe, yaml, conditions modes.
+func TestFB123_AC5_AntiRegression_NonEventsModes_NoRHint(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"", "yaml", "conditions"} {
+		mode := mode
+		t.Run("mode="+mode, func(t *testing.T) {
+			t.Parallel()
+			dv := NewDetailViewModel(160, 20)
+			dv.SetResourceContext("Pod", "my-pod")
+			dv.SetMode(mode)
+			dv.SetEventsFetchedAt(time.Now())
+			dv.SetEventsLoading(false)
+
+			got := stripANSI(dv.View())
+			if strings.Contains(got, "[r] refresh") {
+				t.Errorf("AC5 [Anti-regression]: '[r] refresh' present in mode=%q, want absent:\n%s", mode, got)
+			}
+		})
+	}
+}
+
+// AC6 [Anti-regression] — [r] refresh position: after [E] describe, before [x] delete.
+func TestFB123_AC6_AntiRegression_RHint_Position(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetEventsFetchedAt(time.Now())
+	dv.SetEventsLoading(false)
+
+	got := stripANSI(dv.View())
+	eIdx := strings.Index(got, "[E] describe")
+	rIdx := strings.Index(got, "[r] refresh")
+	xIdx := strings.Index(got, "[x] delete")
+
+	if eIdx < 0 || rIdx < 0 || xIdx < 0 {
+		t.Fatalf("AC6: one or more hints missing — [E]=%d [r]=%d [x]=%d\nView:\n%s", eIdx, rIdx, xIdx, got)
+	}
+	if !(eIdx < rIdx && rIdx < xIdx) {
+		t.Errorf("AC6 [Anti-regression]: hint order wrong — want [E] < [r] < [x], got [E]=%d [r]=%d [x]=%d\nView:\n%s", eIdx, rIdx, xIdx, got)
+	}
+}
+
+// AC7 [Anti-regression] — describeAvailable=false does not suppress [r] refresh (FB-119 independence).
+func TestFB123_AC7_AntiRegression_DescribeUnavailable_RHintStillPresent(t *testing.T) {
+	t.Parallel()
+	dv := NewDetailViewModel(160, 20)
+	dv.SetResourceContext("Pod", "my-pod")
+	dv.SetMode("events")
+	dv.SetDescribeAvailable(false)
+	dv.SetEventsFetchedAt(time.Now())
+	dv.SetEventsLoading(false)
+
+	got := stripANSI(dv.View())
+	if !strings.Contains(got, "[r] refresh") {
+		t.Errorf("AC7 [Anti-regression]: '[r] refresh' absent when describeAvailable=false, want present:\n%s", got)
+	}
+	if strings.Contains(got, "[y]") {
+		t.Errorf("AC7 [Anti-regression]: '[y]' present when describeAvailable=false, want absent:\n%s", got)
+	}
+	if strings.Contains(got, "[C]") {
+		t.Errorf("AC7 [Anti-regression]: '[C]' present when describeAvailable=false, want absent:\n%s", got)
+	}
+}
+
+// ==================== End FB-123 (component layer) ====================
