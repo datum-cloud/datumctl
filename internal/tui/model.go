@@ -565,8 +565,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case data.ClearStatusErrMsg:
 		if msg.Token == m.statusErrToken {
-			m.statusBar.Err = nil
-			m.statusBar.ErrSeverity = data.ErrorSeverityWarning
+			// FB-135: if BucketsErrorMsg is still active, restore it instead of blanking —
+			// a transient list-error clear must not erase the persistent bucket-health signal.
+			if m.bucketErr != nil {
+				sev := data.ErrorSeverityWarning
+				if m.bucketUnauthorized {
+					sev = data.ErrorSeverityError
+				}
+				m.statusBar.Err = m.bucketErr
+				m.statusBar.ErrSeverity = sev
+			} else {
+				m.statusBar.Err = nil
+				m.statusBar.ErrSeverity = data.ErrorSeverityWarning
+			}
 		}
 
 	case data.TickMsg:

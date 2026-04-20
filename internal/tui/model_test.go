@@ -15772,3 +15772,114 @@ func TestFB071_AC3_AntiRegression_WelcomePanelS2Unchanged(t *testing.T) {
 }
 
 // ==================== End FB-071 ====================
+
+// ==================== FB-135: LoadErrorMsg 10s auto-clear silently erases BucketsErrorMsg signal ====================
+//
+// Option B: ClearStatusErrMsg handler checks m.bucketErr != nil; if still in error, restore bucket
+// error instead of nil'ing statusBar.Err.
+//
+// Axis-coverage:
+// AC  | Observable                                        | Input-changed                               | Anti-regression                          | Integration
+// ----+---------------------------------------------------+---------------------------------------------+------------------------------------------+-------------
+// AC1 | TestFB135_AC1_Observable_BucketErrSurvivesClear   | -                                           | -                                        | -
+// AC2 | -                                                 | TestFB135_AC2_InputChanged_LoadedMsgClears  | -                                        | -
+// AC3 | -                                                 | -                                           | TestFB135_AC3_AntiRegression_PureLoadErr | -
+// AC4 | (FB-071 tests green — verified by full suite run) | -                                           | -                                        | -
+// AC5 | -                                                 | -                                           | -                                        | go install ✓
+
+// newClearStatusErrMsg builds a ClearStatusErrMsg with the model's current token.
+// Must be called after the LoadErrorMsg that bumped the token.
+func newClearStatusErrMsg(m AppModel) data.ClearStatusErrMsg {
+	return data.ClearStatusErrMsg{Token: m.statusErrToken}
+}
+
+// AC1 [Observable]: BucketsErrorMsg → LoadErrorMsg → ClearStatusErrMsg.
+// After clear, View() still shows "bucket" and not "list"; statusBar.Err != nil.
+func TestFB135_AC1_Observable_BucketErrSurvivesClear(t *testing.T) {
+	t.Parallel()
+	m := newAllowanceBucketNavModel(nil)
+
+	// Step 1: bucket error sets statusBar.Err.
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("bucket load failed"), Unauthorized: false})
+	m = result.(AppModel)
+
+	// Step 2: list error overwrites statusBar.Err and schedules a clear.
+	result, _ = m.Update(data.LoadErrorMsg{Err: errors.New("list error"), Severity: data.ErrorSeverityWarning})
+	m = result.(AppModel)
+
+	// Capture the token the LoadErrorMsg installed.
+	clearMsg := newClearStatusErrMsg(m)
+
+	// Step 3: fire the scheduled clear.
+	result, _ = m.Update(clearMsg)
+	appM := result.(AppModel)
+
+	if appM.statusBar.Err == nil {
+		t.Fatal("AC1: statusBar.Err == nil after ClearStatusErrMsg with active bucketErr, want non-nil (bucket signal restored)")
+	}
+	// Status bar field must be the bucket error, not the transient list error.
+	if appM.statusBar.Err.Error() != "bucket load failed" {
+		t.Errorf("AC1: statusBar.Err = %q, want 'bucket load failed' (bucket signal must win)", appM.statusBar.Err.Error())
+	}
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "bucket load failed") {
+		t.Errorf("AC1: View() does not contain 'bucket load failed' after clear:\n%s", got)
+	}
+	// Note: in-pane table error card still shows "list error" — that is expected and correct;
+	// only the status bar field (statusBar.Err) is governed by the ClearStatusErrMsg token.
+}
+
+// AC2 [Input-changed]: After AC1 sequence, BucketsLoadedMsg clears statusBar.Err; View() changes.
+func TestFB135_AC2_InputChanged_LoadedMsgClears(t *testing.T) {
+	t.Parallel()
+	m := newAllowanceBucketNavModel(nil)
+
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("bucket load failed"), Unauthorized: false})
+	m = result.(AppModel)
+	result, _ = m.Update(data.LoadErrorMsg{Err: errors.New("list error"), Severity: data.ErrorSeverityWarning})
+	m = result.(AppModel)
+	result, _ = m.Update(newClearStatusErrMsg(m))
+	m = result.(AppModel)
+
+	// Precondition: bucket signal is still present.
+	if m.statusBar.Err == nil {
+		t.Fatal("AC2 precondition: statusBar.Err must be non-nil (bucket restored)")
+	}
+	v1 := stripANSIModel(m.View())
+
+	// Recovery via BucketsLoadedMsg.
+	result, _ = m.Update(data.BucketsLoadedMsg{})
+	appM := result.(AppModel)
+
+	if appM.statusBar.Err != nil {
+		t.Errorf("AC2: statusBar.Err = %v after BucketsLoadedMsg, want nil", appM.statusBar.Err)
+	}
+	v2 := stripANSIModel(appM.View())
+	if strings.Contains(v2, "bucket load failed") {
+		t.Errorf("AC2 [Input-changed]: 'bucket load failed' still in View() after BucketsLoadedMsg:\n%s", v2)
+	}
+	if v1 == v2 {
+		t.Error("AC2 [Input-changed]: View() unchanged after BucketsLoadedMsg — recovery not visible")
+	}
+}
+
+// AC3 [Anti-regression]: Pure LoadError path — no BucketsErrorMsg. ClearStatusErrMsg still nils statusBar.Err.
+func TestFB135_AC3_AntiRegression_PureLoadErr(t *testing.T) {
+	t.Parallel()
+	m := newTablePaneModel()
+
+	result, _ := m.Update(data.LoadErrorMsg{Err: errors.New("list error"), Severity: data.ErrorSeverityWarning})
+	m = result.(AppModel)
+	clearMsg := newClearStatusErrMsg(m)
+
+	result, _ = m.Update(clearMsg)
+	appM := result.(AppModel)
+
+	if appM.statusBar.Err != nil {
+		t.Errorf("AC3: statusBar.Err = %v after ClearStatusErrMsg with no active bucketErr, want nil", appM.statusBar.Err)
+	}
+	// In-pane table card still renders "list error" — only statusBar.Err is governed by the token.
+	// State-field check above is sufficient for this anti-regression AC.
+}
+
+// ==================== End FB-135 ====================
