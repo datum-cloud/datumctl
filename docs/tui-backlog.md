@@ -5793,3 +5793,53 @@ Axis tags: `[Observable]`, `[Integration]`.
 **Non-goals:**
 - Not changing `statusbar.go` hint strings.
 - Not auditing other tests that assert against hardcoded literals — file as separate audit brief if that pattern recurs.
+
+---
+
+### FB-140 — Welcome S2 unconfigured-quota state has no in-TUI next-step affordance
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-139 user-persona P3-1. Spec stub delivered at `docs/tui-ux-specs/fb-140-unconfigured-quota-next-step.md`. Team-lead approved parallel routing to ux-designer (does not block the engineer queue).
+**Priority: P3** — discoverability gap; FB-139 shipped clean disambiguation of the problem statement but did not address remedy surfacing (explicitly scoped out of FB-139).
+
+#### User problem
+
+FB-139 shipped clean disambiguation between the unauthorized branch (`"Platform health unavailable"` at `resourcetable.go:273`) and the unconfigured branch (`"Quota service not configured"` at `resourcetable.go:280`). Persona eval confirmed the copy reads correctly for a DevOps operator.
+
+Persona surfaced one P3 finding: when the operator sees `"Quota service not configured"`, the TUI names the problem but offers no next-step affordance. Operator understands the failure mode but has no in-TUI pointer toward configuration — falls back to `datumctl quota --help`, docs-site navigation, or team runbooks.
+
+The parallel question applies to the unauthorized branch at L273: an operator reading `"Platform health unavailable"` has no in-TUI signal on remedy path (IAM? credentials? project scope?). These are two distinct remedy paths and may warrant distinct affordances.
+
+#### Proposed interaction
+
+UX-designer picks one of (full option space in spec §2):
+
+- **A.** Muted sub-line below the state message (e.g., `"Run \`datumctl quota setup\` to configure."` for unconfigured; different prose for unauthorized).
+- **B.** `[?]` keybind hint on the row, opening HelpOverlay scoped to a new "Quota setup" section.
+- **C.** Muted sub-line with docs URL (sets first-docs-URL-in-TUI precedent).
+- **D.** Asymmetric treatment — do nothing for unconfigured (one-time setup), add affordance for unauthorized (may recur).
+- **E.** A + B together.
+- **F.** Do nothing — remedy belongs in a future `datumctl config` wizard.
+
+UX-preference signal: **A or B** is minimum viable. The S2 region is vertically tight on narrow widths (`contentW < 50` branch at `resourcetable.go:291`) — designer should specify narrow-width behavior explicitly.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`. Full criteria in spec §4.
+
+1. **[Observable]** When `!m.bucketConfigured`, `stripANSI(welcomePanel().View())` contains the designer-pinned next-step affordance. Test: render with `bc == nil`; assert pinned substring present.
+2. **[Observable]** (Conditional on designer's treatment of unauthorized branch) When `m.bucketErr != nil && m.bucketUnauthorized`, View() contains the designer-pinned affordance OR explicitly asserts absence (option D's explicit scope).
+3. **[Input-changed]** `!bucketConfigured` vs `bucketConfigured && populated` vs `bucketErr unauthorized` produce three visibly distinct View() outputs — affordance does not collapse the three-way distinction FB-139 established.
+4. **[Anti-regression]** FB-139 AC1–AC3 green unmodified: `TestFB139_AC1_Observable_NewCopy`, `TestFB139_AC2_InputChanged_OldPhraseAbsent`, `TestFB139_AC3_AntiRegression_UnauthorizedUnchanged`.
+5. **[Anti-regression]** FB-074 suite green: `TestFB074_AC1/AC2/AC12`.
+6. **[Anti-regression]** Narrow-width branch rendering unchanged OR designer-pinned compact variant asserted.
+7. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-139 ACCEPTED.
+
+**Maps to:** FB-139 user-persona P3-1.
+
+**Non-goals:**
+- Not wiring a `datumctl quota setup` CLI command (copy must match actual command OR placeholder prose forward-compatible with a future CLI).
+- Not creating a new help-overlay section unless option B or E is chosen.
+- Not auditing other "terminal state with no next-step" surfaces elsewhere in the TUI — separate audit brief if pattern recurs.
+- Not redesigning S2 layout beyond adding the affordance.
