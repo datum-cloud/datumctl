@@ -1949,7 +1949,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`.
 
 ### FB-059 — Quota freshness gap-guard threshold over-triggers at split-pane widths
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-19 by product-experience from FB-043 user-persona P3-1.
+**Status: ACCEPTED** — implemented and accepted 2026-04-20 by product-experience. `titleBar()` restructured in `internal/tui/components/quotadashboard.go` with a `w < 80` narrow-mode branch: condensed hint `"[↑/↓] [t] [s] [r]"` (~18 chars) and compact freshness prefix `" · "` replace the wide-mode strings, freeing enough space for the `>= 2` gate to fire at typical split-pane widths (paneWidth ≈ 58). Wide-mode behavior at `w >= 80` unchanged. 4 new tests in `quotadashboard_test.go` (AC1–AC4); FB-043 anti-regression suite (5 tests) green. Gate-check note: first submission rejected because claimed tests were absent from the working tree; re-submission landed tests and reproduced evidence.
 **Priority: P3** — common split-pane workflow drops a freshness signal that the spec promised.
 
 > Note 2026-04-19: An earlier P3 → P2 escalation citing inter-surface inconsistency with FB-044 `[3]` was retracted when the source persona finding was withdrawn. Original priority restored. Re-run persona did surface a related "algo split between QuotaDashboard and DetailPane freshness" theme — designer should consider that framing as part of the gap-guard redesign without it changing the priority of this brief.

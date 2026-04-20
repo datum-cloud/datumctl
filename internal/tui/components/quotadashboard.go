@@ -303,27 +303,41 @@ func (m QuotaDashboardModel) titleBar() string {
 
 	baseLeft := accentBold.Render("quota usage")
 	if m.ctxLabel != "" {
-		baseLeft += muted.Render(" — "+m.ctxLabel)
+		baseLeft += muted.Render(" — " + m.ctxLabel)
 	}
 
 	var hint string
-	if m.originLabel != "" {
-		accentBold := lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
-		backHint := accentBold.Render("[3]") + muted.Render(" back to "+m.originLabel+"  ")
-		hint = backHint + muted.Render("[↑/↓] move  [t] table  [s] group  [r] refresh")
+	var freshPrefix string
+	var refreshingLabel string
+	if w < 80 {
+		if m.originLabel != "" {
+			backHint := accentBold.Render("[3]") + muted.Render(" back to "+m.originLabel+"  ")
+			hint = backHint + muted.Render("[↑/↓] [t] [s] [r]")
+		} else {
+			hint = muted.Render("[↑/↓] [t] [s] [r]")
+		}
+		freshPrefix = " · "
+		refreshingLabel = " ↻"
 	} else {
-		hint = muted.Render("[↑/↓] move  [t] table  [s] group  [r] refresh")
+		if m.originLabel != "" {
+			backHint := accentBold.Render("[3]") + muted.Render(" back to "+m.originLabel+"  ")
+			hint = backHint + muted.Render("[↑/↓] move  [t] table  [s] group  [r] refresh")
+		} else {
+			hint = muted.Render("[↑/↓] move  [t] table  [s] group  [r] refresh")
+		}
+		freshPrefix = "  updated "
+		refreshingLabel = "  ⟳ refreshing…"
 	}
 
 	left := baseLeft
 	if m.refreshing {
-		refresh := muted.Render("  ⟳ refreshing…")
+		refresh := muted.Render(refreshingLabel)
 		candidate := baseLeft + refresh
 		if w-lipgloss.Width(candidate)-lipgloss.Width(hint) >= 2 {
 			left = candidate
 		}
 	} else if !m.fetchedAt.IsZero() {
-		fresh := muted.Render("  updated " + HumanizeSince(m.fetchedAt))
+		fresh := muted.Render(freshPrefix + HumanizeSince(m.fetchedAt))
 		candidate := baseLeft + fresh
 		if w-lipgloss.Width(candidate)-lipgloss.Width(hint) >= 2 {
 			left = candidate

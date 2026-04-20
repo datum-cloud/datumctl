@@ -946,3 +946,81 @@ func TestFB113_AC5_PopulatedBuckets_NoEmptyStateHint(t *testing.T) {
 }
 
 // ==================== End FB-113 ====================
+
+// ==================== FB-059: Quota freshness gap-guard threshold ====================
+//
+// Axis-coverage table:
+// AC1 | Observable                | TestFB059_AC1_NarrowWidth_FreshnessPresent
+// AC2 | Observable compact prefix | TestFB059_AC2_NarrowWidth_CompactPrefixOnly
+// AC3 | Observable wide unchanged | TestFB059_AC3_WideWidth_FullHintAndUpdatedPrefix
+// AC4 | Anti-regression           | TestFB059_AC4_ExtremeNarrow_FreshnessDropsCleanly
+// AC5 | Anti-regression           | covered by existing TestFB043_TitleBar_* wide-mode tests
+// AC6 | Integration               | go install ./... + go test ./internal/tui/...
+
+// newDashboardNoCtx returns a QuotaDashboardModel with no ctxLabel so that
+// freshness-gap math at split-pane widths is predictable.
+func newDashboardNoCtx(w, h int) QuotaDashboardModel {
+	return NewQuotaDashboardModel(w, h, "")
+}
+
+// AC1 [Observable] — paneWidth=58, no ctxLabel, fetchedAt=5m ago → "5m ago" present.
+// Verification: baseLeft(11)+compact-fresh(9)=20, gap=58−20−18=20 ≥ 2 → gate passes.
+func TestFB059_AC1_NarrowWidth_FreshnessPresent(t *testing.T) {
+	t.Parallel()
+	m := newDashboardNoCtx(58, 20)
+	m.SetBucketFetchedAt(time.Now().Add(-5 * time.Minute))
+
+	got := stripANSI(m.titleBar())
+	if !strings.Contains(got, "5m ago") {
+		t.Errorf("AC1: titleBar() at paneWidth=58 (no ctxLabel) missing '5m ago'; narrow-mode hint must free enough space:\n%s", got)
+	}
+}
+
+// AC2 [Observable — compact prefix] — paneWidth=58 → "updated" absent, "· " present adjacent to age.
+func TestFB059_AC2_NarrowWidth_CompactPrefixOnly(t *testing.T) {
+	t.Parallel()
+	m := newDashboardNoCtx(58, 20)
+	m.SetBucketFetchedAt(time.Now().Add(-5 * time.Minute))
+
+	got := stripANSI(m.titleBar())
+	if strings.Contains(got, "updated") {
+		t.Errorf("AC2: titleBar() at paneWidth=58 contains 'updated'; want compact '· ' prefix only:\n%s", got)
+	}
+	if !strings.Contains(got, "· ") {
+		t.Errorf("AC2: titleBar() at paneWidth=58 missing '· ' compact separator:\n%s", got)
+	}
+}
+
+// AC3 [Observable — wide mode unchanged] — paneWidth=100, fetchedAt populated →
+// full hint string and "updated" prefix both present.
+func TestFB059_AC3_WideWidth_FullHintAndUpdatedPrefix(t *testing.T) {
+	t.Parallel()
+	m := newDashboardNoCtx(100, 20)
+	m.SetBucketFetchedAt(time.Now().Add(-5 * time.Minute))
+
+	got := stripANSI(m.titleBar())
+	if !strings.Contains(got, "[↑/↓] move  [t] table  [s] group  [r] refresh") {
+		t.Errorf("AC3: titleBar() at paneWidth=100 missing full hint string; wide-mode must be unchanged:\n%s", got)
+	}
+	if !strings.Contains(got, "updated") {
+		t.Errorf("AC3: titleBar() at paneWidth=100 missing 'updated' prefix; wide-mode freshness prefix must be unchanged:\n%s", got)
+	}
+}
+
+// AC4 [Anti-regression] — extreme narrow (paneWidth=30), no ctxLabel → freshness drops cleanly.
+// Verification: gap=30−(11+9)−18=−8 < 2 → gate rejects freshness; no overflow or panic.
+func TestFB059_AC4_ExtremeNarrow_FreshnessDropsCleanly(t *testing.T) {
+	t.Parallel()
+	m := newDashboardNoCtx(30, 20)
+	m.SetBucketFetchedAt(time.Now().Add(-5 * time.Minute))
+
+	got := stripANSI(m.titleBar())
+	if strings.Contains(got, "5m ago") {
+		t.Errorf("AC4: titleBar() at paneWidth=30 contains '5m ago'; gap guard must reject freshness:\n%s", got)
+	}
+	if got == "" {
+		t.Errorf("AC4: titleBar() returned empty string at paneWidth=30")
+	}
+}
+
+// ==================== End FB-059 ====================
