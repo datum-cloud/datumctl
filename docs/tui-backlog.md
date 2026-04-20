@@ -2098,7 +2098,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`.
 
 ### FB-065 — Inline quota separator says `full dashboard`; HelpOverlay says `quota dashboard`
 
-**Status: ACCEPTED 2026-04-20** — filed 2026-04-19 by product-experience from FB-044 user-persona re-run, finding #3. Engineer verified FB-109 did NOT resolve (helpoverlay.go:55 had drifted to `[3]  quota (toggle)`; separator at model.go:2021/2044 had drifted to `quota dashboard`). Applied Option A variant against current canonical separator copy — both surfaces now render `quota dashboard` after `[3]`. Tests at model_test.go:9750 (Observable View() on both surfaces), model_test.go:9772 (Anti-regression against old `quota (toggle)` copy), model_test.go:9784 (Anti-regression narrow-width guard), plus updated TestFB035_HelpOverlay_ContainsKey3Row at model_test.go:8884. Test-engineer gate-check: compile clean, all 3 FB-065 tests + updated FB-035 test green, `go test ./internal/tui/...` exit 0. Engineer also surfaced a parallel `[4]` divergence (`[4]  activity (toggle)` vs model.go:71 `activity dashboard`) — correctly scoped out; awaits its own brief.
+**Status: PERSONA-EVAL-COMPLETE 2026-04-20** — filed 2026-04-19 by product-experience from FB-044 user-persona re-run, finding #3. Committed as `34b478a`. Engineer verified FB-109 did NOT resolve (helpoverlay.go:55 had drifted to `[3]  quota (toggle)`; separator at model.go:2021/2044 had drifted to `quota dashboard`). Applied Option A variant against current canonical separator copy — both surfaces now render `quota dashboard` after `[3]`. Tests at model_test.go:9750 (Observable View() on both surfaces), model_test.go:9772 (Anti-regression against old `quota (toggle)` copy), model_test.go:9784 (Anti-regression narrow-width guard), plus updated TestFB035_HelpOverlay_ContainsKey3Row at model_test.go:8884. Test-engineer gate-check: compile clean, all 3 FB-065 tests + updated FB-035 test green, `go test ./internal/tui/...` exit 0. Persona eval: primary fix solid (help overlay now reads as authoritative lookup surface matching the separator); P2 finding: `[4]  activity (toggle)` in helpoverlay is the same class of bug, now more visible by contrast → FB-132. P3 findings: resourcetable.go:325 S3 footer `[4] full dashboard` + status-bar terse forms `[3] quota  [4] activity` — former rolls into FB-132, latter is a separate space-constraint tension. Additionally surfaced during persona-verification: resourcetable.go:311 S2 attention hint still reads `(press [3] for full dashboard)` — unaligned `[3]` site missed by FB-065's scope (brief enumerated only separator + helpoverlay); rolls into FB-132.
 **Priority: P3** — small but real searchability gap. Operator reads `[3] full dashboard` on the separator, opens `?` help looking for `full dashboard`, finds `quota dashboard` instead.
 
 #### User problem
@@ -5420,4 +5420,92 @@ For **Option C/E** (no change), file a RESOLVED/WONTFIX entry with the designer'
 
 **Maps to:** FB-128/FB-129 user-persona P3-2.
 
+
+### FB-132 — Complete `[3]`/`[4]` canonical-form label alignment across remaining surfaces
+
+**Status: ACCEPTED 2026-04-20** — filed 2026-04-20 by product-experience from FB-065 user-persona P2 + P3 findings and a verification-step catch. Engineer delivered all three surface renames (helpoverlay.go:57, resourcetable.go:325, resourcetable.go:311) plus a VIEW column width bump from 22→24 to accommodate the 23-char `[4]  activity dashboard` label (modal total stays at 90: 22+22+24+22). Tests at model_test.go:10980 (renamed from TestFB050, inverted to assert new copy), resourcetable_test.go:1435 (S3 footer), resourcetable_test.go:1449 (S2 hint), resourcetable_test.go:1467 (AC6 gated-render subtests). Existing FB-083 + FB-111 copy assertions updated to `[4] activity dashboard`. Anti-regression verified: TestFB065_AC1 green, TestFB121 column-alignment suite green after width change. `go install ./...` clean; `go test ./internal/tui/...` exit 0.
+**Priority: P3** — persona flagged the `[4]` helpoverlay line at P2 severity; the `[3]` S2 hint catch widens the scope to a full canonical-form pass. Engineer-direct per team-lead; same pattern as FB-065.
+
+#### User problem
+
+FB-109 and FB-065 together established `quota dashboard` and `activity dashboard` as the canonical forms for the `[3]` and `[4]` affordances. After FB-065, three surfaces still render pre-alignment copy:
+
+| # | Surface | Current copy | Canonical form |
+|---|---------|--------------|----------------|
+| 1 | `internal/tui/components/helpoverlay.go:57` | `[4]  activity (toggle)` | `[4]  activity dashboard` |
+| 2 | `internal/tui/components/resourcetable.go:325` (S3 activity footer) | `[4] full dashboard` | `[4] activity dashboard` |
+| 3 | `internal/tui/components/resourcetable.go:311` (S2 attention hint) | `(press [3] for full dashboard)` | `(press [3] for quota dashboard)` |
+
+Operator-visible consequence — persona's exact words from the FB-065 eval:
+
+> "`[4]  activity (toggle)` doesn't match how `[4]` is labeled everywhere else. After the `[3]` fix, the inconsistency with `[4]` becomes more noticeable by contrast. Four different labels for the same destination. `activity (toggle)` is the outlier — and it's also the most prominent one (help overlay is the authoritative lookup surface). `(toggle)` qualifier isn't wrong mechanically but it reads like implementation detail, not operator language."
+
+The S3 footer variant `[4] full dashboard` was flagged by persona as P3 — a third unaligned variant in the same family. The S2 attention hint `(press [3] for full dashboard)` was caught by product-experience during persona-verification grep; it was out of scope for FB-065 (which explicitly enumerated only the separator + helpoverlay surfaces) but instantiates the same user problem.
+
+#### Out of scope (distinct theses)
+
+- **Back-nav hints** at `quotadashboard.go:312` (`[3] back to <originLabel>`) and `activitydashboard.go:238` (`[4] back to <originLabel>`) are back-navigation, not forward-navigation to the dashboard. The copy refers to the origin, not the dashboard itself. Different thesis.
+- **Status-bar terse forms** at `statusbar.go:78` (`[3] quota  [4] activity`) — persona P3 "terse forms" finding. Different thesis (space-constrained hinting vs. canonical-form alignment). Filed separately as FB-133 (observation-only, not routed).
+- **Status/transitional messages** at `model.go:429` (`Quota dashboard ready — press [3]`) and `model.go:1242` (`Quota dashboard loading… press [3] to cancel`) — these are runtime messages with title-case noun phrases, not affordance labels. Different copy register; leaving untouched.
+
+#### Proposed interaction
+
+Single-source the three enumerated surfaces to the canonical form. Engineer-direct change (no designer call) — same class as FB-065.
+
+- Surface 1: `helpoverlay.go:57` → rename `[4]  activity (toggle)` to `[4]  activity dashboard`. Preserve double-space separator to match existing `[3]  quota dashboard` row immediately above.
+- Surface 2: `resourcetable.go:325` → rename `[4] full dashboard` to `[4] activity dashboard`.
+- Surface 3: `resourcetable.go:311` → rename `(press [3] for full dashboard)` to `(press [3] for quota dashboard)`.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** Help overlay `[4]` row renders `activity dashboard` and NOT `activity (toggle)`. Test: `stripANSI(helpOverlay.View())` contains `"[4]  activity dashboard"` and does NOT contain `"activity (toggle)"`.
+2. **[Observable]** S3 activity footer renders `[4] activity dashboard` when `activityRows` is non-empty and `activityFetchFailed == false`, and NOT `[4] full dashboard`. Test: inject activity rows, call `renderActivitySection` (or render the enclosing view), assert `stripANSI(out)` contains `"[4] activity dashboard"` and does NOT contain `"[4] full dashboard"`.
+3. **[Observable]** S2 attention hint renders `(press [3] for quota dashboard)` when the TopThree rows list is non-empty, and NOT `(press [3] for full dashboard)`. Test: inject a summary with non-empty TopThree, render, assert `stripANSI(out)` contains `"(press [3] for quota dashboard)"` and does NOT contain `"(press [3] for full dashboard)"`.
+4. **[Anti-regression]** FB-065 alignment preserved — helpoverlay `[3]  quota dashboard` row unchanged; inline separator `── [3] quota dashboard` unchanged. Test: existing TestFB065_AC1_Observable_QuotaLabelConsistent green.
+5. **[Anti-regression]** Back-nav labels at `quotadashboard.go:312` and `activitydashboard.go:238` unchanged. Test: any existing tests for those surfaces remain green.
+6. **[Anti-regression]** Gated render paths preserved — S2 attention hint only emitted when `len(TopThree) > 0`; S3 activity footer only emitted when `len(activityRows) > 0 && !activityFetchFailed`. Test: render with empty `TopThree` → no `(press [3] for …)` hint emitted; render with `activityFetchFailed == true` → no `[4] …` hint emitted.
+7. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-065 ACCEPTED.
+
+**Maps to:** FB-065 user-persona eval P2 + P3 (helpoverlay `[4]`, S3 footer `[4]`) + product-experience verification catch (S2 hint `[3]`). REQ-TUI-008 (keybind discoverability).
+
+**Non-goals:**
+- Not changing the `[4]` keybind semantics or handler.
+- Not introducing new affordances on any of the three surfaces.
+- Not touching back-nav hints, status-bar terse forms, or status/transitional messages (see "Out of scope" above).
+- Not retesting FB-044's narrow-width threshold or FB-065's alignment — those already have anti-regression coverage; this brief just extends the canonical-form contract to three new surfaces.
+
+---
+
+### FB-133 — Status-bar NAV_DASHBOARD terse forms `[3] quota  [4] activity` (observation only)
+
+**Status: OBSERVATION (not routed)** — filed 2026-04-20 by product-experience from FB-065 user-persona P3. Team-lead direction: file as observation, do not route.
+**Priority: P3** — tension surfaced by FB-065's canonical-form establishment; persona hedged it as "probably intentional for space."
+
+#### Observation
+
+At `internal/tui/components/statusbar.go:78`, the NAV_DASHBOARD hints render as:
+
+```
+[j/k] move  [Enter] select  [c] ctx  [3] quota  [4] activity  [?] help  [q] quit
+```
+
+After FB-109 + FB-065 + FB-132 establish `quota dashboard` / `activity dashboard` as the canonical forms on affordance-lookup surfaces (help overlay, inline separators, S2/S3 footers), the status-bar's terse `[3] quota` / `[4] activity` read as truncations rather than navigation destinations. Persona's exact framing:
+
+> "This is probably a space constraint and may be intentional, but now that `quota dashboard` is the canonical form, the terse `quota` and `activity` read slightly truncated. If width permits even one character more, `[3] quota ↗` or something directional might make it clearer these are navigation destinations, not toggles. Not a blocker — just a tension the `[3]` fix surfaced."
+
+#### Why this is not being routed
+
+The status bar is a width-constrained surface. The full hint line is already ~80 characters; expanding `quota` → `quota dashboard` would add 18 characters (`quota` → `quota dashboard` is +10, same for activity) pushing it to ~98 characters — likely overflows on 80-column terminals. The thesis here is space economy, not label alignment. That makes it a different design question than FB-132: does the status bar need a narrow-mode variant (drop `[Enter] select`? drop `[q] quit`?), or is the current terse form defensible on the grounds that the status bar is a key-map cheat sheet, not a destination list?
+
+Deferred pending: (a) concrete user harm reports beyond the single-sentence persona tension, or (b) a design pass on status-bar width adaptation generally.
+
+**Maps to:** FB-065 user-persona P3-3.
+
+**Non-goals (if routed later):**
+- Not changing `[3]` or `[4]` keybind semantics.
+- Not touching other `[3]`/`[4]` affordance surfaces (FB-132 scope).
 

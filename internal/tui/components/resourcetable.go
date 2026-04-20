@@ -308,7 +308,7 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 		for _, r := range summary.TopThree {
 			rows = append(rows, "  "+m.renderQuotaRow(r, contentW-2, textOnly))
 		}
-		rows = append(rows, "", muted.Render("  (press [3] for full dashboard)"))
+		rows = append(rows, "", muted.Render("  (press [3] for quota dashboard)"))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -322,7 +322,7 @@ func (m ResourceTableModel) renderActivitySection(contentW int) string {
 	left := accentBold.Render("Recent activity")
 	var hint string
 	if len(m.activityRows) > 0 && !m.activityFetchFailed {
-		hint = muted.Render("[4] full dashboard")
+		hint = muted.Render("[4] activity dashboard")
 	}
 	gap := max(1, contentW-lipgloss.Width(left)-lipgloss.Width(hint))
 	header := left + strings.Repeat(" ", gap) + hint

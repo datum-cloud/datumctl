@@ -54,7 +54,7 @@ func (m HelpOverlayModel) View() string {
 		row.Render("[c]  switch context"),
 		row.Render("[3]  quota dashboard"),
 		row.Render("[t]  quota table"),
-		row.Render("[4]  activity (toggle)"),
+		row.Render("[4]  activity dashboard"),
 	)
 
 	global := lipgloss.JoinVertical(lipgloss.Left,
@@ -67,7 +67,7 @@ func (m HelpOverlayModel) View() string {
 	cols := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(22).Render(nav),
 		lipgloss.NewStyle().Width(22).Render(actions),
-		lipgloss.NewStyle().Width(22).Render(view),
+		lipgloss.NewStyle().Width(24).Render(view),
 		lipgloss.NewStyle().Width(22).Render(global),
 	)
 

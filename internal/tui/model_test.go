@@ -10976,8 +10976,8 @@ func TestFB050_Key4_ToggleFromTablePane_RestoresTablePane(t *testing.T) {
 	}
 }
 
-// [Observable] FB-050 AC3: help overlay contains "activity (toggle)" label (quota (toggle) already tested in TestFB035_HelpOverlay_ContainsKey3Row).
-func TestFB050_HelpOverlay_ContainsActivityToggleLabel(t *testing.T) {
+// [Observable] FB-132: help overlay contains "activity dashboard" label (FB-132 copy alignment).
+func TestFB132_HelpOverlay_ActivityDashboardLabel(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
 
@@ -10987,9 +10987,15 @@ func TestFB050_HelpOverlay_ContainsActivityToggleLabel(t *testing.T) {
 		t.Fatal("setup: expected HelpOverlayID after ? press")
 	}
 
+	// Set width wide enough to prevent word-wrap on overlay rows.
+	appM.helpOverlay.Width = 120
+	appM.helpOverlay.Height = 40
 	view := stripANSIModel(appM.helpOverlay.View())
-	if !strings.Contains(view, "activity (toggle)") {
-		t.Errorf("FB-050 AC3: HelpOverlay missing 'activity (toggle)' label:\n%s", view)
+	if !strings.Contains(view, "activity dashboard") {
+		t.Errorf("FB-132: HelpOverlay missing 'activity dashboard' label:\n%s", view)
+	}
+	if strings.Contains(view, "activity (toggle)") {
+		t.Errorf("FB-132: HelpOverlay contains old 'activity (toggle)' copy; must be 'activity dashboard':\n%s", view)
 	}
 }
 
@@ -13696,7 +13702,7 @@ func TestFB083_AC6_AntiBehavior_SuppressedHint_4KeyStillNavigates(t *testing.T) 
 	m := newActivityDashboardPaneModel()
 	// activityRows is nil by default (hint suppressed per FB-083); confirm via View.
 	view := stripANSIModel(m.table.View())
-	if strings.Contains(view, "[4] full dashboard") {
+	if strings.Contains(view, "[4] activity dashboard") {
 		t.Fatal("precondition: hint should be suppressed with empty activityRows, but found it in View()")
 	}
 

@@ -693,7 +693,7 @@ func TestResourceTableModel_Welcome_WidthBand_StackedSingleCol(t *testing.T) {
 		t.Errorf("AC#23: stacked compact layout must not say 'governed types', got: %q", got)
 	}
 	// Top-3 list is suppressed in compact mode.
-	if strings.Contains(got, "press 3 for full dashboard") {
+	if strings.Contains(got, "press 3 for quota dashboard") {
 		t.Errorf("AC#23: top-3 list must be absent in stacked compact layout, got: %q", got)
 	}
 }
@@ -786,7 +786,7 @@ func TestResourceTableModel_Welcome_HeightBand_NoTop3(t *testing.T) {
 		t.Errorf("§6b: want 'Platform health' visible at contentH=12, got: %q", got)
 	}
 	// Top-3 hint is only appended when showList=true.
-	if strings.Contains(got, "press 3 for full dashboard") {
+	if strings.Contains(got, "press 3 for quota dashboard") {
 		t.Errorf("§6b: want top-3 list absent at contentH<15, got: %q", got)
 	}
 }
@@ -807,8 +807,8 @@ func TestResourceTableModel_Welcome_HeightBand_MinimalKeybind(t *testing.T) {
 	if !strings.Contains(got, "j/k") {
 		t.Errorf("FB-042 §9: want keybind strip (j/k) at contentH=16 (Minimal band ≥12), got: %q", got)
 	}
-	// No top-3 at contentH<18: "(press [3] for full dashboard)" absent.
-	if strings.Contains(got, "[3] for full dashboard") {
+	// No top-3 at contentH<18: "(press [3] for quota dashboard)" absent.
+	if strings.Contains(got, "[3] for quota dashboard") {
 		t.Errorf("FB-042 §9: want top-3 list absent at contentH<18, got: %q", got)
 	}
 }
@@ -1317,7 +1317,7 @@ func TestFB083_AC1_EmptyRows_HintAbsent(t *testing.T) {
 	m.SetActivityRows([]data.ActivityRow{})
 	m.SetActivityLoading(false)
 	out := stripANSI(m.View())
-	if strings.Contains(out, "[4] full dashboard") {
+	if strings.Contains(out, "[4] activity dashboard") {
 		t.Errorf("expected hint absent for empty rows, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Recent activity") {
@@ -1331,7 +1331,7 @@ func TestFB083_AC2_LoadingState_HintAbsent(t *testing.T) {
 	m := newWelcomeModel(100, 30)
 	m.SetActivityLoading(true)
 	out := stripANSI(m.View())
-	if strings.Contains(out, "[4] full dashboard") {
+	if strings.Contains(out, "[4] activity dashboard") {
 		t.Errorf("expected hint absent during loading, got:\n%s", out)
 	}
 }
@@ -1342,7 +1342,7 @@ func TestFB083_AC3_FetchFailed_HintAbsent(t *testing.T) {
 	m := newWelcomeModel(100, 30)
 	m.SetActivityFetchFailed(true)
 	out := stripANSI(m.View())
-	if strings.Contains(out, "[4] full dashboard") {
+	if strings.Contains(out, "[4] activity dashboard") {
 		t.Errorf("expected hint absent on fetch failure, got:\n%s", out)
 	}
 }
@@ -1353,7 +1353,7 @@ func TestFB083_AC4_RowsPresent_HintShows(t *testing.T) {
 	m := newWelcomeModel(100, 30)
 	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
 	out := stripANSI(m.View())
-	if !strings.Contains(out, "[4] full dashboard") {
+	if !strings.Contains(out, "[4] activity dashboard") {
 		t.Errorf("expected hint present when rows exist, got:\n%s", out)
 	}
 }
@@ -1368,10 +1368,10 @@ func TestFB083_AC5_InputChanged_EmptyVsPopulated(t *testing.T) {
 	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
 	outRows := stripANSI(m.View())
 
-	if strings.Contains(outEmpty, "[4] full dashboard") {
+	if strings.Contains(outEmpty, "[4] activity dashboard") {
 		t.Errorf("empty state should not contain hint")
 	}
-	if !strings.Contains(outRows, "[4] full dashboard") {
+	if !strings.Contains(outRows, "[4] activity dashboard") {
 		t.Errorf("populated state should contain hint")
 	}
 	if outEmpty == outRows {
@@ -1390,7 +1390,7 @@ func TestFB111_AC1_StaleRows_FetchFailed_HintAbsent(t *testing.T) {
 	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
 	m.SetActivityFetchFailed(true)
 	out := stripANSI(m.View())
-	if strings.Contains(out, "[4] full dashboard") {
+	if strings.Contains(out, "[4] activity dashboard") {
 		t.Errorf("AC1 [Observable]: hint present with stale rows + fetchFailed=true:\n%s", out)
 	}
 }
@@ -1401,7 +1401,7 @@ func TestFB111_AC2_StaleRows_NoFail_HintPresent(t *testing.T) {
 	m := newWelcomeModel(100, 30)
 	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
 	out := stripANSI(m.View())
-	if !strings.Contains(out, "[4] full dashboard") {
+	if !strings.Contains(out, "[4] activity dashboard") {
 		t.Errorf("AC2 [Observable]: hint absent with rows and fetchFailed=false:\n%s", out)
 	}
 }
@@ -1416,10 +1416,10 @@ func TestFB111_AC3_InputChanged_FetchFailed_ToggleHint(t *testing.T) {
 	m.SetActivityFetchFailed(true)
 	outFail := stripANSI(m.View())
 
-	if !strings.Contains(outOK, "[4] full dashboard") {
+	if !strings.Contains(outOK, "[4] activity dashboard") {
 		t.Errorf("AC3 precondition: hint absent before fetchFailed:\n%s", outOK)
 	}
-	if strings.Contains(outFail, "[4] full dashboard") {
+	if strings.Contains(outFail, "[4] activity dashboard") {
 		t.Errorf("AC3 [Input-changed]: hint still present after fetchFailed=true:\n%s", outFail)
 	}
 	if outOK == outFail {
@@ -1428,6 +1428,67 @@ func TestFB111_AC3_InputChanged_FetchFailed_ToggleHint(t *testing.T) {
 }
 
 // ==================== End FB-111 (component) ====================
+
+// ==================== FB-132: Canonical-form label alignment (S2 + S3 surfaces) ====================
+
+// AC2 [Observable] — S3 activity footer renders "[4] activity dashboard" (not "full dashboard") when rows present.
+func TestFB132_AC2_Observable_S3ActivityFooter_CanonicalLabel(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
+	out := stripANSI(m.View())
+	if !strings.Contains(out, "[4] activity dashboard") {
+		t.Errorf("AC2 [Observable]: S3 footer missing '[4] activity dashboard'; got:\n%s", out)
+	}
+	if strings.Contains(out, "[4] full dashboard") {
+		t.Errorf("AC2 [Observable]: S3 footer contains old '[4] full dashboard' copy:\n%s", out)
+	}
+}
+
+// AC3 [Observable] — S2 attention hint renders "(press [3] for quota dashboard)" when TopThree non-empty.
+func TestFB132_AC3_Observable_S2AttentionHint_CanonicalLabel(t *testing.T) {
+	t.Parallel()
+	projectID := "proj-x"
+	m := newWelcomeModel(100, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "web", projectID))
+	m.SetBuckets([]data.AllowanceBucket{
+		{ConsumerKind: "Project", ConsumerName: projectID, ResourceType: "apps/deployments", Limit: 10, Allocated: 9},
+	})
+	out := stripANSI(m.View())
+	if !strings.Contains(out, "(press [3] for quota dashboard)") {
+		t.Errorf("AC3 [Observable]: S2 hint missing '(press [3] for quota dashboard)'; got:\n%s", out)
+	}
+	if strings.Contains(out, "full dashboard") {
+		t.Errorf("AC3 [Observable]: S2 hint contains old 'full dashboard' copy:\n%s", out)
+	}
+}
+
+// AC6 [Anti-regression] — S2 hint absent when TopThree is empty; S3 hint absent when activityFetchFailed.
+func TestFB132_AC6_AntiRegression_GatedRenderPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("S2 hint absent when no buckets", func(t *testing.T) {
+		t.Parallel()
+		m := newWelcomeModel(100, 30)
+		out := stripANSI(m.View())
+		if strings.Contains(out, "(press [3] for quota dashboard)") {
+			t.Errorf("S2 hint must be absent when TopThree empty:\n%s", out)
+		}
+	})
+
+	t.Run("S3 hint absent when activityFetchFailed", func(t *testing.T) {
+		t.Parallel()
+		m := newWelcomeModel(100, 30)
+		m.SetActivityRows([]data.ActivityRow{testActivityRow()})
+		m.SetActivityFetchFailed(true)
+		out := stripANSI(m.View())
+		if strings.Contains(out, "[4] activity dashboard") {
+			t.Errorf("S3 hint must be absent when activityFetchFailed=true:\n%s", out)
+		}
+	})
+}
+
+// ==================== End FB-132 (component) ====================
 
 func TestResourceTableModel_ApplyFilter_CursorReset_AfterSetColumns(t *testing.T) {
 	t.Parallel()
