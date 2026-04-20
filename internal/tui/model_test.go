@@ -14227,3 +14227,86 @@ func TestFB115_AC6_AntiRegression_FB079_AnchorUpdated(t *testing.T) {
 // ==================== End FB-115 ====================
 
 
+
+// ==================== FB-085: title bar label/spinner contradiction fix ====================
+
+// newPlaceholderDetailModel returns an AppModel in DetailPane with placeholder
+// state: describeRaw=nil, events cached (one row), non-yaml/conditions/events modes.
+func newPlaceholderDetailModel() AppModel {
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+
+	m := AppModel{
+		ctx:        context.Background(),
+		rc:         stubResourceClient{},
+		ac:         data.NewActivityClient(nil),
+		activePane: DetailPane,
+		describeRT: data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw: nil, // placeholder condition: describe absent
+		events: []data.EventRow{
+			{Reason: "Scheduled", Message: "pod assigned"},
+		},
+		sidebar:     components.NewNavSidebarModel(22, 24),
+		table:       components.NewResourceTableModel(58, 24),
+		detail:      detail,
+		activity:    components.NewActivityViewModel(58, 24),
+		filterBar:   components.NewFilterBarModel(),
+		helpOverlay: components.NewHelpOverlayModel(),
+	}
+	m.detail.SetMode(m.detailModeLabel())
+	m.updatePaneFocus()
+	return m
+}
+
+// TestFB085_AC1_LoadingTrue_UnavailableLabelAbsent verifies that when the
+// placeholder is active AND loading is true, View() does NOT contain "[unavailable]".
+func TestFB085_AC1_LoadingTrue_UnavailableLabelAbsent(t *testing.T) {
+	t.Parallel()
+	m := newPlaceholderDetailModel()
+	m.detail.SetLoading(true)
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if strings.Contains(view, "[unavailable]") {
+		t.Errorf("AC1 [Observable FB-085]: View() contains \"[unavailable]\" while loading=true; want absent.\nView:\n%s", view)
+	}
+}
+
+// TestFB085_AC2_LoadingFalse_UnavailableLabelPresent verifies that when the
+// placeholder is active AND loading is false, View() DOES contain "[unavailable]".
+func TestFB085_AC2_LoadingFalse_UnavailableLabelPresent(t *testing.T) {
+	t.Parallel()
+	m := newPlaceholderDetailModel()
+	m.detail.SetLoading(false)
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if !strings.Contains(view, "[unavailable]") {
+		t.Errorf("AC2 [Observable FB-085]: View() does not contain \"[unavailable]\" while loading=false; want present.\nView:\n%s", view)
+	}
+}
+
+// TestFB085_AC3_LoadingTransition_FlipsLabel verifies that the loading true→false
+// transition changes the rendered title bar from absent to present "[unavailable]".
+func TestFB085_AC3_LoadingTransition_FlipsLabel(t *testing.T) {
+	t.Parallel()
+	m := newPlaceholderDetailModel()
+
+	// loading = true: label must be absent
+	m.detail.SetLoading(true)
+	m.detail.SetMode(m.detailModeLabel())
+	viewLoading := stripANSIModel(m.View())
+	if strings.Contains(viewLoading, "[unavailable]") {
+		t.Errorf("AC3 [Input-changed FB-085]: loading=true: View() contains \"[unavailable]\"; want absent.\nView:\n%s", viewLoading)
+	}
+
+	// loading = false: label must appear
+	m.detail.SetLoading(false)
+	m.detail.SetMode(m.detailModeLabel())
+	viewDone := stripANSIModel(m.View())
+	if !strings.Contains(viewDone, "[unavailable]") {
+		t.Errorf("AC3 [Input-changed FB-085]: loading=false: View() missing \"[unavailable]\"; want present.\nView:\n%s", viewDone)
+	}
+}
+
+// ==================== End FB-085 ====================

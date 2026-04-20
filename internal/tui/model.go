@@ -2021,6 +2021,9 @@ func (m AppModel) buildQuotaSectionHeader() string {
 // placeholder is active; otherwise returns the existing mode (unchanged). FB-051.
 func (m AppModel) detailModeLabel() string {
 	if m.describeRaw == nil && m.events != nil && !m.yamlMode && !m.conditionsMode && !m.eventsMode {
+		if m.detail.Loading() {
+			return "" // spinner is the active signal; suppress settled-state label
+		}
 		return "describe [unavailable]"
 	}
 	return m.detail.Mode()
