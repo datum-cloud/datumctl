@@ -35,7 +35,6 @@ func (m HelpOverlayModel) View() string {
 		row.Render("[Enter] select"),
 		row.Render("[/]    filter"),
 		row.Render("[Esc]  back / home"),
-		row.Render("[d]    describe"),
 	}
 	if m.ShowConditionsHint {
 		actionLines = append(actionLines, row.Render("[Shift+C] conditions")) // AC#22
