@@ -5798,7 +5798,7 @@ Axis tags: `[Observable]`, `[Integration]`.
 
 ### FB-140 — Welcome S2 unconfigured-quota state has no in-TUI next-step affordance
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-139 user-persona P3-1. Spec stub delivered at `docs/tui-ux-specs/fb-140-unconfigured-quota-next-step.md`. Team-lead approved parallel routing to ux-designer (does not block the engineer queue).
+**Status: PENDING ENGINEER** — spec complete at `docs/tui-ux-specs/fb-140-unconfigured-quota-next-step.md`. Option A (symmetric muted sub-line) pinned. Routed 2026-04-20 by ux-designer.
 **Priority: P3** — discoverability gap; FB-139 shipped clean disambiguation of the problem statement but did not address remedy surfacing (explicitly scoped out of FB-139).
 
 #### User problem
@@ -5843,3 +5843,87 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 - Not creating a new help-overlay section unless option B or E is chosen.
 - Not auditing other "terminal state with no next-step" surfaces elsewhere in the TUI — separate audit brief if pattern recurs.
 - Not redesigning S2 layout beyond adding the affordance.
+
+---
+
+### FB-141 — Attention-list sort order may bury more urgent kind during incident response
+
+**Status: PENDING-CONDITION-SCAN** — filed 2026-04-20 by product-experience from FB-075 user-persona P2-1. Held without ux-designer routing per team-lead 2026-04-20: latent until condition scanning ships and mixed-kind lists become observable in production. No spec stub yet.
+**Priority: P2** — operator-impact during active incident response; no current bug because condition items are always empty in production today.
+
+#### User problem (persona's framing, condensed)
+
+`renderAttentionSection` at `resourcetable.go:408–413` sorts items by Kind with quota items first, condition items second (FB-075 spec §8 explicitly preserves this order as a non-goal). Persona evaluating FB-075 argued that during active incident response this reverses operational priority:
+
+- Quota at 91% allocated = capacity warning, service still running.
+- `condition: Degraded` = service is *down right now*.
+
+Triage-first-glance lands on the top of the list. With quota above condition, an operator triages capacity before availability — backwards from the urgency model.
+
+Persona quote: *"a `condition: Degraded` service is down right now, whereas a quota at 91% is a capacity warning with the service still running. My eye goes to the top of the list first — if the top is quota and the condition failure is below the blank line, I triage capacity before availability, which is backwards."*
+
+#### Proposed direction (placeholder, not pinned)
+
+UX-designer to evaluate when condition scanning ships. Option space worth considering:
+
+- Sort by severity (e.g., `condition: Degraded` > quota ≥90% > quota ≥80% > healthy condition) regardless of kind.
+- Sort by recency (most-recent transition first) — surfaces what just changed.
+- Sort by kind but with state-aware override (any `condition: Degraded` jumps to top regardless of position in kind ordering).
+- Keep quota-first sort but add a top-of-section banner when any condition item is present and degraded.
+
+Each option has different observability and surprise tradeoffs. None pinned — file forward.
+
+#### Trigger to activate
+
+This brief moves to PENDING UX-DESIGNER once condition scanning ships and mixed-kind lists become a production reality (currently the condition slot at S5 is always empty per FB-042 §5).
+
+**Dependencies:** FB-075 ACCEPTED. Activation depends on a future condition-scanning brief (not yet filed).
+
+**Maps to:** FB-075 user-persona P2-1.
+
+**Non-goals:**
+- Not changing FB-075 separator behavior.
+- Not pre-pinning a sort algorithm before condition scanning lands.
+
+---
+
+### FB-142 — Attention-list icon vocabulary undiscoverable at the welcome surface
+
+**Status: PENDING-CONDITION-SCAN** — filed 2026-04-20 by product-experience from FB-075 user-persona P3-1. Held without ux-designer routing per team-lead 2026-04-20: latent until condition scanning ships and the first-time-operator path encounters a mixed list. No spec stub yet.
+**Priority: P3** — discoverability gap; affects new operators only, surfaces only after condition scanning ships.
+
+#### User problem (persona's framing, condensed)
+
+Once mixed-kind attention lists ship (post-condition-scanning), a first-time operator will see:
+- Two different icons (▲ and ⚠) within the same section.
+- A blank-row group boundary between them (FB-075's separator).
+- No legend, no tooltip, no `[?]` keybind hint that decodes ▲ = quota/capacity vs ⚠ = condition/readiness.
+
+If the operator already has the icon vocabulary internalized (e.g., from prior CLI exposure), the grouping reads cleanly. If not, the gap looks like a rendering artifact and the icons are decorative.
+
+Persona explicitly noted that FB-075 spec rejected Option B (sub-headers `Capacity` / `Readiness`) in favor of icon-only semantics — this brief is *complementary*, not a re-litigation. The discoverability question is independent of the separator-form question.
+
+Persona quote: *"The icon vocabulary is undiscoverable at this surface: there's no legend, no tooltip, and `[?]` help is not wired here. Filing as P3 so it's in view when condition scanning lands and real users hit the mixed list for the first time."*
+
+#### Proposed direction (placeholder, not pinned)
+
+UX-designer to evaluate when condition scanning ships. Option space worth considering:
+
+- One-line legend above the S5 list (e.g., `▲ capacity   ⚠ readiness`) — adds a row but ends discoverability ambiguity in one glance.
+- First-time tooltip on the welcome panel (requires first-run state tracking — heavier).
+- `[?]` keybind hint scoped to the section (requires HelpOverlay section-anchor capability per FB-140 finding — likely blocked).
+- Accept-as-internalized — rely on operators learning the vocabulary from CLI/docs exposure; no in-TUI affordance.
+
+Each option has different real-estate vs. discoverability tradeoffs. None pinned — file forward.
+
+#### Trigger to activate
+
+This brief moves to PENDING UX-DESIGNER once condition scanning ships AND first-time operators are likely to encounter mixed-kind lists in production.
+
+**Dependencies:** FB-075 ACCEPTED. Activation depends on a future condition-scanning brief (not yet filed). Option-`[?]`-keybind path additionally depends on FB-140 outcome (HelpOverlay section-anchor capability).
+
+**Maps to:** FB-075 user-persona P3-1.
+
+**Non-goals:**
+- Not relitigating FB-075's choice of blank-row-only separator over sub-header form.
+- Not adding any in-TUI affordance until condition scanning produces the user-problem in production.
