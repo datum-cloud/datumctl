@@ -346,6 +346,85 @@ func TestResourceTableModel_Welcome_BucketErr_NonUnauthorized(t *testing.T) {
 	}
 }
 
+// TestFB144_TransientSubLine_PressRToRetry verifies FB-144 AC1: at bucketErr!=nil &&
+// !bucketUnauthorized and contentW>=40, View() contains "Press [r] to retry."
+func TestFB144_TransientSubLine_PressRToRetry(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme-corp", "web", "proj-abc"))
+	m.SetBucketErr(errors.New("network error"), false)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "Press [r] to retry.") {
+		t.Errorf("FB-144 AC1: want 'Press [r] to retry.' in transient error state, got: %q", got)
+	}
+}
+
+// TestFB144_TransientSubLine_OldCopyAbsent verifies FB-144 AC2: old copy "Refresh to retry."
+// must NOT appear in the same render state.
+func TestFB144_TransientSubLine_OldCopyAbsent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme-corp", "web", "proj-abc"))
+	m.SetBucketErr(errors.New("network error"), false)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "Refresh to retry.") {
+		t.Errorf("FB-144 AC2: old copy 'Refresh to retry.' must be absent, got: %q", got)
+	}
+}
+
+// TestFB144_ThreeBranchesDistinct verifies FB-144 AC3: unauthorized, unconfigured, and
+// transient error branches produce pairwise-distinct View() outputs at contentW>=40.
+func TestFB144_ThreeBranchesDistinct(t *testing.T) {
+	t.Parallel()
+	projectID := "proj-abc"
+	ctx := testCtxWithProject("alice", "acme-corp", "web", projectID)
+
+	mUnauth := newWelcomeModel(100, 30)
+	mUnauth.SetTUIContext(ctx)
+	mUnauth.SetBucketErr(errors.New("forbidden"), true)
+
+	mUnconfigured := newWelcomeModel(100, 30)
+	mUnconfigured.SetTUIContext(ctx)
+	// bucketConfigured=false (default) with no error renders the unconfigured branch.
+
+	mTransient := newWelcomeModel(100, 30)
+	mTransient.SetTUIContext(ctx)
+	mTransient.SetBucketErr(errors.New("network error"), false)
+
+	vUnauth := stripANSI(mUnauth.View())
+	vUnconfigured := stripANSI(mUnconfigured.View())
+	vTransient := stripANSI(mTransient.View())
+
+	if vUnauth == vTransient {
+		t.Errorf("FB-144 AC3: unauthorized and transient views must differ")
+	}
+	if vUnauth == vUnconfigured {
+		t.Errorf("FB-144 AC3: unauthorized and unconfigured views must differ")
+	}
+	if vTransient == vUnconfigured {
+		t.Errorf("FB-144 AC3: transient and unconfigured views must differ")
+	}
+}
+
+// TestFB144_NarrowSuppression verifies FB-144 AC4 (FB-143 AC2 anti-regression):
+// at contentW<40 (tableWidth=43), the "Press [r] to retry." sub-line is suppressed.
+func TestFB144_NarrowSuppression(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(43, 30) // contentW = 39 < 40
+	m.SetTUIContext(testCtxWithProject("alice", "acme-corp", "web", "proj-abc"))
+	m.SetBucketErr(errors.New("network error"), false)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "Press [r] to retry.") {
+		t.Errorf("FB-144 AC4: sub-line must be suppressed at contentW<40, got: %q", got)
+	}
+	if strings.Contains(got, "Refresh to retry.") {
+		t.Errorf("FB-144 AC4: old sub-line copy must also be absent at contentW<40, got: %q", got)
+	}
+}
+
 // TestResourceTableModel_Welcome_BucketLoading verifies AC#10: loading placeholder
 // "loading platform health" appears when buckets is nil and loading flag is set.
 func TestResourceTableModel_Welcome_BucketLoading(t *testing.T) {

@@ -5990,7 +5990,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 
 ### FB-144 — FB-143 transient sub-line `"Refresh to retry."` uses implicit keybind, not explicit `[r]`
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-143 user-persona P3-1.
+**Status: ACCEPTED** — implemented and accepted 2026-04-20 by product-experience. Copy flip at `internal/tui/components/resourcetable.go:281`: `"Refresh to retry."` → `"Press [r] to retry."`. 4 new tests in `resourcetable_test.go` (FB-144 ACs 1–4); stale FB-143 AC1 assertion updated in `model_test.go`. Engineer-direct routing: accepted on complete evidence submission (axis-coverage table, `go test ./internal/tui/...` exit-0, `go install ./...` exit-0).
 
 **Priority: P3** — first-encounter operators must cross-glance the status bar to map "Refresh" → `[r]`. The two adjacent sub-lines at `resourcetable.go` L274 (unauthorized) and L285 (unconfigured) correctly use prose because they point to people outside the TUI. The transient branch at L279 is the only one whose remedy is an in-TUI keybind, but names the keybind only implicitly via the verb "Refresh." For an operator who already has `[r]` in muscle memory this reads cleanly; for a first encounter it teaches *what to do* but not *how*.
 

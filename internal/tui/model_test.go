@@ -16277,8 +16277,8 @@ func TestFB143_AC1_Observable_TransientSubLinePresent(t *testing.T) {
 	appM := result.(AppModel)
 
 	got := stripANSIModel(appM.table.View())
-	if !strings.Contains(got, "Refresh to retry.") {
-		t.Errorf("AC1: 'Refresh to retry.' absent from transient error branch at contentW>=40:\n%s", got)
+	if !strings.Contains(got, "Press [r] to retry.") {
+		t.Errorf("AC1: 'Press [r] to retry.' absent from transient error branch at contentW>=40:\n%s", got)
 	}
 }
 

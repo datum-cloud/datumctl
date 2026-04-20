@@ -278,7 +278,7 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 		}
 		line := muted.Render("Platform health temporarily unavailable")
 		if contentW >= 40 {
-			line += "\n" + muted.Render("Refresh to retry.")
+			line += "\n" + muted.Render("Press [r] to retry.")
 		}
 		return leftHeader + "\n\n" + line
 	}
