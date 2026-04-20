@@ -6,13 +6,19 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/pflag"
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/miloapi"
 	"golang.org/x/oauth2"
+	"strings"
+
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	discoveryclient "k8s.io/client-go/discovery"
+	diskcached "k8s.io/client-go/discovery/cached/disk"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -182,6 +188,41 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	}
 
 	return clientcmd.NewDefaultClientConfig(*kubeConfig, overrides)
+}
+
+// ToDiscoveryClient overrides the promoted ConfigFlags.ToDiscoveryClient so
+// that discovery requests use the scope-aware host from c.ToRESTConfig()
+// (project/org/user URL) rather than the WrapConfigFn's user-context URL.
+func (c *CustomConfigFlags) ToDiscoveryClient() (discoveryclient.CachedDiscoveryInterface, error) {
+	config, err := c.ToRESTConfig()
+	if err != nil {
+		return nil, err
+	}
+	config.Burst = 300
+
+	cacheDir := defaultKubeCacheDir()
+	if c.CacheDir != nil && *c.CacheDir != "" {
+		cacheDir = *c.CacheDir
+	}
+
+	httpCacheDir := filepath.Join(cacheDir, "http")
+	discoveryCacheDir := computeDiscoveryCacheDir(filepath.Join(cacheDir, "discovery"), config.Host)
+
+	return diskcached.NewCachedDiscoveryClientForConfig(config, discoveryCacheDir, httpCacheDir, 6*time.Hour)
+}
+
+func defaultKubeCacheDir() string {
+	if kcd := os.Getenv("KUBECACHEDIR"); kcd != "" {
+		return kcd
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".kube", "cache")
+}
+
+func computeDiscoveryCacheDir(parentDir, host string) string {
+	schemeless := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	safe := strings.NewReplacer("/", "_", ":", "_", "?", "_", "&", "_", "=", "_", "@", "_", "[", "_", "]", "_").Replace(schemeless)
+	return filepath.Join(parentDir, safe)
 }
 
 // loadDatumContext resolves the active v1beta1 session and current context,

@@ -4,14 +4,6 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
-	"go.datum.net/datumctl/internal/client"
-	"go.datum.net/datumctl/internal/cmd/auth"
-	"go.datum.net/datumctl/internal/cmd/create"
-	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
-	"go.datum.net/datumctl/internal/cmd/docs"
-	"go.datum.net/datumctl/internal/cmd/login"
-	"go.datum.net/datumctl/internal/cmd/logout"
-	"go.datum.net/datumctl/internal/cmd/whoami"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -24,6 +16,16 @@ import (
 	"k8s.io/kubectl/pkg/cmd/explain"
 	"k8s.io/kubectl/pkg/cmd/get"
 	"k8s.io/kubectl/pkg/cmd/version"
+
+	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/cmd/auth"
+	"go.datum.net/datumctl/internal/cmd/create"
+	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
+	"go.datum.net/datumctl/internal/cmd/docs"
+	"go.datum.net/datumctl/internal/cmd/login"
+	"go.datum.net/datumctl/internal/cmd/logout"
+	tuicmd "go.datum.net/datumctl/internal/cmd/tui"
+	"go.datum.net/datumctl/internal/cmd/whoami"
 )
 
 // hideFlags hides the named flags from a command's flag set. Flags that do not
@@ -58,7 +60,6 @@ Get started:
   datumctl login
   datumctl get organizations
   datumctl get dnszones`,
-		Run: runLanding,
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
@@ -530,6 +531,10 @@ Specify the resource type and name to view its history.`
 	docsCmd := docs.Command(rootCmd)
 	docsCmd.GroupID = "other"
 	rootCmd.AddCommand(docsCmd)
+
+	tuiCmd := tuicmd.Command(factory)
+	tuiCmd.GroupID = "other"
+	rootCmd.AddCommand(tuiCmd)
 
 	return rootCmd
 }
