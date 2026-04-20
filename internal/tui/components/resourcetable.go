@@ -482,7 +482,13 @@ func (m ResourceTableModel) renderAttentionSection(contentW int) string {
 	lines = append(lines, header)
 	lines = append(lines, rule)
 
+	var prevKind string
 	for _, item := range items {
+		if prevKind != "" && item.Kind != prevKind {
+			lines = append(lines, "")
+		}
+		prevKind = item.Kind
+
 		var icon string
 		if item.Kind == "quota" {
 			icon = warn.Render("▲")

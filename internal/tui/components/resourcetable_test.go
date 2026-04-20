@@ -1080,6 +1080,118 @@ func TestFB042_Attention_ConditionItem_RendersLabelAndDetail(t *testing.T) {
 
 // ==================== End FB-042 (component) ====================
 
+// ==================== FB-075: S5 attention-kind separator ====================
+//
+// Fix: renderAttentionSection inserts a blank row when kind transitions from "quota" to "condition".
+// Single-kind lists produce no separator.
+//
+// Axis-coverage:
+// AC  | Observable                                          | Input-changed           | Anti-behavior                                          | Anti-regression              | Integration
+// ----+-----------------------------------------------------+-------------------------+--------------------------------------------------------+------------------------------+-------------
+// AC1 | TestFB075_AC1_Observable_MixedKind_BlankLineBetween | AC1 vs AC2 (different)  | -                                                      | -                            | -
+// AC2 | -                                                   | -                       | TestFB075_AC2_AntiBehavior_SingleKindQuota_NoBlankRow   | -                            | -
+// AC3 | -                                                   | -                       | TestFB075_AC3_AntiBehavior_SingleKindCondition_NoBlank  | -                            | -
+// AC4 | -                                                   | -                       | -                                                      | (FB-042 suite — see above)   | -
+// AC5 | -                                                   | -                       | -                                                      | -                            | go install ✓
+
+// TestFB075_AC1_Observable_MixedKind_BlankLineBetween: mixed-kind list has ≥1 blank line
+// between the last ▲ row and the first ⚠ row.
+func TestFB075_AC1_Observable_MixedKind_BlankLineBetween(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(120, 34)
+	m.SetAttentionItems([]AttentionItem{
+		{Kind: "quota", Label: "dnszones quota", Detail: "91% allocated", NavKey: "[3]", NavHint: "quota dashboard"},
+		{Kind: "quota", Label: "backends quota", Detail: "82% allocated", NavKey: "[3]", NavHint: "quota dashboard"},
+		{Kind: "condition", Label: "backend/api-gw", Detail: "condition: Degraded", NavKey: "[Enter]", NavHint: "view"},
+	})
+
+	got := stripANSI(m.View())
+	rows := strings.Split(got, "\n")
+
+	lastTriangle := -1
+	firstWarning := -1
+	for i, row := range rows {
+		if strings.Contains(row, "▲") {
+			lastTriangle = i
+		}
+		if strings.Contains(row, "⚠") && firstWarning == -1 {
+			firstWarning = i
+		}
+	}
+	if lastTriangle == -1 || firstWarning == -1 {
+		t.Fatalf("AC1: could not locate ▲ row (idx %d) or ⚠ row (idx %d) in:\n%s", lastTriangle, firstWarning, got)
+	}
+	// The blank separator row renders as spaces+│ in column layout, so TrimSpace
+	// won't give "". An index gap ≥ 2 is the correct observable: without the separator
+	// the last ▲ and first ⚠ are adjacent (gap = 1); with it the gap is ≥ 2.
+	if firstWarning-lastTriangle < 2 {
+		t.Errorf("AC1: ▲ row %d and ⚠ row %d are adjacent — missing blank separator (gap want ≥2, got %d):\n%s",
+			lastTriangle, firstWarning, firstWarning-lastTriangle, got)
+	}
+}
+
+// TestFB075_AC2_AntiBehavior_SingleKindQuota_NoBlankRow: 3 quota items produce no blank line
+// between any two item rows. Uses index-gap check (same approach as AC1) since a spurious
+// separator renders as spaces+│ and TrimSpace would not detect it.
+func TestFB075_AC2_AntiBehavior_SingleKindQuota_NoBlankRow(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(120, 34)
+	m.SetAttentionItems([]AttentionItem{
+		{Kind: "quota", Label: "dnszones quota", Detail: "91% allocated", NavKey: "[3]", NavHint: "quota dashboard"},
+		{Kind: "quota", Label: "backends quota", Detail: "82% allocated", NavKey: "[3]", NavHint: "quota dashboard"},
+		{Kind: "quota", Label: "workloads quota", Detail: "80% allocated", NavKey: "[3]", NavHint: "quota dashboard"},
+	})
+
+	got := stripANSI(m.View())
+	rows := strings.Split(got, "\n")
+
+	var triangleIdxs []int
+	for i, row := range rows {
+		if strings.Contains(row, "▲") {
+			triangleIdxs = append(triangleIdxs, i)
+		}
+	}
+	if len(triangleIdxs) < 3 {
+		t.Fatalf("AC2: expected 3 ▲ rows, found %d in:\n%s", len(triangleIdxs), got)
+	}
+	for i := 1; i < len(triangleIdxs); i++ {
+		if gap := triangleIdxs[i] - triangleIdxs[i-1]; gap != 1 {
+			t.Errorf("AC2: ▲ rows %d and %d have gap %d (want 1) — spurious separator in single-kind quota list:\n%s",
+				triangleIdxs[i-1], triangleIdxs[i], gap, got)
+		}
+	}
+}
+
+// TestFB075_AC3_AntiBehavior_SingleKindCondition_NoBlank: 2 condition items produce no blank line
+// between item rows. Uses index-gap check since spaces+│ rendering defeats TrimSpace.
+func TestFB075_AC3_AntiBehavior_SingleKindCondition_NoBlank(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(120, 34)
+	m.SetAttentionItems([]AttentionItem{
+		{Kind: "condition", Label: "backend/api-gw", Detail: "condition: Degraded", NavKey: "[Enter]", NavHint: "view"},
+		{Kind: "condition", Label: "frontend/web", Detail: "condition: NotReady", NavKey: "[Enter]", NavHint: "view"},
+	})
+
+	got := stripANSI(m.View())
+	rows := strings.Split(got, "\n")
+
+	var warningIdxs []int
+	for i, row := range rows {
+		if strings.Contains(row, "⚠") {
+			warningIdxs = append(warningIdxs, i)
+		}
+	}
+	if len(warningIdxs) < 2 {
+		t.Fatalf("AC3: expected 2 ⚠ rows, found %d in:\n%s", len(warningIdxs), got)
+	}
+	if gap := warningIdxs[1] - warningIdxs[0]; gap != 1 {
+		t.Errorf("AC3: ⚠ rows %d and %d have gap %d (want 1) — spurious separator in single-kind condition list:\n%s",
+			warningIdxs[0], warningIdxs[1], gap, got)
+	}
+}
+
+// ==================== End FB-075 ====================
+
 // ==================== FB-082: Activity state machine + 3-tier width truncation (component) ====================
 
 // testActivityRow returns a row with all fields populated for width-band assertions.
