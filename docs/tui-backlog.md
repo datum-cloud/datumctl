@@ -1980,7 +1980,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`.
 
 ### FB-060 — Failed quota refresh needs a signal on the quota surface itself
 
-**Status: ACCEPTED 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-060-failed-quota-refresh-signal.md` (option (a) inline title-bar annotation). Designer-routed + state-machine brief → test-engineer-first sequencing. Test-engineer delivered 4 AC-mapped tests at `internal/tui/components/quotadashboard_fb060_test.go`, compile clean pre-impl. Engineer implemented `refreshFailed` field + `SetRefreshFailed(bool)` setter + `titleBar()` refreshFailed branch with if-chain priority `refreshing` → `refreshFailed` → `fetchedAt` (FB-063/FB-059 collision-free), `SetBuckets()` side-effect clear on success, `model.go` BucketsErrorMsg handler sets failure only when `HasBuckets()` (refresh-only, not initial-load errors per §11 non-goal). Wide label `"  ✗ refresh failed"` styled `styles.Warning`, narrow label `" ✗"`, shared `>= 2` gap-guard with existing labels. `go install ./...` clean; `go test ./internal/tui/... -count=1` green (all 4 FB-060 tests PASS; AC1 and AC2 flipped from pre-impl FAIL to PASS; AC3/AC4 stay green). Filed 2026-04-19 by product-experience from FB-043 user-persona P3-2.
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — user-persona delivered 0 P1 + 1 P2 + 2 P3; **3 new briefs filed** (FB-147 P2 success-clear transition perceptually silent; FB-148 P3 narrow `✗` glyph contextually ambiguous on first encounter; FB-149 P3 gap-guard silently drops `✗` at narrow widths with `originLabel` set — same root cause as FB-146 but worse outcome because failure-signal loss is costlier than freshness loss). Positive findings: amber `✗` lands where eye already looks; wide/narrow parity with `⟳`/`↻` predictable; auto-clear on success ergonomically correct; refreshing-preempts-failure prevents "is it still broken?" uncertainty. Spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-060-failed-quota-refresh-signal.md` (option (a) inline title-bar annotation). Designer-routed + state-machine brief → test-engineer-first sequencing. Test-engineer delivered 4 AC-mapped tests at `internal/tui/components/quotadashboard_fb060_test.go`, compile clean pre-impl. Engineer implemented `refreshFailed` field + `SetRefreshFailed(bool)` setter + `titleBar()` refreshFailed branch with if-chain priority `refreshing` → `refreshFailed` → `fetchedAt` (FB-063/FB-059 collision-free), `SetBuckets()` side-effect clear on success, `model.go` BucketsErrorMsg handler sets failure only when `HasBuckets()` (refresh-only, not initial-load errors per §11 non-goal). Wide label `"  ✗ refresh failed"` styled `styles.Warning`, narrow label `" ✗"`, shared `>= 2` gap-guard with existing labels. `go install ./...` clean; `go test ./internal/tui/... -count=1` green (all 4 FB-060 tests PASS; AC1 and AC2 flipped from pre-impl FAIL to PASS; AC3/AC4 stay green). Commit `27a4552` on `feat/console`. Filed 2026-04-19 by product-experience from FB-043 user-persona P3-2.
 **Priority: P3** — confusion between "refresh succeeded, data is still old" and "refresh failed, data is still old" — both render identically in the title bar.
 
 #### User problem
@@ -6093,3 +6093,147 @@ Three options — designer to pin one or propose a fourth:
 - Not changing wide-mode back-hint at `w >= 80` (unchanged).
 - Not changing the `>= 2` gate threshold.
 - Not redesigning the overall back-navigation pattern — this brief is scoped to the narrow-mode back-hint's character budget.
+
+### FB-147 — Successful retry after `✗ refresh failed` transition is perceptually silent
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-060 user-persona P2-1.
+
+**Priority: P2** — after a failed refresh, the operator's next `r` keypress that succeeds has no visual confirmation beyond the silent swap of `✗ refresh failed` → `updated just now`. The state machine is functionally correct; the UX surface lacks a "your retry landed" acknowledgment at the moment of success.
+
+#### User problem
+
+Persona eval:
+
+> *"When a retry succeeds, `✗ refresh failed` disappears and `updated just now` appears. Functionally correct, but the transition has no visual emphasis. If I glanced away between pressing `r` and the response landing, the title bar has quietly returned to its normal state and I have no signal that the failure resolved vs. the retry silently doing nothing. A brief `✓ updated` flash state (even one tick) would give me confirmation the retry landed. Without it I have to actively notice `updated just now` to know the failure cleared."*
+
+The asymmetry is ergonomically notable: failure has a distinct visual treatment (`✗ refresh failed` in amber), success-from-failure has no visual treatment — it drops back into the normal `updated just now` freshness state, indistinguishable from any other successful refresh. The operator who pressed `r` specifically to clear a known error doesn't get a matching resolution signal.
+
+#### Proposed interaction
+
+Designer picks one of:
+
+- **A.** Transient `✓ updated` flash — after `SetBuckets` clears `refreshFailed`, render a green `✓ updated` in the title-bar left segment for N ticks (~1–2 seconds), then settle into `updated just now` (FB-043 freshness). Requires a new transient state in the state machine (new field `refreshSucceededFlash` + tick-based clear).
+- **B.** Shortened threshold flash — within the first tick after `refreshFailed → cleared`, render `✓ just now` (instead of `updated just now`) with a momentary green color, then settle into the normal FB-043/FB-059 freshness branch. Reuses the existing tick; no new state field.
+- **C.** Status-bar correlation — emit a short status-bar ack line `"Refresh recovered"` on the next tick after clearing. Leaves the title bar untouched.
+- **D.** Acknowledge as known limitation — document the asymmetry in FB-060 non-goals. Honest option if designer judges the cost of a flash state worse than the silent-clear behavior.
+
+Designer judgement signals: A and B require state-machine coordination with FB-059 (threshold palette) and FB-063 (`refreshing` preemption). The new flash state must be preempted by `refreshing` and must NOT conflict with FB-059's staleness coloring at the moment of transition.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
+
+1. **[Observable]** After a `refreshFailed → cleared` transition triggered by `SetBuckets`, `stripANSI(QuotaDashboard.View())` contains a designer-ratified success-ack substring for the flash window. Test: force state A (refreshFailed=true) → call `SetBuckets` → assert ack substring present in View() within the flash window.
+2. **[Input-changed]** After the flash window closes, View() settles into the FB-043 freshness branch (`"updated just now"` wide / `"· just now"` narrow) — ack substring absent. Test: State A = within-flash, ack present. State B = post-flash tick, ack absent + freshness present. Both states differ at the title-bar substring.
+3. **[Anti-regression — no flash when no prior failure]** A successful refresh from a clean state (`refreshFailed=false` going in) does NOT trigger the flash. Test: load buckets cleanly → call `SetBuckets` again → assert ack substring absent.
+4. **[Anti-regression — refreshing preempts flash]** If `refreshing=true` while flash is active, View() shows `refreshing…` and NOT the ack. Test: enter flash state → set `refreshing=true` → assert `refreshing` present and ack absent.
+5. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-060 ACCEPTED. Coordinates with FB-063 (refreshing preemption) and FB-059 (freshness threshold coloring must not collide with ack coloring).
+
+**Non-goals:**
+- Not reopening FB-060 behavior — the failure indicator stays as shipped.
+- Not adding a success-ack for every refresh — only for refreshes that resolve a prior failure.
+- Not changing the status-bar error surface (unless option C selected).
+- Not changing `fetchedAt` semantics (advance only on genuine success continues to hold).
+
+---
+
+### FB-148 — Narrow `✗` glyph alone is contextually ambiguous on first encounter
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-060 user-persona P3-2.
+
+**Priority: P3** — at `w < 80`, the failure indicator collapses to ` ✗` (2 chars) for wide/narrow parity with the existing `↻` refreshing glyph. Persona eval flagged that `✗` alone is semantically thin on first encounter — could read as "data unavailable," "session error," or "feature unsupported" without the context that it's a recoverable refresh failure the operator themselves triggered.
+
+#### User problem
+
+Persona eval:
+
+> *"The `↻` refreshing glyph reads universally as 'in-progress loading,' but `✗` alone is semantically thin — first encounter could read as 'data unavailable,' 'session error,' or 'feature unsupported.' The failure is recoverable and triggered by the operator's own `r` keypress, so the glyph needs more context than it carries at narrow width. This is lower priority because the status bar retains the error text, but a first-time user on a narrow terminal may not connect the glyph to the recoverable-refresh context."*
+
+The wide-mode label `✗ refresh failed` carries enough context for a first-time reader to interpret correctly. The narrow collapse to `✗` alone preserves parity with `↻` but `↻` has near-universal "loading/refreshing" literacy whereas `✗` does not have equivalent "recoverable refresh failure" literacy.
+
+#### Proposed interaction
+
+Designer picks one of:
+
+- **A.** Different narrow glyph — replace `✗` with `⚠` (warning triangle) which reads closer to "recoverable warning" than "terminal error." Maintains 2-char width.
+- **B.** Two-char compact label — `✗↻` or similar (failure-glyph + retry-glyph) suggesting "try again." Maintains 2-char width.
+- **C.** Bump narrow label to 3 chars — `"✗ r"` (with `r` as a retry hint, matching the operator's `r` keypress). Still fits in the narrow gap-guard budget most of the time.
+- **D.** Accept as known limitation — document the wide-mode-context-required property of the failure indicator. Honest option if designer judges glyph-substitution worse than status-bar redundancy.
+
+Designer must weigh: glyph literacy vs. width budget vs. wide/narrow parity. The status bar retains the full error text, so the narrow indicator's job is to pull attention to the status bar, not to self-describe.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Anti-regression]`.
+
+1. **[Observable]** At `w < 80`, the narrow failure indicator substring (designer-ratified) is present in `stripANSI(QuotaDashboard.View())` after a failed refresh. Test: set width=58, `SetRefreshFailed(true)`, buckets present → assert new substring.
+2. **[Anti-regression — gap-guard unchanged]** The `>= 2` gap-guard threshold and silent-drop behavior continue to apply to the updated narrow label. Test: force narrow width where the label doesn't fit → assert silent drop.
+3. **[Anti-regression — wide behavior preserved]** At `w >= 80`, the wide label remains `✗ refresh failed` exactly as FB-060 ACCEPTED shipped. Test: set width=100 → assert `"refresh failed"` substring present (FB-060 AC1 regression).
+4. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-060 ACCEPTED. Coordinates with FB-059 narrow-mode freshness palette (no collision — failure and freshness never co-render).
+
+**Non-goals:**
+- Not changing the wide-mode copy `✗ refresh failed`.
+- Not changing the narrow refreshing glyph `↻` (FB-063 territory, different semantic).
+- Not adding a retry keybind affordance to the indicator — that's FB-147 or a separate brief.
+- Not restyling the status-bar error (out of scope).
+
+---
+
+### FB-149 — Narrow-mode gap-guard silently drops `✗ refresh failed` when `originLabel` is set
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-060 user-persona P3-3.
+
+**Priority: P3** — same root cause as FB-146 (narrow-mode back-hint blows the gap-guard), but the silent loss of a **failure signal** is meaningfully worse UX than the silent loss of a **freshness timestamp** because the operator has specifically invoked `r` expecting a response.
+
+#### User problem
+
+Persona eval:
+
+> *"When `originLabel` is set (navigated into quota from a resource detail) and the terminal is narrow (below ~55 cols), the same `w - width(candidate) - width(hint) >= 2` guard that protects the freshness indicator also protects `✗`. If the guard fails, `left` stays as `'quota usage'` — no failure signal at all in the title bar. The status bar error is the only remaining surface, which is out of the operator's focused attention area. Same root cause as FB-146 (back-hint drops freshness). This path requires the combination of originLabel + very narrow width + failed refresh, so it's edge-case, but the silent omission of an error indicator is a worse outcome than the silent omission of a freshness timestamp."*
+
+Verified against code at `internal/tui/components/quotadashboard.go:345–350`:
+
+```go
+} else if m.refreshFailed {
+    fail := warning.Render(refreshFailedLabel)
+    candidate := baseLeft + fail
+    if w-lipgloss.Width(candidate)-lipgloss.Width(hint) >= 2 {
+        left = candidate
+    }
+}
+```
+
+When `w < 80` AND `m.originLabel != ""`, `hint = backHint + "[↑/↓] [t] [s] [r]"` — the back-hint inflates `hint` width proportional to the label length. At paneWidth=58 with a 13-char originLabel: hint ≈ 45 chars, baseLeft ≈ 11 chars, `✗` ≈ 2 chars → 58 − 13 − 45 = 0 < 2 → silent drop.
+
+#### Proposed interaction
+
+Designer picks one of:
+
+- **A.** Elevate failure-signal priority — when `refreshFailed=true`, suppress the back-hint to free space for `✗`. Back-hint is informational; failure signal is actionable. Operator loses the back-hint for the duration of the failure only.
+- **B.** Condense back-hint specifically for the failure branch — render `[3] ←` (3 chars) instead of `[3] back to <label>` when `refreshFailed=true`. Preserves the back affordance while freeing width for `✗`. Connects to FB-146's Option A pattern.
+- **C.** Bump gap-guard priority order — when `refreshFailed=true`, drop the operational keybind strip `[↑/↓] [t] [s] [r]` first (status-bar retains it) before dropping `✗`. Reshapes the gap-guard from "drop title-bar left segment" to "drop the lowest-priority hint first."
+- **D.** Acknowledge as known limitation — document the edge case in FB-060 non-goals and rely on status-bar error as the recovery path. Honest option if designer judges any of the above worse than status-bar-only.
+
+Coordinate with FB-146 (same narrow-mode + back-hint + gap-guard interaction on the freshness branch). If designer picks a structural fix for one, it should generalize to the other.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
+
+1. **[Observable]** At `w < 80` with `originLabel` set to a 13-char label and a failed refresh, `stripANSI(QuotaDashboard.View())` contains the narrow failure indicator (`✗` or designer-ratified successor). Test: set width=58, `SetOriginLabel("resource list")`, `SetRefreshFailed(true)`, buckets present → assert `✗` present.
+2. **[Input-changed — without originLabel]** Same narrow width without `originLabel` continues to show `✗` (pre-regression baseline — FB-060 AC1 narrow-mode). Test: width=58, no originLabel, `SetRefreshFailed(true)` → assert `✗` present.
+3. **[Anti-regression — wide-mode unchanged]** At `w >= 80` with or without `originLabel`, the wide label `✗ refresh failed` renders unchanged from FB-060 ACCEPTED. Test: width=100, originLabel set → assert `"refresh failed"` present.
+4. **[Anti-regression — gap-guard semantics]** If the designer's fix repriorities or drops a different segment, existing FB-059/FB-063 gap-guard tests (freshness drop, refreshing drop) remain green. Test: run existing FB-059/FB-063 narrow-width suites.
+5. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-060 ACCEPTED. Coordinates with FB-146 (same structural cause — freshness drop). If FB-146 ships a narrow-mode back-hint condensation, FB-149 may be resolvable by inheritance.
+
+**Non-goals:**
+- Not re-opening FB-060 wide-mode behavior.
+- Not redesigning the overall narrow-mode title-bar layout.
+- Not changing the status-bar error surface.
+- Not changing the `>= 2` gate threshold value.
