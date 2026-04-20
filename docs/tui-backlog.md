@@ -5570,3 +5570,187 @@ Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
 - Not changing `[s] group` label (it's accurate — toggles grouping).
 - Not auditing other status-bar lines for other potential mislabels (that's a separate audit brief if the pattern recurs).
 
+---
+
+### FB-135 — `LoadErrorMsg` 10s auto-clear silently erases persistent `BucketsErrorMsg` signal
+
+**Status: PENDING ENGINEER** — filed 2026-04-20 by product-experience from FB-071 user-persona P2.
+**Priority: P2** — a permanent bucket-loading failure can leave the global status bar silent after any transient resource-list error clears, contradicting the "universally visible" contract FB-071 just established.
+
+#### User problem
+
+FB-071 set `m.statusBar.Err = msg.Err` in the `BucketsErrorMsg` handler (`model.go:443–449`) but did NOT participate in the `statusErrToken` / `ClearStatusErrCmd` machinery that `LoadErrorMsg` uses:
+
+- `BucketsErrorMsg` writes `statusBar.Err`, no token bump, no auto-clear scheduled. Error persists until `BucketsLoadedMsg` clears it (FB-071 clear path at `model.go:404–406`).
+- `LoadErrorMsg` writes `statusBar.Err`, bumps `m.statusErrToken++`, schedules `ClearStatusErrCmd(m.statusErrToken, 10*time.Second)` (`model.go:537–540`).
+- `ClearStatusErrMsg` handler at `model.go:566–570` clears `statusBar.Err` unconditionally when the token matches.
+
+**Repro sequence (verified in code, not yet in a failing test):**
+
+1. `BucketsErrorMsg` fires at t=0. `statusBar.Err = "bucket load failed"`. Visible from every pane (FB-071 working as intended).
+2. Operator navigates to a resource type at t=5s; list fetch fails → `LoadErrorMsg` fires. `statusBar.Err` is overwritten with `"resource list failed"`. Bucket signal is now transiently displaced — but this is acceptable; the list error is also real.
+3. At t=15s, `ClearStatusErrMsg` fires with the matching token. `statusBar.Err = nil`. The status bar goes blank.
+4. **But `m.bucketErr` is still set.** Buckets are still broken. Welcome panel S2 still shows "Platform health temporarily unavailable" (FB-042 path unchanged). The quota dashboard's error card still renders if the operator navigates there. The global status bar — FB-071's whole thesis — is silent.
+
+An operator who walked away and came back sees a clean status bar and assumes health is normal. They won't check welcome S2 unless they navigate back.
+
+#### Proposed fix
+
+Engineer picks one of:
+
+- **A.** `BucketsErrorMsg` also bumps `statusErrToken` (so any in-flight `ClearStatusErrMsg` tick goes stale). Do NOT schedule a clear — the error stays persistent until `BucketsLoadedMsg`. Downside: a subsequent `LoadErrorMsg` still wins by overwriting + scheduling its own clear → same bug, just needs a LoadErrorMsg->BucketsErrorMsg ordering to repro instead.
+- **B.** `ClearStatusErrMsg` handler checks `m.bucketErr != nil` before clearing. If buckets are still in error, restore the bucket error message + severity instead of blanking. Preserves persistent signal through transient-error cleanup.
+- **C.** Introduce `statusBar.PersistentErr` (or similar) as a distinct field for BucketsErrorMsg-class errors, separate from the transient `statusBar.Err`. Render persistent at a different position or with a different glyph. More intrusive; gives operators a visual cue about source category.
+- **D.** Drop the 10s auto-clear for LoadErrorMsg too — treat all status-bar errors as persistent; clear only on explicit recovery or operator dismissal. Biggest scope; touches FB-051/FB-037-family decisions.
+
+Engineer-preference signal: **B is the smallest-blast-radius fix.** It restores FB-071's invariant ("bucket errors are visible from every pane") without re-architecting the token model. Option C is the most correct long-term but warrants a design brief. Option D conflicts with existing 10s-clear UX that's been in place for transient list errors.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** Sequence: inject `BucketsErrorMsg{Err: "bucket"}`, then `LoadErrorMsg{Err: "list"}`, then fire `ClearStatusErrMsg{Token: <current>}`. After the clear, `stripANSI(appM.View())` contains `"bucket"` (the persistent bucket error signal) and does NOT contain `"list"` (the transient error, correctly cleared). State: `appM.statusBar.Err != nil` (or the new persistent field != nil, depending on chosen option).
+2. **[Input-changed]** Same sequence, but then inject `BucketsLoadedMsg{}`. Assert `appM.statusBar.Err == nil` (or persistent field == nil) and `stripANSI(appM.View())` no longer contains `"bucket"`. Confirms the bucket error clears on recovery, not indefinitely persists.
+3. **[Anti-regression]** Existing LoadErrorMsg 10s-clear behavior preserved for the pure-LoadError case (no buckets in error). Test: inject only `LoadErrorMsg`, fire `ClearStatusErrMsg` with matching token, assert `statusBar.Err == nil` + View() free of the list error substring.
+4. **[Anti-regression]** FB-071 AC1/AC1b/AC2/AC3 tests green. FB-071 path unchanged.
+5. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-071 ACCEPTED.
+
+**Maps to:** FB-071 user-persona P2 #1. REQ-TUI-005 (error rendering).
+
+**Non-goals:**
+- Not changing LoadErrorMsg 10s-clear behavior in the non-buckets case.
+- Not introducing a new visual position/glyph (option C is explicitly deferred unless engineer argues for it).
+- Not auditing other error sources (HistoryLoadedMsg err, ResourceRegistrationsLoadedMsg err, etc.) for similar token participation — file as separate audit brief if pattern recurs.
+
+---
+
+### FB-136 — NavPane status-bar hints omit `[r] refresh` (discoverability gap made salient by FB-071)
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-071 user-persona P3 #3. Routing to UX first because this is a status-bar width/layout question, not a code bug.
+**Priority: P3** — pre-existing discoverability gap; FB-071 made it more salient by putting bucket errors in the NavPane status bar without a co-located recovery hint.
+
+#### User problem
+
+`statusbar.go:76` renders NAV pane hints as:
+
+```
+[j/k] move  [Enter] select  [c] ctx  [?] help  [q] quit
+```
+
+`[r] refresh` is absent. But `[r]` IS bound from NavPane (`model.go:1203–1206` area per FB-076 context; FB-076 added activity refresh to the NavPane `r`-press dispatch, so the key is live). Compare:
+
+| Pane | Hint line includes `[r] refresh`? |
+|------|------------------------------------|
+| NAV (`statusbar.go:76`) | ❌ |
+| NAV_DASHBOARD (`statusbar.go:78`) | ❌ |
+| TABLE (`statusbar.go:80`) | ✅ |
+| QUOTA (`statusbar.go:82`) | ✅ |
+| (default, line 84) | ✅ |
+
+Post-FB-071, an operator on NavPane sees `⚠ bucket load failed` in the right side of the status bar. They look left for a recovery gesture. Nothing says `[r] refresh`. The functionality is there (pressing `r` does dispatch `LoadResourceTypesCmd` + `LoadRecentProjectActivityCmd` per FB-076), but they can't discover it from the status bar.
+
+Persona framing: "The status bar left-side hints for NAV pane read `[j/k] move  [Enter] select  [c] ctx  [?] help  [q] quit` — no `[r] refresh`. With FB-071 the error signal is now visible from NavPane, so the user sees `⚠ bucket load failed` in the footer but the co-located hint doesn't say how to recover."
+
+#### Proposed interaction
+
+UX-designer picks one of:
+
+- **A.** Add `[r] refresh` unconditionally to the NAV hint line (and NAV_DASHBOARD, for consistency). Matches TABLE/QUOTA convention. Width budget: NAV line is currently ~52 chars, adding `[r] refresh  ` (13 chars) → ~65 chars. Still well under 80-col. NAV_DASHBOARD is ~79 chars — adding `[r] refresh` pushes it to ~92, overflows standard terminals. May need to drop another key or leave NAV_DASHBOARD unchanged.
+- **B.** Add `[r] refresh` to NAV only (not NAV_DASHBOARD), on the grounds that NAV_DASHBOARD already has `[3] quota  [4] activity` navigation keys that matter more for the dashboard's primary purpose and `[r]` is secondary there.
+- **C.** Condition `[r] refresh` on `m.statusBar.Err != nil` (render only when an error is active). Preserves default-state terseness, surfaces recovery gesture only when relevant. More complex render logic but tightest discoverability coupling.
+- **D.** Do nothing — the help overlay already documents `[r]`; operators can press `?` to find it. Relies on operators internalizing the help-overlay-as-truth convention FB-065/FB-132 established.
+
+UX-preference signal: **A or B** are simplest and align with TABLE/QUOTA conventions. C is more correct for discoverability-on-demand but introduces conditional width math. D undersells the operator-in-crisis case (they're looking at an error; making them press `?` first is one extra step when panicking).
+
+Flag to UX-designer: verify the NAV_DASHBOARD width budget empirically before committing to A — the line is tight.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** When `m.Pane == "NAV"` (and per UX-chosen option, possibly when `statusBar.Err != nil`), `stripANSI(statusBar.View())` contains `"[r] refresh"`. Test: set Pane to NAV, render, assert substring present.
+2. **[Observable]** Same but with the welcome-panel / NAV_DASHBOARD context if UX chooses option A. Otherwise assert absent (option B's explicit scope).
+3. **[Anti-regression]** TABLE, QUOTA, and default hint lines still contain `[r] refresh` at prior positions. Test: render each pane, assert substring present at expected ordering (before `[c] ctx` or after `[d] describe` per current layout).
+4. **[Anti-regression]** Width: all hint lines fit within 80 columns at default terminal width. Test: `lipgloss.Width(statusBar.View())` per-pane ≤ 80 (or document the terminal-width contract if it's different).
+5. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-071 ACCEPTED (not a hard code dependency; the salience motivation requires FB-071 shipped).
+
+**Maps to:** FB-071 user-persona P3 #3. REQ-TUI-008 (keybind discoverability). Complements FB-076 (which made NavPane `r` activity-aware) by surfacing the affordance.
+
+**Non-goals:**
+- Not changing NavPane `r` handler semantics. Handler is correct; the hint strip just doesn't advertise it.
+- Not touching HISTORY, DIFF, DETAIL hint lines (all already include `[r] refresh`).
+- Not auditing other missing-discoverability keys on NavPane (e.g., `Tab`, `Esc`) — that's a separate audit brief.
+
+---
+
+### FB-137 — FB-135 restore path: unauthorized severity through auto-clear cycle is untested
+
+**Status: PENDING TEST-ENGINEER** — filed 2026-04-20 by product-experience from FB-135 user-persona P3 #1. Test-coverage gap; code is correct.
+**Priority: P3** — no current bug; latent risk that a future refactor silently downgrades severity without a test catching it.
+
+#### Gap
+
+FB-135's `ClearStatusErrMsg` restore branch at `internal/tui/model.go:570–576` re-derives severity from `m.bucketUnauthorized` at clear-fire time:
+
+```go
+if m.bucketErr != nil {
+    sev := data.ErrorSeverityWarning
+    if m.bucketUnauthorized {
+        sev = data.ErrorSeverityError
+    }
+    m.statusBar.Err = m.bucketErr
+    m.statusBar.ErrSeverity = sev
+}
+```
+
+FB-135 AC1 (`TestFB135_AC1_Observable_BucketErrSurvivesClear`) only exercises the `Unauthorized: false` path. FB-071 AC1b (`TestFB071_AC1b_Observable_UnauthorizedSetsErrorSeverity`) exercises unauthorized but without a subsequent LoadErrorMsg + ClearStatusErrMsg. The compound path — unauthorized bucket error → list error → clear tick — is uncovered.
+
+A future refactor that, e.g., stores severity at `BucketsErrorMsg` set time and expects it to survive the clear cycle, or changes the `m.bucketUnauthorized` field semantics, would silently regress `✕` → `⚠` on the restore branch with no test failing.
+
+#### Proposed fix
+
+Single new test in `internal/tui/model_test.go` alongside the existing FB-135 block. Same sequence as AC1 but with `Unauthorized: true` at the BucketsErrorMsg step.
+
+Suggested name: `TestFB135_AC1c_Unauthorized_SeverityPreservedThroughClear` or `TestFB135_AC4_Unauthorized_RestoreBranchSeverity`.
+
+Body outline:
+
+```go
+m := newAllowanceBucketNavModel(nil)
+result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("forbidden"), Unauthorized: true})
+m = result.(AppModel)
+result, _ = m.Update(data.LoadErrorMsg{Err: errors.New("list error"), Severity: data.ErrorSeverityWarning})
+m = result.(AppModel)
+result, _ = m.Update(newClearStatusErrMsg(m))
+appM := result.(AppModel)
+
+if appM.statusBar.ErrSeverity != data.ErrorSeverityError {
+    t.Errorf("AC: ErrSeverity = %v after restore cycle, want ErrorSeverityError", appM.statusBar.ErrSeverity)
+}
+got := stripANSIModel(appM.View())
+if !strings.Contains(got, "✕") {
+    t.Errorf("AC: View() does not contain '✕' glyph after restore of unauthorized bucket error:\n%s", got)
+}
+```
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Integration]`.
+
+1. **[Observable]** After `BucketsErrorMsg{Unauthorized: true}` → `LoadErrorMsg{Severity: Warning}` → `ClearStatusErrMsg`, `appM.statusBar.ErrSeverity == data.ErrorSeverityError` and `stripANSI(appM.View())` contains the `✕` error glyph (not `⚠`).
+2. **[Integration]** `go test ./internal/tui/...` exit 0.
+
+**Dependencies:** FB-135 ACCEPTED.
+
+**Maps to:** FB-135 user-persona P3 #1.
+
+**Non-goals:**
+- Not changing the implementation. Code is correct as shipped.
+- Not auditing other severity-propagation paths in the status-bar state machine — separate audit brief if that pattern recurs.
+
+**Routing note:** This is test-only scope. Route directly to test-engineer (bypass engineer). Single test function addition to an existing file.
+

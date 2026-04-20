@@ -15882,4 +15882,45 @@ func TestFB135_AC3_AntiRegression_PureLoadErr(t *testing.T) {
 	// State-field check above is sufficient for this anti-regression AC.
 }
 
-// ==================== End FB-135 ====================
+// ==================== FB-137: unauthorized severity preserved through auto-clear ====================
+//
+// Gap-filler for FB-135 AC4 slot. Tests compound path:
+//   BucketsErrorMsg{Unauthorized: true} → LoadErrorMsg → ClearStatusErrMsg → severity stays ErrorSeverityError.
+//
+// Axis-coverage:
+// AC  | Observable                                                      | Input-changed | Integration
+// ----+-----------------------------------------------------------------+---------------+------------
+// AC1 | TestFB135_AC4_Unauthorized_SeverityPreservedThroughClear        | N/A (input-varied derivative of TestFB135_AC1 — no distinct second-input transition) | go test exit 0
+//
+// [Input-changed] axis N/A: severity distinction is a property of the single restore path, not a
+// state-transition that requires a second input.
+
+// AC1 [Observable]: unauthorized bucket error restores ErrorSeverityError through the auto-clear cycle.
+func TestFB135_AC4_Unauthorized_SeverityPreservedThroughClear(t *testing.T) {
+	t.Parallel()
+	m := newAllowanceBucketNavModel(nil)
+
+	// Step 1: unauthorized bucket error — sets m.bucketUnauthorized=true, ErrSeverity=Error.
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("unauthorized"), Unauthorized: true})
+	m = result.(AppModel)
+
+	// Step 2: transient list error overwrites statusBar.Err (Warning severity) and installs a clear token.
+	result, _ = m.Update(data.LoadErrorMsg{Err: errors.New("list error"), Severity: data.ErrorSeverityWarning})
+	m = result.(AppModel)
+
+	// Step 3: fire the scheduled clear — restore path must re-derive ErrorSeverityError from m.bucketUnauthorized.
+	result, _ = m.Update(newClearStatusErrMsg(m))
+	appM := result.(AppModel)
+
+	if appM.statusBar.ErrSeverity != data.ErrorSeverityError {
+		t.Errorf("AC1: ErrSeverity = %v after clear, want ErrorSeverityError (unauthorized severity must not be downgraded)", appM.statusBar.ErrSeverity)
+	}
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "✕") {
+		t.Errorf("AC1: View() does not contain '✕' glyph after clear — unauthorized severity downgraded to warning:\n%s", got)
+	}
+	// Note: "⚠" may appear in the in-pane error card from the LoadErrorMsg (Warning severity) — only
+	// the status bar glyph matters here, and "✕" above confirms it is ErrorSeverityError.
+}
+
+// ==================== End FB-135/FB-137 ====================
