@@ -15325,8 +15325,8 @@ func TestFB124_AC8_Integration_TabPaneSwitchRemovesHint(t *testing.T) {
 	}
 
 	v1 := stripANSIModel(m.View())
-	if !strings.Contains(v1, "[Tab] to focus") {
-		t.Errorf("AC8 [Integration]: '[Tab] to focus' absent when NavPane active:\n%s", v1)
+	if !strings.Contains(v1, "[Tab] next pane") {
+		t.Errorf("AC8 [Integration]: '[Tab] next pane' absent when NavPane active:\n%s", v1)
 	}
 
 	// Tab → TablePane
@@ -15334,8 +15334,8 @@ func TestFB124_AC8_Integration_TabPaneSwitchRemovesHint(t *testing.T) {
 	appM := result.(AppModel)
 
 	v2 := stripANSIModel(appM.View())
-	if strings.Contains(v2, "[Tab] to focus") {
-		t.Errorf("AC8 [Integration]: '[Tab] to focus' still present after Tab to TablePane:\n%s", v2)
+	if strings.Contains(v2, "[Tab] next pane") {
+		t.Errorf("AC8 [Integration]: '[Tab] next pane' still present after Tab to TablePane:\n%s", v2)
 	}
 }
 

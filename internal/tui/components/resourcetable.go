@@ -429,7 +429,7 @@ func (m ResourceTableModel) renderQuickJumpSection(contentW int) string {
 
 	prefixText := "jump to:  "
 	if m.navPaneFocused {
-		prefixText = "jump to ([Tab] to focus):  "
+		prefixText = "jump to ([Tab] next pane):  "
 	}
 	prefix := muted.Render(prefixText)
 	full := prefix + strings.Join(entryStrings, "  ")

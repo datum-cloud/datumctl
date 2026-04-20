@@ -2556,8 +2556,8 @@ func TestFB124_AC1_Observable_HintPresentWhenNavFocused(t *testing.T) {
 	m.SetNavPaneFocused(true)
 
 	got := stripANSI(m.View())
-	if !strings.Contains(got, "jump to ([Tab] to focus):") {
-		t.Errorf("AC1 [Observable]: hint 'jump to ([Tab] to focus):' absent when navPaneFocused=true:\n%s", got)
+	if !strings.Contains(got, "jump to ([Tab] next pane):") {
+		t.Errorf("AC1 [Observable]: hint 'jump to ([Tab] next pane):' absent when navPaneFocused=true:\n%s", got)
 	}
 }
 
@@ -2571,8 +2571,8 @@ func TestFB124_AC2_Observable_HintAbsentWhenTableFocused(t *testing.T) {
 	if !strings.Contains(got, "jump to:") {
 		t.Errorf("AC2 [Observable]: 'jump to:' prefix absent when navPaneFocused=false:\n%s", got)
 	}
-	if strings.Contains(got, "[Tab] to focus") {
-		t.Errorf("AC2 [Observable]: '[Tab] to focus' hint present when navPaneFocused=false:\n%s", got)
+	if strings.Contains(got, "[Tab] next pane") {
+		t.Errorf("AC2 [Observable]: '[Tab] next pane' hint present when navPaneFocused=false:\n%s", got)
 	}
 }
 
@@ -2590,11 +2590,11 @@ func TestFB124_AC3_InputChanged_ToggleChangesView(t *testing.T) {
 	if v1 == v2 {
 		t.Error("AC3 [Input-changed]: View() identical after toggling navPaneFocused true→false")
 	}
-	if !strings.Contains(v1, "[Tab] to focus") {
-		t.Errorf("AC3 [Input-changed]: v1 (navFocused=true) missing '[Tab] to focus':\n%s", v1)
+	if !strings.Contains(v1, "[Tab] next pane") {
+		t.Errorf("AC3 [Input-changed]: v1 (navFocused=true) missing '[Tab] next pane':\n%s", v1)
 	}
-	if strings.Contains(v2, "[Tab] to focus") {
-		t.Errorf("AC3 [Input-changed]: v2 (navFocused=false) still contains '[Tab] to focus':\n%s", v2)
+	if strings.Contains(v2, "[Tab] next pane") {
+		t.Errorf("AC3 [Input-changed]: v2 (navFocused=false) still contains '[Tab] next pane':\n%s", v2)
 	}
 }
 
@@ -2629,8 +2629,8 @@ func TestFB124_AC7_AntiRegression_NoRegistrations_S4Absent(t *testing.T) {
 	if strings.Contains(got, "jump to:") {
 		t.Errorf("AC7 [Anti-regression]: 'jump to:' present with no matching registrations:\n%s", got)
 	}
-	if strings.Contains(got, "[Tab] to focus") {
-		t.Errorf("AC7 [Anti-regression]: '[Tab] to focus' present with no matching registrations:\n%s", got)
+	if strings.Contains(got, "[Tab] next pane") {
+		t.Errorf("AC7 [Anti-regression]: '[Tab] next pane' present with no matching registrations:\n%s", got)
 	}
 }
 
@@ -2748,3 +2748,22 @@ func TestFB102_AC5_AntiBehavior_SetActivityRows_ClearsHint(t *testing.T) {
 }
 
 // ==================== End FB-102 (component layer) ====================
+
+// ==================== FB-125: Tab keybind label alignment ====================
+
+// AC1 [Observable] — new copy "next pane" present when navPaneFocused=true.
+func TestFB125_AC1_Observable_NewCopyPresent(t *testing.T) {
+	t.Parallel()
+	m := newS4WelcomeModel()
+	m.SetNavPaneFocused(true)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "jump to ([Tab] next pane):") {
+		t.Errorf("AC1 [Observable]: 'jump to ([Tab] next pane):' absent when navPaneFocused=true:\n%s", got)
+	}
+	if strings.Contains(got, "to focus") {
+		t.Errorf("AC1 [Observable]: old copy 'to focus' still present:\n%s", got)
+	}
+}
+
+// ==================== End FB-125 ====================
