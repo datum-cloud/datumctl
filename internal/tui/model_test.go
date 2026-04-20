@@ -8534,9 +8534,9 @@ func TestFB024_ToggleOut_DescribeNil_EventsLoaded_ShowsPlaceholder(t *testing.T)
 	if appM.eventsMode {
 		t.Error("AC#2: eventsMode = true after second E, want false")
 	}
-	// Observable: viewport content must contain the placeholder (exact substring from D2).
+	// Observable: viewport content must contain the updated placeholder (FB-039).
 	view := stripANSIModel(appM.detail.View())
-	const placeholder = "Describe unavailable \u2014 only events loaded."
+	const placeholder = "Press [E]"
 	if !strings.Contains(view, placeholder) {
 		t.Errorf("AC#2: detail.View() missing placeholder %q\ngot:\n%s", placeholder, view)
 	}
@@ -16327,3 +16327,49 @@ func TestFB143_AC3_InputChanged_ThreeBranchDistinct(t *testing.T) {
 }
 
 // ==================== End FB-143 ====================
+
+// ==================== FB-039: DetailPane placeholder copy coherence ====================
+//
+// AC1 | Observable                     | TestFB039_AC1_Observable_PressEPresentInBody
+// AC2 | Anti-regression (old copy)     | TestFB039_AC2_AntiRegression_OldCopyAbsent
+// AC3 | Observable / Input-changed     | TestFB039_AC3_Observable_HeaderAndBodyCoexist
+
+// TestFB039_AC1_Observable_PressEPresentInBody asserts that the placeholder body
+// contains the action-directive copy "Press [E]" after FB-039.
+func TestFB039_AC1_Observable_PressEPresentInBody(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsOnly()
+	got := stripANSIModel(m.buildDetailContent())
+	if !strings.Contains(got, "Press [E]") {
+		t.Errorf("AC1: 'Press [E]' missing from buildDetailContent() in placeholder state:\n%s", got)
+	}
+}
+
+// TestFB039_AC2_AntiRegression_OldCopyAbsent asserts the old em-dash copy is gone.
+func TestFB039_AC2_AntiRegression_OldCopyAbsent(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsOnly()
+	got := stripANSIModel(m.buildDetailContent())
+	if strings.Contains(got, "only events loaded") {
+		t.Errorf("AC2: old copy 'only events loaded' still present; want absent:\n%s", got)
+	}
+}
+
+// TestFB039_AC3_Observable_HeaderAndBodyCoexist asserts that the mode label
+// "describe [unavailable]" and body "Press [E]" coexist in detail.View().
+func TestFB039_AC3_Observable_HeaderAndBodyCoexist(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsOnly()
+	// Sync content and mode label into detail as the update path does.
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+	view := stripANSIModel(m.detail.View())
+	if !strings.Contains(view, "describe [unavailable]") {
+		t.Errorf("AC3: mode label 'describe [unavailable]' missing from detail.View():\n%s", view)
+	}
+	if !strings.Contains(view, "Press [E]") {
+		t.Errorf("AC3: body 'Press [E]' missing from detail.View():\n%s", view)
+	}
+}
+
+// ==================== End FB-039 ====================

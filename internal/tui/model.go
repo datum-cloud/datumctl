@@ -2125,7 +2125,7 @@ func (m AppModel) buildDetailContent() string {
 			m.lastFailedFetchKind == "describe" &&
 			m.loadErr != nil
 
-		lines := []string{muted.Render("Describe unavailable — only events loaded.")}
+		lines := []string{muted.Render("Describe unavailable. Press ") + accentBold.Render("[E]") + muted.Render(" to view loaded events.")}
 		if errMode {
 			lines = append(lines, muted.Render("  (describe failed: "+components.SanitizeErrMsg(m.loadErr)+")"))
 		}
