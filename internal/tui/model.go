@@ -1030,6 +1030,7 @@ func (m AppModel) handleFilterKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 }
 
 func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.Cmd) {
+	// Every keypress clears any transient hint; explicit clears below are defensive documentation only.
 	if m.statusBar.Hint != "" {
 		m.statusBar.Hint = ""
 		m.statusBar.BumpHintToken()
@@ -1221,6 +1222,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.showDashboard = false
 			m.table.SetForceDashboard(false)
 			m.activePane = QuotaDashboardPane
+			m.statusBar.Hint = "" // FB-112: clear FB-097 ready-prompt on confirm
 			m.updatePaneFocus()
 		} else if !m.pendingQuotaOpen {
 			// First press during loading: queue the open + show hint.
