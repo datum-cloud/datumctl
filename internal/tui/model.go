@@ -855,6 +855,7 @@ func (m *AppModel) postHint(text string) tea.Cmd {
 func (m *AppModel) updatePaneFocus() {
 	m.sidebar.SetFocused(m.activePane == NavPane)
 	m.table.SetFocused(m.activePane == TablePane)
+	m.table.SetNavPaneFocused(m.activePane == NavPane)
 	m.detail.SetFocused(m.activePane == DetailPane)
 	m.quota.SetFocused(m.activePane == QuotaDashboardPane)
 	m.activity.SetFocused(m.activePane == ActivityPane)

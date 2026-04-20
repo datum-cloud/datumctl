@@ -15289,3 +15289,54 @@ func TestFB025_AC9_RapidR_RefreshingGuard_NoDoubleDispatch(t *testing.T) {
 }
 
 // ==================== End FB-025 (model layer) ====================
+
+// ==================== FB-124: S4 quick-jump focus-activation affordance (model layer) ====================
+
+// newFB124AppModel builds an AppModel in welcome-panel state with a backends registration
+// so S4 renders (contentH=21 ≥ 18), and NavPane active (default welcome state).
+func newFB124AppModel() AppModel {
+	m := AppModel{
+		ctx:         context.Background(),
+		rc:          stubResourceClient{},
+		activePane:  NavPane,
+		sidebar:     components.NewNavSidebarModel(22, 25),
+		table:       components.NewResourceTableModel(80, 25),
+		detail:      components.NewDetailViewModel(80, 25),
+		filterBar:   components.NewFilterBarModel(),
+		helpOverlay: components.NewHelpOverlayModel(),
+	}
+	m.resourceTypes = []data.ResourceType{
+		{Name: "backends", Kind: "Backend", Group: "networking.datum.net"},
+	}
+	m.table.SetRegistrations([]data.ResourceRegistration{
+		{Name: "backends", Group: "networking.datum.net"},
+	})
+	m.updatePaneFocus()
+	return m
+}
+
+// AC8 [Integration] — updatePaneFocus() propagates navPaneFocused; Tab pane-switch removes hint.
+func TestFB124_AC8_Integration_TabPaneSwitchRemovesHint(t *testing.T) {
+	t.Parallel()
+	m := newFB124AppModel()
+
+	if m.activePane != NavPane {
+		t.Fatalf("precondition: activePane=%v, want NavPane", m.activePane)
+	}
+
+	v1 := stripANSIModel(m.View())
+	if !strings.Contains(v1, "[Tab] to focus") {
+		t.Errorf("AC8 [Integration]: '[Tab] to focus' absent when NavPane active:\n%s", v1)
+	}
+
+	// Tab → TablePane
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	appM := result.(AppModel)
+
+	v2 := stripANSIModel(appM.View())
+	if strings.Contains(v2, "[Tab] to focus") {
+		t.Errorf("AC8 [Integration]: '[Tab] to focus' still present after Tab to TablePane:\n%s", v2)
+	}
+}
+
+// ==================== End FB-124 (model layer) ====================

@@ -92,6 +92,9 @@ type ResourceTableModel struct {
 	activityFetchFailed bool              // FB-082: true when last fetch returned an error
 	pendingQuotaOpen   bool              // FB-099: substitutes [3] strip label to "cancel"
 	attentionItems     []AttentionItem    // pre-computed by model.go
+
+	// FB-124: true when NavPane has focus — drives S4 prefix hint.
+	navPaneFocused bool
 }
 
 func NewResourceTableModel(tableWidth, totalHeight int) ResourceTableModel {
@@ -417,7 +420,11 @@ func (m ResourceTableModel) renderQuickJumpSection(contentW int) string {
 		return ""
 	}
 
-	prefix := muted.Render("jump to:  ")
+	prefixText := "jump to:  "
+	if m.navPaneFocused {
+		prefixText = "jump to ([Tab] to focus):  "
+	}
+	prefix := muted.Render(prefixText)
 	full := prefix + strings.Join(entryStrings, "  ")
 	if lipgloss.Width(full) <= contentW {
 		return full
@@ -846,6 +853,10 @@ func (m *ResourceTableModel) SetFocused(b bool) {
 	} else {
 		m.table.Blur()
 	}
+}
+
+func (m *ResourceTableModel) SetNavPaneFocused(focused bool) {
+	m.navPaneFocused = focused
 }
 
 func (m ResourceTableModel) SpinnerFrame() string {

@@ -4750,3 +4750,49 @@ Operator-visible impact: a first-time arrival in a project sees the hint, scans 
 **Maps to:** FB-105 user-persona P2-1.
 
 ---
+
+### FB-124 — S4 quick-jump keys give no signal that NavPane focus suppresses them (silent no-op on first-press from NavPane)
+
+**Status: ACCEPTED 2026-04-20** — Option A (conditional prefix) shipped. Spec: `docs/tui-ux-specs/fb-124-s4-quickjump-activation-hint.md`. When `activePane == NavPane`, S4's quick-jump row reads `jump to ([Tab] to focus):  [b] backends …`; when TablePane has focus, it reverts to `jump to:`. Axis coverage: Observable × 2 (AC1/AC2), Input-changed × 1 (AC3), Anti-regression × 4 (AC4–AC7), Integration × 2 (AC8/AC9). FB-073 anti-regression tests green. Filed 2026-04-20 by product-experience from FB-073 user-persona P3.
+**Priority: P3** — first-press friction for welcome-panel newcomers; returning operators unaffected. Emerged directly from FB-073 ACCEPTED (`7c042aa`) — gate is correct, discoverability of the activation step is the residual gap.
+
+#### User problem
+
+After FB-073 landed, quick-jump letter keys (`[b]`, `[n]`, `[w]`, `[p]`, `[g]`, `[v]`, `[i]`, `[z]`) only fire when `activePane != NavPane`. On welcome-panel landing (default state), `activePane == NavPane`. The S4 section renders these keys in the same accent-bold bracket format used for all active keys in the TUI (`jump to:  [b] backends  [n] networks …`) — there is no visual signal that the bracketed keys are currently dormant pending a pane change.
+
+A first-time welcome-panel user sees S4's bracketed keys, presses one, gets a silent no-op, and has to independently discover the relationship between Tab (in S6's strip as `Tab  next pane`) and S4's keys. The connection "Tab changes pane" → "Tab activates quick-jump" is not explicit on any surface. An operator who Tabs and then looks at the resource table may not re-approach S4's keys.
+
+Returning operators are fine — they remember the activation step. But the welcome panel is the first impression surface; first-press silent failures are a poor initial signal.
+
+#### Designer call
+
+Designer picks one of:
+
+- **A (inline activation hint on S4 header):** change the S4 header from `jump to:` to `jump to (tab to activate):` or equivalent. Directly inlines the activation step adjacent to the keys themselves. Copy-only; width cost ~15-20 chars on the S4 first line. Consider width constraints at narrow terminal widths.
+- **B (dim S4 keys when NavPane focused):** render S4 bracket tokens in muted style while `activePane == NavPane`, switch to accent-bold when TablePane focused. Operator sees the keys "light up" as a focus-change affordance. Adds a render-time conditional; more implementation cost than A, more semantically precise (dormancy is visible).
+- **C (focus-footer line):** add a single line below S4 like `(tab to pane, then press a key)` rendered in muted style. Leaves S4 header intact; makes the activation step explicit without changing the key section itself. Copy + one line of vertical space.
+- **D (status-bar hint augment):** update the NAV status bar to include `Tab  content pane` (or similar) closer to the letter-key zone of S6. Minimum copy change, but spatial distance from S4 keys remains.
+
+Persona preference: A is most direct. B is most semantically correct (dormant things look dormant). C is the least disruptive. D is weakest (spatial disconnect).
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
+
+1. **[Observable]** Designer's chosen affordance is present in welcome-panel View() when `activePane == NavPane` and S4 is visible. Test: construct `AppModel` in NavPane-focused welcome state at a width that shows S4; assert designer-pinned copy/style present in `stripANSIModel(appM.View())`.
+2. **[Input-changed]** If Option B (dim-when-dormant): toggling `activePane` between NavPane and TablePane while S4 is visible produces a View() delta — pre/post `stripANSIModel` outputs differ. Test: record View() at NavPane; Tab to TablePane; record View(); assert distinct outputs. (If Option A/C/D is chosen, this axis becomes N/A — the copy is static regardless of pane focus; note N/A in axis-coverage table.)
+3. **[Anti-regression]** FB-073 gate behavior is unchanged. Pressing `b` from NavPane is still a no-op (AC1 from FB-073); from TablePane it still fires (AC3). Test: existing FB-073 tests green.
+4. **[Anti-regression]** S4 entry rendering (one row per matching type, `[letter] type-name` format) is unchanged for the body — only the header/surrounding copy is affected per chosen option.
+5. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-073 ACCEPTED (`7c042aa`) — FB-124 is the residual discoverability gap after FB-073's gate ships.
+
+**Maps to:** FB-042 spec §7 (quick-jump S4 section) + FB-073 spec §4 (affordance surface analysis — this brief revisits the "no NavPane annotation needed" decision with post-ship persona evidence).
+
+**Non-goals:**
+- Not changing FB-073's gate logic (the `activePane != NavPane` guard stays).
+- Not adding a modifier prefix to quick-jump keys (Option B from FB-073 spec; rejected there).
+- Not changing the letter→type mapping or the letter set.
+- Not touching help overlay copy (help overlay lists `[Tab] next pane` separately — the gap is on the welcome panel itself).
+
+---

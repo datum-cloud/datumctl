@@ -2536,3 +2536,102 @@ func TestFB116_AC6_AntiRegression_OrgScopeSuppression(t *testing.T) {
 }
 
 // ==================== End FB-116 (component layer) ====================
+
+// ==================== FB-124: S4 quick-jump focus-activation affordance ====================
+
+// newS4WelcomeModel builds a ResourceTableModel at welcome-panel size with a "backends"
+// registration so S4 renders (contentH=18 ≥ 18, contentW=96 ≥ 50).
+func newS4WelcomeModel() ResourceTableModel {
+	m := newWelcomeModel(100, 22)
+	m.SetRegistrations([]data.ResourceRegistration{
+		{Name: "backends", Group: "networking.datum.net"},
+	})
+	return m
+}
+
+// AC1 [Observable] — navPaneFocused=true: hint present in View().
+func TestFB124_AC1_Observable_HintPresentWhenNavFocused(t *testing.T) {
+	t.Parallel()
+	m := newS4WelcomeModel()
+	m.SetNavPaneFocused(true)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "jump to ([Tab] to focus):") {
+		t.Errorf("AC1 [Observable]: hint 'jump to ([Tab] to focus):' absent when navPaneFocused=true:\n%s", got)
+	}
+}
+
+// AC2 [Observable] — navPaneFocused=false: plain prefix present, hint absent.
+func TestFB124_AC2_Observable_HintAbsentWhenTableFocused(t *testing.T) {
+	t.Parallel()
+	m := newS4WelcomeModel()
+	m.SetNavPaneFocused(false)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "jump to:") {
+		t.Errorf("AC2 [Observable]: 'jump to:' prefix absent when navPaneFocused=false:\n%s", got)
+	}
+	if strings.Contains(got, "[Tab] to focus") {
+		t.Errorf("AC2 [Observable]: '[Tab] to focus' hint present when navPaneFocused=false:\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — toggling navPaneFocused true→false changes View() content.
+func TestFB124_AC3_InputChanged_ToggleChangesView(t *testing.T) {
+	t.Parallel()
+	m := newS4WelcomeModel()
+
+	m.SetNavPaneFocused(true)
+	v1 := stripANSI(m.View())
+
+	m.SetNavPaneFocused(false)
+	v2 := stripANSI(m.View())
+
+	if v1 == v2 {
+		t.Error("AC3 [Input-changed]: View() identical after toggling navPaneFocused true→false")
+	}
+	if !strings.Contains(v1, "[Tab] to focus") {
+		t.Errorf("AC3 [Input-changed]: v1 (navFocused=true) missing '[Tab] to focus':\n%s", v1)
+	}
+	if strings.Contains(v2, "[Tab] to focus") {
+		t.Errorf("AC3 [Input-changed]: v2 (navFocused=false) still contains '[Tab] to focus':\n%s", v2)
+	}
+}
+
+// AC6 [Anti-regression] — entry body unchanged: [b] backends present regardless of navPaneFocused.
+func TestFB124_AC6_AntiRegression_EntryBodyUnchanged(t *testing.T) {
+	t.Parallel()
+	m := newS4WelcomeModel()
+
+	m.SetNavPaneFocused(true)
+	v1 := stripANSI(m.View())
+
+	m.SetNavPaneFocused(false)
+	v2 := stripANSI(m.View())
+
+	for _, view := range []string{v1, v2} {
+		if !strings.Contains(view, "[b]") {
+			t.Errorf("AC6 [Anti-regression]: '[b]' key absent from View():\n%s", view)
+		}
+		if !strings.Contains(view, "backends") {
+			t.Errorf("AC6 [Anti-regression]: 'backends' label absent from View():\n%s", view)
+		}
+	}
+}
+
+// AC7 [Anti-regression] — no registrations: S4 section absent (hint does not appear).
+func TestFB124_AC7_AntiRegression_NoRegistrations_S4Absent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 22)
+	m.SetNavPaneFocused(true)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "jump to:") {
+		t.Errorf("AC7 [Anti-regression]: 'jump to:' present with no matching registrations:\n%s", got)
+	}
+	if strings.Contains(got, "[Tab] to focus") {
+		t.Errorf("AC7 [Anti-regression]: '[Tab] to focus' present with no matching registrations:\n%s", got)
+	}
+}
+
+// ==================== End FB-124 (component layer) ====================
