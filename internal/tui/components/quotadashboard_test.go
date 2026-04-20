@@ -865,3 +865,84 @@ func TestFB088_QuotaDashboard_AC8_TitleBarLayoutRegression(t *testing.T) {
 }
 
 // ==================== End FB-088 (QuotaDashboard) ====================
+
+// ==================== FB-113: Empty-bucket viewport origin-label hint ====================
+
+// AC1 [Observable] — empty-state with originLabel "resource list" shows "[Esc] back to resource list".
+func TestFB113_AC1_ResourceListOrigin_EmptyStateHint(t *testing.T) {
+	t.Parallel()
+	m := newDashboard(80, 20)
+	m.SetOriginLabel("resource list")
+
+	got := stripANSI(m.buildMainContent())
+	if !strings.Contains(got, "[Esc] back to resource list") {
+		t.Errorf("AC1: '[Esc] back to resource list' missing from empty-state:\n%s", got)
+	}
+}
+
+// AC2 [Observable] — empty-state with originLabel "welcome panel" shows "[Esc] back to welcome panel".
+func TestFB113_AC2_WelcomePanelOrigin_EmptyStateHint(t *testing.T) {
+	t.Parallel()
+	m := newDashboard(80, 20)
+	m.SetOriginLabel("welcome panel")
+
+	got := stripANSI(m.buildMainContent())
+	if !strings.Contains(got, "[Esc] back to welcome panel") {
+		t.Errorf("AC2: '[Esc] back to welcome panel' missing from empty-state:\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — same empty fixture, different originLabel → rendered content differs.
+func TestFB113_AC3_InputChanged_DifferentOrigins_DifferentContent(t *testing.T) {
+	t.Parallel()
+	m1 := newDashboard(80, 20)
+	m1.SetOriginLabel("resource list")
+
+	m2 := newDashboard(80, 20)
+	m2.SetOriginLabel("welcome panel")
+
+	got1 := stripANSI(m1.buildMainContent())
+	got2 := stripANSI(m2.buildMainContent())
+
+	if got1 == got2 {
+		t.Errorf("AC3 [Input-changed]: buildMainContent() identical for different originLabels:\n  resource list: %q\n  welcome panel: %q", got1, got2)
+	}
+	if !strings.Contains(got1, "resource list") {
+		t.Errorf("AC3: 'resource list' missing from first render:\n%s", got1)
+	}
+	if !strings.Contains(got2, "welcome panel") {
+		t.Errorf("AC3: 'welcome panel' missing from second render:\n%s", got2)
+	}
+}
+
+// AC4 [Anti-regression] — empty originLabel falls back to "navigation"; no crash.
+func TestFB113_AC4_EmptyOriginLabel_FallbackToNavigation(t *testing.T) {
+	t.Parallel()
+	m := newDashboard(80, 20)
+	// originLabel is "" (default)
+
+	got := stripANSI(m.buildMainContent())
+	if !strings.Contains(got, "[Esc] back to navigation") {
+		t.Errorf("AC4: '[Esc] back to navigation' fallback missing when originLabel is empty:\n%s", got)
+	}
+}
+
+// AC5 [Anti-regression] — populated-bucket state does not render the empty-state block.
+func TestFB113_AC5_PopulatedBuckets_NoEmptyStateHint(t *testing.T) {
+	t.Parallel()
+	m := newDashboard(80, 20)
+	m.SetOriginLabel("resource list")
+	m.SetBuckets([]data.AllowanceBucket{
+		projBucket("b1", "compute/cpus", 10, 100),
+	})
+
+	got := stripANSI(m.buildMainContent())
+	if strings.Contains(got, "No allowance buckets configured") {
+		t.Errorf("AC5: empty-state text present with populated buckets:\n%s", got)
+	}
+	if strings.Contains(got, "[Esc] back to") {
+		t.Errorf("AC5: '[Esc] back to' hint present with populated buckets; must only appear in empty-state:\n%s", got)
+	}
+}
+
+// ==================== End FB-113 ====================

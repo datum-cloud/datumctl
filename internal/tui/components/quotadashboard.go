@@ -163,11 +163,15 @@ func (m QuotaDashboardModel) buildMainContent() string {
 	filtered := m.filteredBuckets()
 	if len(filtered) == 0 {
 		muted := lipgloss.NewStyle().Foreground(styles.Muted)
+		backLabel := m.originLabel
+		if backLabel == "" {
+			backLabel = "navigation"
+		}
 		lines := []string{
 			"",
 			muted.Render("  No allowance buckets configured for this context."),
 			"",
-			muted.Render("  [Esc] back to navigation"),
+			muted.Render(fmt.Sprintf("  [Esc] back to %s", backLabel)),
 		}
 		return strings.Join(lines, "\n")
 	}
