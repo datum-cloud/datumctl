@@ -79,7 +79,7 @@ func (m StatusBarModel) View() string {
 		case "TABLE":
 			hints = "[j/k] move  [Enter] open  [/] filter  [d] describe  [r] refresh  [c] ctx"
 		case "QUOTA":
-			hints = "[↑↓] move  [t] flat  [s] group  [r] refresh  [3] back  [?] help  [q] quit"
+			hints = "[↑↓] move  [t] table  [s] group  [r] refresh  [3] back  [?] help  [q] quit"
 		default:
 			hints = "[j/k] move  [Enter] select  [/] filter  [d] describe  [c] ctx  [r] refresh  [?] help  [q] quit"
 		}

@@ -11976,7 +11976,7 @@ func TestFB049_AC7_NavTableHints_Unchanged(t *testing.T) {
 				t.Errorf("AC7 TABLE regression: %q missing from TablePane View():\n%s", want, got)
 			}
 		}
-		for _, absent := range []string{"[t] flat", "[s] group", "[3] back"} {
+		for _, absent := range []string{"[t] table", "[s] group", "[3] back"} {
 			if strings.Contains(got, absent) {
 				t.Errorf("AC7 TABLE regression: QUOTA-only key %q present in TablePane View()", absent)
 			}
@@ -11985,6 +11985,65 @@ func TestFB049_AC7_NavTableHints_Unchanged(t *testing.T) {
 }
 
 // ==================== End FB-049 ====================
+
+// ==================== FB-134: NAV_QUOTA status bar [t] copy fix ====================
+
+// AC1 [Observable] — QuotaDashboardPane status bar renders "[t] table", not "[t] flat".
+func TestFB134_AC1_Observable_QuotaStatusBar_TLabel(t *testing.T) {
+	t.Parallel()
+	m := newQuotaDashboardPaneModel(nil)
+	m.statusBar.Width = 160
+	got := stripANSIModel(m.statusBar.View())
+	if !strings.Contains(got, "[t] table") {
+		t.Errorf("AC1 [Observable]: status bar missing '[t] table' in QUOTA context; got: %q", got)
+	}
+	if strings.Contains(got, "[t] flat") {
+		t.Errorf("AC1 [Observable]: status bar still contains old '[t] flat' copy; got: %q", got)
+	}
+	if strings.Contains(got, "[t] quota table") {
+		t.Errorf("AC1 [Observable]: status bar contains Option B form '[t] quota table'; must be '[t] table'; got: %q", got)
+	}
+}
+
+// AC2 [Anti-regression] — [s] group, [r] refresh, [3] back unchanged in QUOTA context.
+func TestFB134_AC2_AntiRegression_QuotaStatusBar_SiblingsUnchanged(t *testing.T) {
+	t.Parallel()
+	m := newQuotaDashboardPaneModel(nil)
+	m.statusBar.Width = 160
+	got := stripANSIModel(m.statusBar.View())
+	for _, want := range []string{"[s] group", "[r] refresh", "[3] back"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("AC2 [Anti-regression]: %q missing from QUOTA status bar; got: %q", want, got)
+		}
+	}
+}
+
+// AC3 [Anti-regression] — QuotaDashboard inline hint still renders "[t] table".
+func TestFB134_AC3_AntiRegression_QuotaDashboardInlineHint(t *testing.T) {
+	t.Parallel()
+	m := newQuotaDashboardPaneModel(nil)
+	m.quota.SetSize(120, 40)
+	got := stripANSIModel(m.quota.View())
+	if !strings.Contains(got, "[t] table") {
+		t.Errorf("AC3 [Anti-regression]: QuotaDashboard inline hint missing '[t] table'; got: %q", got)
+	}
+}
+
+// AC4 [Anti-regression] — Help overlay [t] row still renders "[t]  quota table".
+func TestFB134_AC4_AntiRegression_HelpOverlay_TQuotaTable(t *testing.T) {
+	t.Parallel()
+	m := newNavPaneModelWithBC(nil)
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	appM := result.(AppModel)
+	appM.helpOverlay.Width = 120
+	appM.helpOverlay.Height = 40
+	got := stripANSIModel(appM.helpOverlay.View())
+	if !strings.Contains(got, "[t]  quota table") {
+		t.Errorf("AC4 [Anti-regression]: HelpOverlay missing '[t]  quota table'; got: %q", got)
+	}
+}
+
+// ==================== End FB-134 ====================
 
 // ==================== FB-053: Transition hint when events swap error block for placeholder ====================
 //

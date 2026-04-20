@@ -5423,7 +5423,7 @@ For **Option C/E** (no change), file a RESOLVED/WONTFIX entry with the designer'
 
 ### FB-132 — Complete `[3]`/`[4]` canonical-form label alignment across remaining surfaces
 
-**Status: ACCEPTED 2026-04-20** — filed 2026-04-20 by product-experience from FB-065 user-persona P2 + P3 findings and a verification-step catch. Engineer delivered all three surface renames (helpoverlay.go:57, resourcetable.go:325, resourcetable.go:311) plus a VIEW column width bump from 22→24 to accommodate the 23-char `[4]  activity dashboard` label (modal total stays at 90: 22+22+24+22). Tests at model_test.go:10980 (renamed from TestFB050, inverted to assert new copy), resourcetable_test.go:1435 (S3 footer), resourcetable_test.go:1449 (S2 hint), resourcetable_test.go:1467 (AC6 gated-render subtests). Existing FB-083 + FB-111 copy assertions updated to `[4] activity dashboard`. Anti-regression verified: TestFB065_AC1 green, TestFB121 column-alignment suite green after width change. `go install ./...` clean; `go test ./internal/tui/...` exit 0.
+**Status: PERSONA-EVAL-COMPLETE 2026-04-20** — filed 2026-04-20 by product-experience from FB-065 user-persona P2 + P3 findings and a verification-step catch. Committed as `6e9f856`. Engineer delivered all three surface renames (helpoverlay.go:57, resourcetable.go:325, resourcetable.go:311) plus a VIEW column width bump from 22→24 to accommodate the 23-char `[4]  activity dashboard` label (modal total stays at 90: 22+22+24+22). Tests at model_test.go:10980 (renamed from TestFB050, inverted to assert new copy), resourcetable_test.go:1435 (S3 footer), resourcetable_test.go:1449 (S2 hint), resourcetable_test.go:1467 (AC6 gated-render subtests). Existing FB-083 + FB-111 copy assertions updated to `[4] activity dashboard`. Anti-regression verified: TestFB065_AC1 green, TestFB121 column-alignment suite green after width change. `go install ./...` clean; `go test ./internal/tui/...` exit 0.
 **Priority: P3** — persona flagged the `[4]` helpoverlay line at P2 severity; the `[3]` S2 hint catch widens the scope to a full canonical-form pass. Engineer-direct per team-lead; same pattern as FB-065.
 
 #### User problem
@@ -5508,4 +5508,63 @@ Deferred pending: (a) concrete user harm reports beyond the single-sentence pers
 **Non-goals (if routed later):**
 - Not changing `[3]` or `[4]` keybind semantics.
 - Not touching other `[3]`/`[4]` affordance surfaces (FB-132 scope).
+
+**2026-04-20 update — additional data point from FB-132 persona eval:** Persona flagged a second terse/full form inconsistency in the same family: status bar multiple modes render `[c] ctx` while the help overlay VIEW row renders `[c]  switch context`. Thesis is the same as the `[3]`/`[4]` terse-form question — space-constrained hinting vs. canonical labels on affordance-lookup surfaces. Status-bar real estate is tight (NAV_DASHBOARD line is already 79 chars; `[c] switch context` would add 11 chars pushing it past 90 on the full line). Absent evidence of concrete operator confusion from `[c] ctx`, leaving this as an additional observation rather than escalating. If status-bar width adaptation is ever designed (e.g., narrow-mode variant dropping low-priority keys), fold the terse-form cleanup in then.
+
+---
+
+### FB-134 — NAV_QUOTA status bar labels `[t]` as `flat` but handler navigates to TablePane
+
+**Status: ACCEPTED** — filed 2026-04-20 by product-experience from FB-132 user-persona P2 (premise-corrected); routed 2026-04-20 after team-lead queue approval (ahead of FB-071); accepted 2026-04-20 after rework (two submissions — first applied Option B `[t] quota table`, held, corrected to Option A `[t] table` + two additional anti-regression pins + line-11979 stale assertion fix).
+**Priority: P2** — persona-flagged severity confirmed after handler verification. Operator sees `[t] flat` on the QUOTA status bar, presses `[t]` expecting a flat/group toggle, lands on the allowancebuckets TablePane instead. Label actively misleads; the authoritative-lookup contract FB-065+FB-132 established treats the help overlay as the truth source — which says `[t]  quota table`, matching the handler. One status-bar line is the outlier.
+
+#### User problem
+
+Four surfaces describe `[t]`:
+
+| Surface | Renders | Accurate? |
+|---------|---------|-----------|
+| Handler (`internal/tui/model.go:1122–1135`) | `[t]` navigates QuotaDashboardPane ↔ TablePane (when tableTypeName == "allowancebuckets") | — (source of truth) |
+| QuotaDashboard inline hint (`internal/tui/components/quotadashboard.go:313/315`) | `[t] table` | ✅ matches handler |
+| Help overlay VIEW row (`internal/tui/components/helpoverlay.go:56`) | `[t]  quota table` | ✅ matches handler |
+| NAV_QUOTA status bar (`internal/tui/components/statusbar.go:82`) | `[t] flat  [s] group  [r] refresh  [3] back  …` | ❌ describes a flat/group toggle that doesn't exist on `[t]` |
+
+The flat/group toggle is actually `[s] group` (handler at `model.go:1137–1141`, which calls `m.quota.ToggleGrouping()`). The NAV_QUOTA status-bar line has `[s] group` correctly — so `[t] flat` isn't a shortening of `[s]`'s behavior; it's a standalone incorrect label for `[t]`.
+
+Persona reached this via FB-132's authoritative-lookup eval: "Pressing `[t]` instead toggles flat/group display mode (the QUOTA status bar correctly shows `[t] flat`)." Their interpretation was that the overlay was wrong and the status bar was right. Verification in code shows the opposite — the overlay is correct; the status bar is the bug. This is a verification-corrected framing of persona P2.
+
+#### Proposed interaction
+
+Rename `[t] flat` to `[t] table` in the NAV_QUOTA status-bar hint line at `internal/tui/components/statusbar.go:82`. That aligns all four surfaces to the handler's actual behavior and preserves the authoritative-lookup contract.
+
+Before:
+```
+[↑↓] move  [t] flat  [s] group  [r] refresh  [3] back  [?] help  [q] quit
+```
+
+After:
+```
+[↑↓] move  [t] table  [s] group  [r] refresh  [3] back  [?] help  [q] quit
+```
+
+Same character count (`flat` and `table` are both 4 chars — wait, `table` is 5 chars, +1 char widening — the line moves from 71 to 72 characters, well within typical status-bar widths). Confirm in implementation.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** NAV_QUOTA status bar renders `[t] table` and NOT `[t] flat`. Test: set `m.Pane = "QUOTA"`, `stripANSI(statusBar.View())` contains `"[t] table"` and does NOT contain `"[t] flat"`.
+2. **[Anti-regression]** `[s] group`, `[r] refresh`, `[3] back` on NAV_QUOTA unchanged. Test: `stripANSI(view)` still contains those three substrings.
+3. **[Anti-regression]** QuotaDashboard inline hint at `quotadashboard.go:313/315` still reads `[t] table` (already correct, but pin it). Test: render QuotaDashboardModel, assert `stripANSI(m.View())` contains `"[t] table"`.
+4. **[Anti-regression]** Help overlay VIEW row at `helpoverlay.go:56` still reads `[t]  quota table` (already correct, but pin it). Test: existing FB-035-family test or a fresh assertion.
+5. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-132 ACCEPTED.
+
+**Maps to:** FB-132 user-persona P2 (premise-corrected). REQ-TUI-008 (keybind discoverability).
+
+**Non-goals:**
+- Not changing `[t]` handler semantics. Handler is correct; label is wrong.
+- Not changing `[s] group` label (it's accurate — toggles grouping).
+- Not auditing other status-bar lines for other potential mislabels (that's a separate audit brief if the pattern recurs).
 
