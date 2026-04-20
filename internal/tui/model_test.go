@@ -14417,3 +14417,71 @@ func TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition(t *testing
 }
 
 // ==================== End FB-086 ====================
+
+// ==================== FB-038: empty-viewport oscillation fix ====================
+
+// TestFB038_AC1_InFlight_ViewContainsLoading verifies that the operator sees
+// "Loading" in the rendered detail pane during in-flight state (eventsMode=false).
+func TestFB038_AC1_InFlight_ViewContainsLoading(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsInFlight()
+	// Sync the pre-check content into the detail component so View() reflects it.
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if !strings.Contains(view, "Loading") {
+		t.Errorf("AC1 [Observable FB-038]: View() missing \"Loading\" during in-flight state; want operator sees loading indicator.\nView:\n%s", view)
+	}
+}
+
+// TestFB038_AC2_RapidEPress_NoBlankBody verifies that 4 rapid E presses during
+// in-flight state never produce a blank detail body (the oscillation regression).
+func TestFB038_AC2_RapidEPress_NoBlankBody(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsInFlight()
+
+	for i := 1; i <= 4; i++ {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		m = result.(AppModel)
+		view := stripANSIModel(m.detail.View())
+		if strings.TrimSpace(view) == "" {
+			t.Errorf("AC2 [Repeat-press FB-038]: press %d produced a blank detail body; want non-empty", i)
+		}
+		// Presses 2 and 4 (eventsMode=false) are the regression cases: must show "Loading"
+		if i%2 == 0 && !strings.Contains(view, "Loading") {
+			t.Errorf("AC2 [Repeat-press FB-038]: press %d (eventsMode=false) detail.View() missing \"Loading\":\n%s", i, view)
+		}
+	}
+}
+
+// TestFB038_AC3_PreCheck_Inert_AfterEventsLoaded verifies that after
+// EventsLoadedMsg resolves, the pre-check is inert (eventsLoading=false).
+func TestFB038_AC3_PreCheck_Inert_AfterEventsLoaded(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsInFlight()
+
+	// Dispatch EventsLoadedMsg to resolve the in-flight state.
+	r, _ := m.Update(data.EventsLoadedMsg{
+		Events: []data.EventRow{
+			{Reason: "SuccessfulCreate", Message: "pod created"},
+		},
+	})
+	appM := r.(AppModel)
+
+	if appM.eventsLoading {
+		t.Error("AC3 [Anti-behavior FB-038]: eventsLoading = true after EventsLoadedMsg; want false")
+	}
+
+	// With eventsMode=false and eventsLoading=false, pre-check must NOT fire.
+	// The FB-024 placeholder ("Describe unavailable") should render instead.
+	view := stripANSIModel(appM.View())
+	if strings.Contains(view, "Loading\u2026") {
+		t.Errorf("AC3 [Anti-behavior FB-038]: View() contains the FB-038 loading placeholder after events loaded; pre-check must be inert.\nView:\n%s", view)
+	}
+	if !strings.Contains(view, "Describe unavailable") {
+		t.Errorf("AC3 [Anti-behavior FB-038]: View() missing \"Describe unavailable\" after events loaded; want FB-024 placeholder active.\nView:\n%s", view)
+	}
+}
+
+// ==================== End FB-038 ====================

@@ -2044,6 +2044,10 @@ func placeholderActionRow(errMode bool, retryable bool, accentBold, muted lipglo
 // buildDetailContent builds the content for the detail pane.
 // In describe mode it appends the S3 quota block when matching buckets are available.
 func (m AppModel) buildDetailContent() string {
+	// FB-038: stable loading placeholder when both fetches in-flight and not in events mode.
+	if m.describeRaw == nil && m.events == nil && !m.eventsMode && m.eventsLoading {
+		return lipgloss.NewStyle().Foreground(styles.Muted).Render("Loading…")
+	}
 	// FB-024/FB-051/FB-052: placeholder when describe unavailable but events are loaded.
 	if m.describeRaw == nil && m.events != nil && !m.yamlMode && !m.conditionsMode && !m.eventsMode {
 		muted      := lipgloss.NewStyle().Foreground(styles.Muted)
