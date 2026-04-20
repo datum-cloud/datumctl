@@ -8880,7 +8880,7 @@ func TestFB035_Key3_QuotaIsLoading_IsNoop(t *testing.T) {
 }
 
 // TestFB035_HelpOverlay_ContainsKey3Row — AC#6 + AC#6b: HelpOverlay View contains
-// `[3]  quota (toggle)` (FB-050 copy update) and `[3]` appears before `[4]` in the output.
+// `[3]  quota dashboard` and `[3]` appears before `[4]` in the output.
 func TestFB035_HelpOverlay_ContainsKey3Row(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
@@ -8893,12 +8893,12 @@ func TestFB035_HelpOverlay_ContainsKey3Row(t *testing.T) {
 
 	view := stripANSIModel(appM.helpOverlay.View())
 
-	// AC#6: [3] quota (toggle) row present (FB-050).
+	// AC#6: [3] quota dashboard row present (FB-065 copy alignment).
 	if !strings.Contains(view, "[3]") {
 		t.Errorf("AC#6: HelpOverlay missing '[3]' row:\n%s", view)
 	}
-	if !strings.Contains(view, "quota (toggle)") {
-		t.Errorf("AC#6: HelpOverlay missing 'quota (toggle)' label:\n%s", view)
+	if !strings.Contains(view, "quota dashboard") {
+		t.Errorf("AC#6: HelpOverlay missing 'quota dashboard' label:\n%s", view)
 	}
 
 	// AC#6b: [3] index precedes [4] index.
@@ -9743,6 +9743,55 @@ func TestFB109_AC5_PrefixWidth24_SeparatorFillsWidth(t *testing.T) {
 }
 
 // ==================== End FB-109 ====================
+
+// ==================== FB-065: Inline quota separator vs HelpOverlay copy alignment ====================
+
+// AC1 [Observable] — inline separator and HelpOverlay both render "quota dashboard" after "[3]".
+func TestFB065_AC1_Observable_QuotaLabelConsistent(t *testing.T) {
+	t.Parallel()
+
+	// Inline separator surface: buildQuotaTopHint at width ≥ 30.
+	m := newDetailPaneModelWithHC()
+	m.detail = components.NewDetailViewModel(80, 20) // innerW = 77 ≥ 30
+	separatorView := stripANSIModel(m.buildQuotaTopHint())
+	if !strings.Contains(separatorView, "quota dashboard") {
+		t.Errorf("AC1 [Observable]: inline separator missing 'quota dashboard'; got: %q", separatorView)
+	}
+
+	// HelpOverlay surface.
+	m2 := newNavPaneModelWithBC(nil)
+	result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	appM := result.(AppModel)
+	overlayView := stripANSIModel(appM.helpOverlay.View())
+	if !strings.Contains(overlayView, "quota dashboard") {
+		t.Errorf("AC1 [Observable]: HelpOverlay missing 'quota dashboard'; got: %q", overlayView)
+	}
+}
+
+// AC2 [Anti-regression] — HelpOverlay does not regress to old "quota (toggle)" copy.
+func TestFB065_AC2_AntiRegression_NoQuoteToggleCopy(t *testing.T) {
+	t.Parallel()
+	m := newNavPaneModelWithBC(nil)
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	appM := result.(AppModel)
+	view := stripANSIModel(appM.helpOverlay.View())
+	if strings.Contains(view, "quota (toggle)") {
+		t.Errorf("AC2 [Anti-regression]: HelpOverlay contains old 'quota (toggle)' copy; must be 'quota dashboard':\n%s", view)
+	}
+}
+
+// AC3 [Anti-regression] — narrow DetailPane (innerW < 30) drops [3] affordance (FB-044 guard).
+func TestFB065_AC3_AntiRegression_NarrowNoAffordance(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithHC()
+	m.detail = components.NewDetailViewModel(25, 20) // innerW = 22 < 30
+	got := stripANSIModel(m.buildQuotaTopHint())
+	if got != "" {
+		t.Errorf("AC3 [Anti-regression]: buildQuotaTopHint must return '' when innerW<30; got %q", got)
+	}
+}
+
+// ==================== End FB-065 ====================
 
 // ==================== End FB-044 ====================
 

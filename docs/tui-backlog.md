@@ -2098,7 +2098,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`.
 
 ### FB-065 — Inline quota separator says `full dashboard`; HelpOverlay says `quota dashboard`
 
-**Status: PENDING ENGINEER (copy-only)** — filed 2026-04-19 by product-experience from FB-044 user-persona re-run, finding #3.
+**Status: ACCEPTED 2026-04-20** — filed 2026-04-19 by product-experience from FB-044 user-persona re-run, finding #3. Engineer verified FB-109 did NOT resolve (helpoverlay.go:55 had drifted to `[3]  quota (toggle)`; separator at model.go:2021/2044 had drifted to `quota dashboard`). Applied Option A variant against current canonical separator copy — both surfaces now render `quota dashboard` after `[3]`. Tests at model_test.go:9750 (Observable View() on both surfaces), model_test.go:9772 (Anti-regression against old `quota (toggle)` copy), model_test.go:9784 (Anti-regression narrow-width guard), plus updated TestFB035_HelpOverlay_ContainsKey3Row at model_test.go:8884. Test-engineer gate-check: compile clean, all 3 FB-065 tests + updated FB-035 test green, `go test ./internal/tui/...` exit 0. Engineer also surfaced a parallel `[4]` divergence (`[4]  activity (toggle)` vs model.go:71 `activity dashboard`) — correctly scoped out; awaits its own brief.
 **Priority: P3** — small but real searchability gap. Operator reads `[3] full dashboard` on the separator, opens `?` help looking for `full dashboard`, finds `quota dashboard` instead.
 
 #### User problem

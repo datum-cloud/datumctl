@@ -52,7 +52,7 @@ func (m HelpOverlayModel) View() string {
 		row.Render("[d]  describe"),
 		row.Render("[r]  refresh"),
 		row.Render("[c]  switch context"),
-		row.Render("[3]  quota (toggle)"),
+		row.Render("[3]  quota dashboard"),
 		row.Render("[t]  quota table"),
 		row.Render("[4]  activity (toggle)"),
 	)
