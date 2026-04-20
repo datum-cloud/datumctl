@@ -6018,3 +6018,32 @@ Prefer Option A unless Option B's vocabulary alignment with the status-bar label
 - Not changing the primary copy `"Platform health temporarily unavailable"` — FB-143 rationale still holds.
 - Not adding the `[r]` label anywhere else in the Platform health region (status bar + keybind strip already document it via FB-136).
 - Not changing the `contentW >= 40` gate (all Option A/B copies are shorter than current L281 string).
+
+### FB-145 — FB-144 transient sub-line `[r]` glyph is muted, not accent-bold (scannability)
+
+**Status: PENDING ENGINEER** — render-expression split pinned inline in this brief (no separate spec file). Filed 2026-04-20 by product-experience from FB-144 user-persona P3-1.
+
+**Priority: P3** — FB-144 shipped the key-naming half of the affordance (`"Press [r] to retry."`). Persona eval confirmed the copy lands correctly, then flagged that the `[r]` glyph renders flat-muted — same color as the surrounding prose — while every other non-status-bar `[r]` affordance in the TUI (`resourcetable.go:359`, `detailview.go:359`, `model.go:2102`) renders `[r]` in accent-bold via the established `muted.Render(prose) + accentBold.Render("[r]") + muted.Render(prose)` pattern. FB-144's render site is the sole outlier; a scanning operator sees a muted sentence, not a key affordance.
+
+#### User problem
+
+Persona eval:
+
+> *"From my terminal, the `[r]` in the platform-health sub-line is the same muted color as the surrounding text — it doesn't pop. On the activity section, `[r]` renders in accent-bold and is immediately scannable. The key glyph earns its explicitness only if it stands out visually; right now `Press [r] to retry.` reads as a flat muted sentence, not a key affordance. The inconsistency also means a new operator scanning the screen gets two different visual treatments for the same semantic pattern."*
+
+The fix: match the established pattern at `resourcetable.go:359` (three lines further down the same function, visible in the same render path on the same welcome screen when the activity section is unavailable).
+
+#### Pinned render change
+
+`internal/tui/components/resourcetable.go:281`:
+
+- **Before:** `muted.Render("Press [r] to retry.")`
+- **After:** `muted.Render("Press ") + accentBold.Render("[r]") + muted.Render(" to retry.")`
+
+Text content unchanged. Only the `[r]` glyph's styling changes. `accentBold` is already in scope at this render site.
+
+**Non-goals:**
+- Not touching the other two FB-140 sub-line branches (no keybinds to style — they point to people outside the TUI).
+- Not changing any text content or the `contentW >= 40` gate — FB-144's copy stays as-shipped.
+- Not auditing every `[r]` rendering site repo-wide — the three non-status-bar sites outside L281 already use `accentBold`; this brief is scoped to the one outlier.
+- Not altering status-bar `[r] refresh` rendering (separate render path, separate precedent).
