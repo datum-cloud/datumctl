@@ -5754,3 +5754,42 @@ Axis tags: `[Observable]`, `[Integration]`.
 
 **Routing note:** This is test-only scope. Route directly to test-engineer (bypass engineer). Single test function addition to an existing file.
 
+
+---
+
+### FB-138 — FB-136 AC4 width test measured a hardcoded literal instead of live `View()` output
+
+**Status: ACCEPTED 2026-04-20** — filed 2026-04-20 by product-experience from FB-136 user-persona P3. Team-lead approved bypass: routed directly to test-engineer per FB-137 precedent.
+**Priority: P3** — test-quality gap. No current bug; latent risk that a future refactor extending NAV hints silently overflows 80-col with no test catching it.
+
+#### Gap
+
+`TestFB136_AC4_AntiRegression_HintStringWidths` at `statusbar_test.go:61` built its own `hints` map with string literals and measured those literals with `lipgloss.Width()`. It did not call `View()` on a `StatusBarModel`, so a future extension of the NAV hint string in `statusbar.go:76` without a matching test-literal update would have left AC4 reporting width = 68 and passing while the rendered output overflowed the 80-col budget silently.
+
+AC1's `strings.Contains(got, "[r] refresh")` caught absences; nothing caught growth.
+
+#### Fix (as shipped)
+
+`internal/tui/components/statusbar_test.go` — rewrote `TestFB136_AC4_AntiRegression_HintStringWidths` to:
+- Construct a `StatusBarModel{Pane: pane, Mode: ModeNormal}` per test case.
+- Call `m.View()`, `stripANSIStatusBar` the result.
+- Use a new `extractHintSegment` helper to slice after the first ` │ ` mode-label separator and `TrimRight` trailing whitespace, yielding only the rendered hint text.
+- Measure with `lipgloss.Width()` and assert == 68 (NAV) / 80 (NAV_DASHBOARD).
+- Error messages now include the hint segment for debuggability.
+
+Future extensions of `statusbar.go:76` that push NAV beyond 68 chars will fail AC4 automatically.
+
+#### Acceptance criteria (as met)
+
+Axis tags: `[Observable]`, `[Integration]`.
+
+1. **[Observable]** `TestFB136_AC4_AntiRegression_HintStringWidths` measures `stripANSI(m.View())` for `NAV` and `NAV_DASHBOARD` panes, asserts widths 68 and 80. ✓
+2. **[Integration]** `go test ./internal/tui/components/...` exit 0. Full `go test ./internal/tui/...` green. ✓
+
+**Dependencies:** FB-136 ACCEPTED.
+
+**Maps to:** FB-136 user-persona P3 #1.
+
+**Non-goals:**
+- Not changing `statusbar.go` hint strings.
+- Not auditing other tests that assert against hardcoded literals — file as separate audit brief if that pattern recurs.

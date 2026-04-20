@@ -56,8 +56,23 @@ func TestFB136_AC3_AntiRegression_TABLE_QUOTA_HaveRefreshHint(t *testing.T) {
 	}
 }
 
-// AC4 [Anti-regression]: hint-string widths stay within budget.
-// NAV == 68, NAV_DASHBOARD == 80, all panes ≤80.
+// extractHintSegment returns the hint portion of a stripped status-bar View() string.
+// The status bar renders "MODELABEL │ <hints><padding><optional-right>"; this helper
+// splits on the first " │ " separator and trims trailing whitespace so the caller gets
+// only the hint text, suitable for width measurement.
+func extractHintSegment(stripped string) string {
+	const sep = " │ "
+	idx := strings.Index(stripped, sep)
+	if idx < 0 {
+		return strings.TrimRight(stripped, " \t\r\n")
+	}
+	return strings.TrimRight(stripped[idx+len(sep):], " \t\r\n")
+}
+
+// AC4 [Anti-regression]: rendered hint-string widths stay within 80-char budget.
+// NAV == 68, NAV_DASHBOARD == 80.
+// Measures the live View() output — not a hardcoded literal — so future hint-string
+// changes that overflow the budget are caught automatically.
 func TestFB136_AC4_AntiRegression_HintStringWidths(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -71,19 +86,15 @@ func TestFB136_AC4_AntiRegression_HintStringWidths(t *testing.T) {
 		tc := tc
 		t.Run(tc.pane, func(t *testing.T) {
 			t.Parallel()
-			// Extract the hints portion from the rendered status bar by removing
-			// the mode label prefix ("NORMAL │ ") and right-side padding/error area.
-			// Simpler: compute width of the known expected hint string directly.
-			hints := map[string]string{
-				"NAV":           "[j/k] move  [Enter] select  [r] refresh  [c] ctx  [?] help  [q] quit",
-				"NAV_DASHBOARD": "[j/k] move  [Enter] select  [c] ctx  [3] quota  [4] activity  [?] help  [q] quit",
-			}[tc.pane]
-			w := lipgloss.Width(hints)
+			m := newStatusBarModel(tc.pane)
+			rendered := stripANSIStatusBar(m.View())
+			hint := extractHintSegment(rendered)
+			w := lipgloss.Width(hint)
 			if w != tc.wantWidth {
-				t.Errorf("AC4: %s hint width = %d, want %d (budget exceeded)", tc.pane, w, tc.wantWidth)
+				t.Errorf("AC4: %s rendered hint width = %d, want %d\nhint segment: %q", tc.pane, w, tc.wantWidth, hint)
 			}
 			if w > 80 {
-				t.Errorf("AC4: %s hint width = %d exceeds 80-char budget", tc.pane, w)
+				t.Errorf("AC4: %s rendered hint width = %d exceeds 80-char budget\nhint segment: %q", tc.pane, w, hint)
 			}
 		})
 	}
