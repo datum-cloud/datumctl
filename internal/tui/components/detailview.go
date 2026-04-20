@@ -26,6 +26,7 @@ type DetailViewModel struct {
 	focused      bool
 	mode             string // "describe", "yaml", or "conditions"; empty treated as "describe" (FB-018 adds "conditions")
 	describeAvailable bool
+	eventsFetchedAt  time.Time // FB-025: timestamp of last successful events fetch; zero = never
 }
 
 func NewDetailViewModel(width, height int) DetailViewModel {
@@ -111,6 +112,9 @@ func (m *DetailViewModel) SetDescribeAvailable(available bool) {
 	m.describeAvailable = available
 }
 
+func (m *DetailViewModel) SetEventsFetchedAt(t time.Time) { m.eventsFetchedAt = t }
+func (m DetailViewModel) EventsFetchedAt() time.Time      { return m.eventsFetchedAt }
+
 func (m *DetailViewModel) ScrollToTop() {
 	m.vp.GotoTop()
 }
@@ -160,6 +164,14 @@ func (m DetailViewModel) titleBar() string {
 		}
 		hintRow += "  " + eHint + "  [x] delete  [Esc] back"
 		rightText = muted.Render(hintRow)
+	}
+
+	if m.mode == "events" && !m.eventsFetchedAt.IsZero() {
+		age := muted.Render(" · " + eventsAgeLabel(m.eventsFetchedAt))
+		candidate := leftText + age
+		if w-lipgloss.Width(candidate)-lipgloss.Width(rightText) >= 1 {
+			leftText = candidate
+		}
 	}
 
 	gap := w - lipgloss.Width(leftText) - lipgloss.Width(rightText)
@@ -303,9 +315,24 @@ func unstructuredNestedSlice(obj map[string]interface{}, fields ...string) ([]in
 	return unstructured.NestedSlice(obj, fields...)
 }
 
+// eventsAgeLabel formats a fetch timestamp as a human-readable age string.
+func eventsAgeLabel(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d <= 15*time.Second:
+		return "just now"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+}
+
 // RenderEventsTable renders the events table for the DetailPane events sub-view.
 // Width bands (D6): [0,40) unusable, [40,60) narrow (T/R/A), [60,80) standard (T/R/A/C), [80,∞) wide (T/R/A/M/C). // AC#1
-func RenderEventsTable(events []data.EventRow, loading bool, fetchErr error, rc data.ResourceClient, width int, sp spinner.Model) string {
+func RenderEventsTable(events []data.EventRow, loading bool, fetchErr error, rc data.ResourceClient, width int, sp spinner.Model, fetchedAt time.Time) string {
 	mutedStyle := lipgloss.NewStyle().Foreground(styles.Muted)
 	if loading { // AC#24
 		return mutedStyle.Render(sp.View() + " Loading events…")
@@ -317,6 +344,14 @@ func RenderEventsTable(events []data.EventRow, loading bool, fetchErr error, rc 
 		return renderEventsError(fetchErr, rc, width)
 	}
 	if len(events) == 0 { // AC#15
+		if !fetchedAt.IsZero() && time.Since(fetchedAt) >= 5*time.Minute {
+			accentBold := lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
+			return mutedStyle.Render("No events recorded as of ") +
+				mutedStyle.Render(eventsAgeLabel(fetchedAt)) +
+				mutedStyle.Render(". Press ") +
+				accentBold.Render("[r]") +
+				mutedStyle.Render(" to refresh.")
+		}
 		return mutedStyle.Render("No events recorded for this resource.")
 	}
 	return renderEventsBody(events, width)

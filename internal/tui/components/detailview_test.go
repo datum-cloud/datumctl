@@ -378,7 +378,7 @@ func TestRenderEventsTable_Loading(t *testing.T) {
 	t.Parallel()
 	rc := &mockEventsRC{}
 	sp := spinner.New()
-	got := stripANSI(RenderEventsTable(nil, true, nil, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, true, nil, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "Loading events") {
 		t.Errorf("loading=true: want 'Loading events' in output, got:\n%s", got)
 	}
@@ -389,7 +389,7 @@ func TestRenderEventsTable_EmptyEvents(t *testing.T) {
 	t.Parallel()
 	rc := &mockEventsRC{}
 	sp := spinner.New()
-	got := stripANSI(RenderEventsTable(nil, false, nil, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, false, nil, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "No events recorded for this resource.") {
 		t.Errorf("empty events: want 'No events recorded for this resource.', got:\n%s", got)
 	}
@@ -403,7 +403,7 @@ func TestRenderEventsTable_ForbiddenError(t *testing.T) {
 	rc := &mockEventsRC{isForbidden: true}
 	sp := spinner.New()
 	fetchErr := k8serrors.NewForbidden(eventsGR, "pod", errors.New("denied"))
-	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "Permission denied") {
 		t.Errorf("forbidden error: want 'Permission denied', got:\n%s", got)
 	}
@@ -418,7 +418,7 @@ func TestRenderEventsTable_NotFoundError(t *testing.T) {
 	rc := &mockEventsRC{isNotFound: true}
 	sp := spinner.New()
 	fetchErr := k8serrors.NewNotFound(eventsGR, "pod")
-	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "Resource not found") {
 		t.Errorf("not-found error: want 'Resource not found', got:\n%s", got)
 	}
@@ -433,7 +433,7 @@ func TestRenderEventsTable_GenericError(t *testing.T) {
 
 	t.Run("wide_width", func(t *testing.T) {
 		t.Parallel()
-		got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp))
+		got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp, time.Time{}))
 		if !strings.Contains(got, "Could not fetch events") {
 			t.Errorf("generic error: want 'Could not fetch events', got:\n%s", got)
 		}
@@ -442,7 +442,7 @@ func TestRenderEventsTable_GenericError(t *testing.T) {
 	t.Run("narrow_width_truncation", func(t *testing.T) {
 		t.Parallel()
 		// Very narrow width still renders error block — no panic.
-		got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 40, sp))
+		got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 40, sp, time.Time{}))
 		if !strings.Contains(got, "Could not fetch events") {
 			t.Errorf("narrow generic error: want 'Could not fetch events', got:\n%s", got)
 		}
@@ -456,7 +456,7 @@ func TestRenderEventsError_Forbidden_RendersCanonicalCopy(t *testing.T) {
 	rc := &mockEventsRC{isForbidden: true}
 	sp := spinner.New()
 	fetchErr := k8serrors.NewForbidden(eventsGR, "pod", errors.New("denied"))
-	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "Permission denied") {
 		t.Errorf("forbidden (canonical): want 'Permission denied', got:\n%s", got)
 	}
@@ -472,7 +472,7 @@ func TestRenderEventsError_NotFound_RendersCanonicalCopy(t *testing.T) {
 	rc := &mockEventsRC{isNotFound: true}
 	sp := spinner.New()
 	fetchErr := k8serrors.NewNotFound(eventsGR, "pod")
-	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "Resource not found") {
 		t.Errorf("not-found (canonical): want 'Resource not found', got:\n%s", got)
 	}
@@ -488,7 +488,7 @@ func TestRenderEventsError_Generic_RoutesThroughErrorBlock(t *testing.T) {
 	rc := &mockEventsRC{}
 	sp := spinner.New()
 	fetchErr := errors.New("dial tcp: connection refused")
-	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 80, sp, time.Time{}))
 	if !strings.Contains(got, "⚠") && !strings.Contains(got, "✕") {
 		t.Errorf("generic error: want error glyph (⚠ or ✕), confirming RenderErrorBlock path; got:\n%s", got)
 	}
@@ -504,7 +504,7 @@ func TestRenderEventsError_NarrowWidth_AntiRegression(t *testing.T) {
 	rc := &mockEventsRC{isForbidden: true}
 	sp := spinner.New()
 	fetchErr := k8serrors.NewForbidden(eventsGR, "pod", errors.New("denied"))
-	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 30, sp))
+	got := stripANSI(RenderEventsTable(nil, false, fetchErr, rc, 30, sp, time.Time{}))
 	if !strings.Contains(got, "Terminal too narrow") {
 		t.Errorf("narrow+error: want 'Terminal too narrow' guard (upstream of error path), got:\n%s", got)
 	}
@@ -567,7 +567,7 @@ func TestRenderEventsTable_WidthBand_OffByOne(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := stripANSI(RenderEventsTable(events, false, nil, rc, tt.width, sp))
+			got := stripANSI(RenderEventsTable(events, false, nil, rc, tt.width, sp, time.Time{}))
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
 					t.Errorf("width=%d: want %q in output, got:\n%s", tt.width, want, got)
@@ -595,7 +595,7 @@ func TestRenderEventsTable_WarningRow_Highlight(t *testing.T) {
 		{Type: "", Reason: "NoType", Message: "no type field", Count: 1, LastTimestamp: time.Now().Add(-1 * time.Minute)},
 	}
 
-	raw := RenderEventsTable(events, false, nil, rc, 80, sp)
+	raw := RenderEventsTable(events, false, nil, rc, 80, sp, time.Time{})
 	lines := strings.Split(raw, "\n")
 
 	// Find data rows (skip header lines — lines 0 and 1 are header+sep).
@@ -656,7 +656,7 @@ func TestRenderEventsTable_MalformedRow_BestEffort(t *testing.T) {
 		t.Parallel()
 		events := []data.EventRow{{}} // fully zero
 		// Must not panic.
-		got := stripANSI(RenderEventsTable(events, false, nil, rc, 80, sp))
+		got := stripANSI(RenderEventsTable(events, false, nil, rc, 80, sp, time.Time{}))
 		// Count==0 → "—"
 		if !strings.Contains(got, "—") {
 			t.Errorf("zero-value row: want '—' for Count=0, got:\n%s", got)
@@ -668,7 +668,7 @@ func TestRenderEventsTable_MalformedRow_BestEffort(t *testing.T) {
 		events := []data.EventRow{
 			{Type: "Normal", Reason: "Test", Message: "test", Count: 1, LastTimestamp: time.Now().Add(10 * time.Minute)},
 		}
-		got := stripANSI(RenderEventsTable(events, false, nil, rc, 80, sp))
+		got := stripANSI(RenderEventsTable(events, false, nil, rc, 80, sp, time.Time{}))
 		// Future timestamp → Age should be "—"
 		if !strings.Contains(got, "—") {
 			t.Errorf("future timestamp: want '—' for Age, got:\n%s", got)
@@ -682,8 +682,8 @@ func TestRenderEventsTable_MalformedRow_BestEffort(t *testing.T) {
 			{Type: "Normal", Reason: "Test", Message: longMsg, Count: 1, LastTimestamp: time.Now().Add(-1 * time.Minute)},
 		}
 		// Must not panic regardless of width.
-		_ = RenderEventsTable(events, false, nil, rc, 80, sp)
-		_ = RenderEventsTable(events, false, nil, rc, 40, sp)
+		_ = RenderEventsTable(events, false, nil, rc, 80, sp, time.Time{})
+		_ = RenderEventsTable(events, false, nil, rc, 40, sp, time.Time{})
 	})
 }
 
@@ -694,7 +694,7 @@ func TestRenderEventsTable_ColumnOrder(t *testing.T) {
 	sp := spinner.New()
 	events := seedEvents()
 
-	got := stripANSI(RenderEventsTable(events, false, nil, rc, 80, sp))
+	got := stripANSI(RenderEventsTable(events, false, nil, rc, 80, sp, time.Time{}))
 	// Find the header line — it's the first line.
 	lines := strings.Split(got, "\n")
 	var headerLine string
@@ -949,3 +949,83 @@ func TestFB119_AC7_AntiRegression_EToggleSwap_WhenDescribeUnavailable(t *testing
 }
 
 // ==================== End FB-119 (component layer) ====================
+
+// ==================== FB-025: Events freshness — component layer ====================
+//
+// AC4 (View part): title bar shows age label when mode=events and fetchedAt non-zero.
+// AC6: zero eventsFetchedAt → no " · " age separator in View().
+// AC7: RenderEventsTable empty-state copy diverges by fetch age (<5m vs ≥5m).
+
+// TestFB025_AC4_Component_TitleBar_ShowsAgeLabel verifies that when mode="events"
+// and eventsFetchedAt is set, the title bar renders a " · just now" age suffix.
+func TestFB025_AC4_Component_TitleBar_ShowsAgeLabel(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetLoading(false)
+	m.SetMode("events")
+	m.SetEventsFetchedAt(time.Now())
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, " · ") {
+		t.Errorf("AC4 [Observable FB-025]: ' · ' age separator absent from View() when fetchedAt set:\n%s", got)
+	}
+	if !strings.Contains(got, "just now") {
+		t.Errorf("AC4 [Observable FB-025]: 'just now' absent from View() within 15s of SetEventsFetchedAt:\n%s", got)
+	}
+}
+
+// TestFB025_AC6_Component_TitleBar_ZeroFetchedAt_NoAgeSuffix verifies that when
+// eventsFetchedAt is zero (never set), no age separator appears in the title bar.
+func TestFB025_AC6_Component_TitleBar_ZeroFetchedAt_NoAgeSuffix(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetLoading(false)
+	m.SetMode("events")
+	// eventsFetchedAt is zero (default)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, " · ") {
+		t.Errorf("AC6 [Edge FB-025]: ' · ' age separator present when eventsFetchedAt is zero:\n%s", got)
+	}
+}
+
+// TestFB025_AC7_RenderEventsTable_EmptyStateDivergesByAge verifies that the
+// empty-state copy differs based on fetch age relative to the 5-minute threshold.
+func TestFB025_AC7_RenderEventsTable_EmptyStateDivergesByAge(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New()
+
+	t.Run("fresh-empty: fetchedAt=2m ago uses standard copy", func(t *testing.T) {
+		t.Parallel()
+		fetchedAt := time.Now().Add(-2 * time.Minute)
+		got := stripANSI(RenderEventsTable(nil, false, nil, nil, 80, sp, fetchedAt))
+		if !strings.Contains(got, "No events recorded for this resource.") {
+			t.Errorf("AC7 sub-A [Observable FB-025]: standard empty-state copy absent for fresh fetchedAt:\n%s", got)
+		}
+		if strings.Contains(got, "No events recorded as of") {
+			t.Errorf("AC7 sub-A [Anti-behavior FB-025]: stale copy present for fresh fetchedAt (<5m):\n%s", got)
+		}
+	})
+
+	t.Run("stale-empty: fetchedAt=8m ago uses recovery copy", func(t *testing.T) {
+		t.Parallel()
+		fetchedAt := time.Now().Add(-8 * time.Minute)
+		got := stripANSI(RenderEventsTable(nil, false, nil, nil, 80, sp, fetchedAt))
+		if !strings.Contains(got, "No events recorded as of") {
+			t.Errorf("AC7 sub-B [Observable FB-025]: stale copy absent for fetchedAt=8m ago:\n%s", got)
+		}
+		if !strings.Contains(got, "ago") {
+			t.Errorf("AC7 sub-B [Observable FB-025]: 'ago' absent from stale copy:\n%s", got)
+		}
+		if !strings.Contains(got, "[r]") {
+			t.Errorf("AC7 sub-B [Observable FB-025]: '[r]' absent from stale copy:\n%s", got)
+		}
+		if strings.Contains(got, "No events recorded for this resource.") {
+			t.Errorf("AC7 sub-B [Anti-behavior FB-025]: standard copy present for stale fetchedAt (≥5m):\n%s", got)
+		}
+	})
+}
+
+// ==================== End FB-025 (component layer) ====================

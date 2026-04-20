@@ -14895,3 +14895,313 @@ func TestFB118_AC6_AntiRegression_FB038PreCheckUnaffected(t *testing.T) {
 }
 
 // ==================== End FB-118 ====================
+
+// ==================== FB-025: Events freshness — in-place refresh + staleness indicator ====================
+//
+// Axis-coverage:
+// AC  | Axis                      | Test
+// AC1 | Happy/Observable          | TestFB025_AC1_RKey_EventsMode_DispatchesBoth
+// AC2 | Happy/Observable          | TestFB025_AC2_RKey_AfterEOnOff_DispatchesEvents
+// AC3 | Anti-behavior             | TestFB025_AC3_RKey_EventsNeverFetched_NoEventsCmd
+// AC4 | Observable/Input-changed  | TestFB025_AC4_EventsLoadedMsg_Success_SetsFetchedAt (View() + accessor)
+// AC5 | State/Integration         | TestFB025_AC5_EventsLoadedMsg_Error_RetainsFetchedAt (accessor only; Observable surface owned by AC4-Component)
+// AC8 | Input-changed             | TestFB025_AC8_ResetSites_ClearFetchedAt (5 sub-tests, each with View() + accessor)
+// AC9 | Repeat-press              | TestFB025_AC9_RapidR_RefreshingGuard_NoDoubleDispatch
+
+// newDetailPaneModelForRefresh builds a DetailPane AppModel with tableTypeName
+// and describeRT set so the r-key handler can reach the events-dispatch branch.
+func newDetailPaneModelForRefresh() AppModel {
+	sidebar := components.NewNavSidebarModel(22, 20)
+	rt := data.ResourceType{Name: "pods", Kind: "Pod", Namespaced: false}
+	sidebar.SetItems([]data.ResourceType{rt})
+
+	detail := components.NewDetailViewModel(58, 20)
+	detail.SetResourceContext("Pod", "my-pod")
+
+	m := AppModel{
+		ctx:           context.Background(),
+		rc:            stubResourceClient{},
+		activePane:    DetailPane,
+		tableTypeName: "pods",
+		describeRT:    rt,
+		sidebar:       sidebar,
+		table:         components.NewResourceTableModel(58, 20),
+		detail:        detail,
+		quota:         components.NewQuotaDashboardModel(58, 20, "proj"),
+		filterBar:     components.NewFilterBarModel(),
+		helpOverlay:   components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	return m
+}
+
+// TestFB025_AC1_RKey_EventsMode_DispatchesBoth verifies r in eventsMode dispatches
+// both LoadResourcesCmd and LoadEventsCmd in the same batch.
+func TestFB025_AC1_RKey_EventsMode_DispatchesBoth(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelForRefresh()
+	m.eventsMode = true
+	m.events = []data.EventRow{{Type: "Normal", Reason: "Created", Count: 1}}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd == nil {
+		t.Fatal("AC1: cmd = nil, want batch with LoadResourcesCmd + LoadEventsCmd")
+	}
+	msgs := collectMsgs(cmd)
+	var hasResources, hasEvents bool
+	for _, msg := range msgs {
+		switch msg.(type) {
+		case data.ResourcesLoadedMsg:
+			hasResources = true
+		case data.EventsLoadedMsg:
+			hasEvents = true
+		}
+	}
+	if !hasResources {
+		t.Error("AC1: ResourcesLoadedMsg absent; LoadResourcesCmd not dispatched")
+	}
+	if !hasEvents {
+		t.Error("AC1: EventsLoadedMsg absent; LoadEventsCmd not dispatched for eventsMode=true")
+	}
+}
+
+// TestFB025_AC2_RKey_AfterEOnOff_DispatchesEvents verifies r dispatches LoadEventsCmd
+// when eventsMode=false but events!=nil (visited then toggled off).
+func TestFB025_AC2_RKey_AfterEOnOff_DispatchesEvents(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelForRefresh()
+	m.eventsMode = false
+	m.events = []data.EventRow{{Type: "Normal", Reason: "Created", Count: 1}} // visited, then toggled off
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd == nil {
+		t.Fatal("AC2: cmd = nil, want batch including LoadEventsCmd")
+	}
+	msgs := collectMsgs(cmd)
+	var hasEvents bool
+	for _, msg := range msgs {
+		if _, ok := msg.(data.EventsLoadedMsg); ok {
+			hasEvents = true
+		}
+	}
+	if !hasEvents {
+		t.Error("AC2: EventsLoadedMsg absent; events not refreshed when events!=nil but eventsMode=false")
+	}
+}
+
+// TestFB025_AC3_RKey_EventsNeverFetched_NoEventsCmd verifies r does NOT dispatch
+// LoadEventsCmd when events were never fetched (events=nil, eventsMode=false).
+func TestFB025_AC3_RKey_EventsNeverFetched_NoEventsCmd(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelForRefresh()
+	m.eventsMode = false
+	m.events = nil
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd == nil {
+		return // no dispatch is also acceptable
+	}
+	msgs := collectMsgs(cmd)
+	for _, msg := range msgs {
+		if _, ok := msg.(data.EventsLoadedMsg); ok {
+			t.Error("AC3: EventsLoadedMsg present; LoadEventsCmd must not dispatch when events never fetched")
+		}
+	}
+}
+
+// TestFB025_AC4_EventsLoadedMsg_Success_SetsFetchedAt verifies a successful
+// EventsLoadedMsg sets eventsFetchedAt to a non-zero time on the detail view
+// and that the age label becomes visible in detail.View() when mode is "events".
+func TestFB025_AC4_EventsLoadedMsg_Success_SetsFetchedAt(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelForRefresh()
+
+	if !m.detail.EventsFetchedAt().IsZero() {
+		t.Fatal("AC4 setup: eventsFetchedAt non-zero before test")
+	}
+
+	before := time.Now()
+	result, _ := m.Update(data.EventsLoadedMsg{Events: []data.EventRow{{Type: "Normal", Reason: "Created"}}})
+	appM := result.(AppModel)
+	after := time.Now()
+
+	// State check: fetchedAt set to time within the call window.
+	if appM.detail.EventsFetchedAt().IsZero() {
+		t.Error("AC4: eventsFetchedAt.IsZero() = true after success EventsLoadedMsg, want non-zero")
+	}
+	fetched := appM.detail.EventsFetchedAt()
+	if fetched.Before(before) || fetched.After(after) {
+		t.Errorf("AC4: eventsFetchedAt = %v outside expected range [%v, %v]", fetched, before, after)
+	}
+
+	// View() check: widen the detail pane (fixture is 58px — too narrow for the
+	// age suffix candidate-width check) then force mode="events" directly.
+	appM.detail.SetSize(160, 40)
+	appM.detail.SetMode("events")
+	view := stripANSIModel(appM.detail.View())
+	if !strings.Contains(view, " · ") {
+		t.Errorf("AC4 [Observable]: ' · ' age separator absent from detail.View() after success load:\n%s", view)
+	}
+	if !strings.Contains(view, "just now") {
+		t.Errorf("AC4 [Observable]: 'just now' absent from detail.View() within 15s of load:\n%s", view)
+	}
+}
+
+// TestFB025_AC5_EventsLoadedMsg_Error_RetainsFetchedAt verifies that an error
+// EventsLoadedMsg does NOT overwrite the prior successful fetchedAt timestamp,
+// observable via the age label remaining visible in detail.View() after the error.
+func TestFB025_AC5_EventsLoadedMsg_Error_RetainsFetchedAt(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelForRefresh()
+
+	// Successful load: fetchedAt set.
+	r1, _ := m.Update(data.EventsLoadedMsg{Events: []data.EventRow{{Type: "Normal", Reason: "Created"}}})
+	m = r1.(AppModel)
+	if m.detail.EventsFetchedAt().IsZero() {
+		t.Fatal("AC5 setup: fetchedAt still zero after success load")
+	}
+
+	// View() before error: widen + force events mode → age label must be visible.
+	m.detail.SetSize(160, 40)
+	m.detail.SetMode("events")
+	viewBefore := stripANSIModel(m.detail.View())
+	if !strings.Contains(viewBefore, " · ") {
+		t.Fatalf("AC5 setup: ' · ' absent before error reload — test setup invalid:\n%s", viewBefore)
+	}
+
+	// Error reload: must NOT overwrite fetchedAt.
+	r2, _ := m.Update(data.EventsLoadedMsg{Err: errors.New("server error")})
+	m = r2.(AppModel)
+
+	// View() after error: age label must still be visible (fetchedAt retained).
+	m.detail.SetSize(160, 40)
+	m.detail.SetMode("events")
+	viewAfter := stripANSIModel(m.detail.View())
+	if !strings.Contains(viewAfter, " · ") {
+		t.Errorf("AC5 [Observable]: ' · ' age separator absent after error reload — fetchedAt was overwritten:\n%s", viewAfter)
+	}
+}
+
+// TestFB025_AC8_ResetSites_ClearFetchedAt verifies that each of the 5 reset sites
+// clears eventsFetchedAt back to zero and that the age separator is absent in View().
+func TestFB025_AC8_ResetSites_ClearFetchedAt(t *testing.T) {
+	t.Parallel()
+
+	// setFetchedAt delivers a success EventsLoadedMsg, then widens the detail pane
+	// to 160px and forces mode="events" so the age label IS visible before any reset.
+	// Panics if the age label is not visible — catches invalid test setup.
+	setFetchedAt := func(m AppModel) AppModel {
+		m.eventsMode = true
+		r, _ := m.Update(data.EventsLoadedMsg{Events: []data.EventRow{{Type: "Normal"}}})
+		m = r.(AppModel)
+		if m.detail.EventsFetchedAt().IsZero() {
+			panic("setFetchedAt: fetchedAt still zero after success EventsLoadedMsg")
+		}
+		m.detail.SetSize(160, 40)
+		m.detail.SetMode("events")
+		if !strings.Contains(stripANSIModel(m.detail.View()), " · ") {
+			panic("setFetchedAt: age label not visible at width=160 with mode=events — setup invalid")
+		}
+		return m
+	}
+
+	// assertNoAgeLabel forces mode="events" at width=160 on the post-reset model and
+	// asserts " · " is absent. Because fetchedAt=zero after reset, the age suffix is
+	// suppressed even with mode="events" — a non-vacuous Input-changed assertion.
+	assertNoAgeLabel := func(t *testing.T, appM AppModel, site string) {
+		t.Helper()
+		appM.detail.SetSize(160, 40)
+		appM.detail.SetMode("events")
+		view := stripANSIModel(appM.detail.View())
+		if strings.Contains(view, " · ") {
+			t.Errorf("AC8 %s [Input-changed]: ' · ' still visible at mode=events after reset — fetchedAt not cleared:\n%s", site, view)
+		}
+	}
+
+	t.Run("site-A: case-d enters new resource", func(t *testing.T) {
+		t.Parallel()
+		m := setFetchedAt(newTablePaneModel())
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+		appM := result.(AppModel)
+		if !appM.detail.EventsFetchedAt().IsZero() {
+			t.Error("AC8 site-A: eventsFetchedAt non-zero after case-d entry, want zero")
+		}
+		assertNoAgeLabel(t, appM, "site-A")
+	})
+
+	t.Run("site-B: ContextSwitchedMsg resets fetchedAt", func(t *testing.T) {
+		t.Parallel()
+		m := setFetchedAt(newDetailPaneModelForRefresh())
+		result, _ := m.Update(components.ContextSwitchedMsg{})
+		appM := result.(AppModel)
+		if !appM.detail.EventsFetchedAt().IsZero() {
+			t.Error("AC8 site-B: eventsFetchedAt non-zero after ContextSwitchedMsg, want zero")
+		}
+		assertNoAgeLabel(t, appM, "site-B")
+	})
+
+	t.Run("site-C: esc from DetailPane resets fetchedAt", func(t *testing.T) {
+		t.Parallel()
+		m := setFetchedAt(newDetailPaneModelForRefresh())
+		m.detailReturnPane = TablePane
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		appM := result.(AppModel)
+		if !appM.detail.EventsFetchedAt().IsZero() {
+			t.Error("AC8 site-C: eventsFetchedAt non-zero after Esc from DetailPane, want zero")
+		}
+		assertNoAgeLabel(t, appM, "site-C")
+	})
+
+	t.Run("site-D: esc from HistoryPane resets fetchedAt", func(t *testing.T) {
+		t.Parallel()
+		m := setFetchedAt(newDetailPaneModelWithHC())
+		m.activePane = HistoryPane
+		m.updatePaneFocus()
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		appM := result.(AppModel)
+		if !appM.detail.EventsFetchedAt().IsZero() {
+			t.Error("AC8 site-D: eventsFetchedAt non-zero after Esc from HistoryPane, want zero")
+		}
+		assertNoAgeLabel(t, appM, "site-D")
+	})
+
+	t.Run("site-E: H from HistoryPane returns to DetailPane resets fetchedAt", func(t *testing.T) {
+		t.Parallel()
+		m := setFetchedAt(newDetailPaneModelWithHC())
+		m.activePane = HistoryPane
+		m.updatePaneFocus()
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+		appM := result.(AppModel)
+		if !appM.detail.EventsFetchedAt().IsZero() {
+			t.Error("AC8 site-E: eventsFetchedAt non-zero after H from HistoryPane, want zero")
+		}
+		assertNoAgeLabel(t, appM, "site-E")
+	})
+}
+
+// TestFB025_AC9_RapidR_RefreshingGuard_NoDoubleDispatch verifies a second r press
+// while m.refreshing=true hits the guard and returns nil cmd.
+func TestFB025_AC9_RapidR_RefreshingGuard_NoDoubleDispatch(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelForRefresh()
+	m.eventsMode = true
+	m.events = []data.EventRow{{Type: "Normal", Reason: "Created", Count: 1}}
+
+	// First r — sets refreshing=true.
+	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = r1.(AppModel)
+	if cmd1 == nil {
+		t.Fatal("AC9: first r produced nil cmd, want batch cmd")
+	}
+	if !m.refreshing {
+		t.Error("AC9: m.refreshing = false after first r, want true")
+	}
+
+	// Second r — must be blocked by m.refreshing guard.
+	_, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd2 != nil {
+		t.Error("AC9: second r produced non-nil cmd, want nil (refreshing guard blocks)")
+	}
+}
+
+// ==================== End FB-025 (model layer) ====================

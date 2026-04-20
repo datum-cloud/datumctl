@@ -364,6 +364,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.eventsErr = nil
 			m.events = msg.Events
+			m.detail.SetEventsFetchedAt(time.Now()) // FB-025
 		}
 		var hintCmd tea.Cmd
 		if m.eventsMode || m.loadState == data.LoadStateError || m.describeRaw == nil {
@@ -619,6 +620,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.events = nil
 		m.eventsLoading = false
 		m.eventsErr = nil
+		m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 		m.detail.SetMode("")
 		m.activityAPIGroup = ""
 		m.activityKind = ""
@@ -1325,16 +1327,21 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			if rt.Namespaced {
 				ns = m.tuiCtx.Namespace
 			}
-			// Also refresh buckets when the banner is currently showing for this type.
+			cmds := []tea.Cmd{data.LoadResourcesCmd(m.ctx, m.rc, rt, ns)}
 			if m.banner.HasBuckets() && m.bc != nil && !m.bucketLoading {
 				m.bc.InvalidateBucketCache()
 				m.bucketLoading = true
-				return m, tea.Batch(
-					data.LoadResourcesCmd(m.ctx, m.rc, rt, ns),
-					data.LoadBucketsCmd(m.ctx, m.bc),
-				)
+				cmds = append(cmds, data.LoadBucketsCmd(m.ctx, m.bc))
 			}
-			return m, data.LoadResourcesCmd(m.ctx, m.rc, rt, ns)
+			if m.activePane == DetailPane && (m.eventsMode || m.events != nil) && !m.eventsLoading {
+				m.eventsLoading = true
+				evNS := ""
+				if m.describeRT.Namespaced {
+					evNS = m.tuiCtx.Namespace
+				}
+				cmds = append(cmds, data.LoadEventsCmd(m.ctx, m.rc, m.describeRT.Kind, m.detail.ResourceName(), evNS))
+			}
+			return m, tea.Batch(cmds...)
 		case QuotaDashboardPane:
 			if m.refreshing || m.bc == nil {
 				return m, nil
@@ -1459,6 +1466,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.events = nil
 			m.eventsLoading = false
 			m.eventsErr = nil
+			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.detail.SetMode("")
 			m.activePane = DetailPane
 			m.statusBar.Mode = components.ModeDetail
@@ -1471,6 +1479,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.events = nil
 			m.eventsLoading = false
 			m.eventsErr = nil
+			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.detail.SetMode("")
 			m.activePane = DetailPane
 			m.statusBar.Mode = components.ModeDetail
@@ -1518,6 +1527,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.events = nil
 			m.eventsLoading = false
 			m.eventsErr = nil
+			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.detail.SetMode("")
 			m.activePane = DetailPane
 			m.statusBar.Mode = components.ModeDetail
@@ -1534,6 +1544,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.events = nil
 			m.eventsLoading = false
 			m.eventsErr = nil
+			m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 			m.describeRaw = nil
 			m.detail.SetDescribeAvailable(false)
 			m.detail.SetMode("")
@@ -1824,6 +1835,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 					m.events = nil
 					m.eventsLoading = true
 					m.eventsErr = nil
+					m.detail.SetEventsFetchedAt(time.Time{}) // FB-025
 					m.detail.SetMode("")
 					m.detail.ScrollToTop()
 					m.updatePaneFocus()
@@ -2108,7 +2120,7 @@ func (m AppModel) buildDetailContent() string {
 		return components.RenderConditionsTable(m.describeRaw, m.detail.Width())
 	}
 	if m.eventsMode { // AC#1 FB-019
-		return components.RenderEventsTable(m.events, m.eventsLoading, m.eventsErr, m.rc, m.detail.Width(), m.detail.Spinner())
+		return components.RenderEventsTable(m.events, m.eventsLoading, m.eventsErr, m.rc, m.detail.Width(), m.detail.Spinner(), m.detail.EventsFetchedAt())
 	}
 
 	content := m.describeContent
