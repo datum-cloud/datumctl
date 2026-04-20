@@ -5927,3 +5927,61 @@ This brief moves to PENDING UX-DESIGNER once condition scanning ships AND first-
 **Non-goals:**
 - Not relitigating FB-075's choice of blank-row-only separator over sub-header form.
 - Not adding any in-TUI affordance until condition scanning produces the user-problem in production.
+
+---
+
+### FB-143 — Welcome S2 transient platform-health error has no sub-line affordance
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-140 user-persona P3-1. Routed to ux-designer in parallel with engineer queue per team-lead 2026-04-20 (Option 1: parallel route).
+**Priority: P3** — discoverability/asymmetry gap; persona surfaced after FB-140 ACCEPTED.
+
+#### User problem
+
+FB-140 added muted sub-lines to two of the four non-loading Platform health branches (`renderPlatformHealthSection` in `internal/tui/components/resourcetable.go`):
+
+- **Unauthorized branch** (L273-277): `"Platform health unavailable"` + `"Contact your project admin for access."`
+- **Unconfigured branch** (L283-288): `"Quota service not configured"` + `"Ask your platform admin to enable quota."`
+
+The transient non-unauthorized error branch at L279 (`"Platform health temporarily unavailable"`) is now the only static Platform health branch without a sub-line. Persona evaluating FB-140 noted the asymmetry is more visible after the other two branches gained affordances:
+
+> *"FB-140 adds sub-lines to two of the four non-loading Platform health branches, leaving one bare: the transient non-unauthorized error at L279. The operator gets no signal on whether to wait, retry, or escalate."*
+
+The transient branch has different operator semantics from the other two:
+- Unauthorized = go-ask-someone (admin/IAM remedy).
+- Unconfigured = go-ask-someone (platform-admin remedy).
+- Transient = wait-it-out OR retry (self-remedy possible).
+
+The right copy would distinguish "wait" semantics from "retry" affordance — neither current branch model matches.
+
+#### Proposed interaction
+
+UX-designer picks one of:
+
+- **A.** Single muted sub-line: `"Refresh to retry."` — emphasizes operator agency (press `[r]` to refresh and re-attempt). Implies actionability.
+- **B.** Single muted sub-line: `"This may resolve on its own."` — emphasizes wait semantics; sets expectation that the system is recovering.
+- **C.** Combined: `"Refresh to retry, or wait — this may resolve on its own."` — both signals; longer copy.
+- **D.** Asymmetric — accept silence on the transient branch as intentional; transient state is short-lived enough that the other sub-lines don't apply.
+- **E.** Reuse the unauthorized branch's affordance pattern (`"Contact your..."`) — but the recipient is unclear for transient errors (oncall? platform-team?). Likely poor fit.
+
+UX-preference signal: **A or B is minimum viable**. The S2 region uses the same `contentW >= 40` narrow-suppression gate that FB-140 established at L274 and L285 — the new sub-line MUST use the same gate for consistency.
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** When `m.bucketErr != nil && !m.bucketUnauthorized` and `contentW >= 40`, `stripANSI(welcomePanel().View())` contains the designer-pinned sub-line. Test: render with non-unauthorized error and sufficient width; assert pinned substring present.
+2. **[Observable — narrow suppression]** When `m.bucketErr != nil && !m.bucketUnauthorized` and `contentW < 40`, View() does NOT contain the sub-line. Test: render with narrow width; assert substring absent.
+3. **[Input-changed]** Three error branches (unauthorized, unconfigured, transient) produce three visibly distinct View() outputs at `contentW >= 40` — new sub-line does not collapse the three-way distinction.
+4. **[Anti-regression]** FB-140 AC1–AC4 green unmodified.
+5. **[Anti-regression]** FB-139 AC1–AC3 green unmodified.
+6. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-140 ACCEPTED. No new HelpOverlay or key-handler changes required.
+
+**Maps to:** FB-140 user-persona P3-1.
+
+**Non-goals:**
+- Not redesigning the S2 Platform health region's layout beyond the new sub-line.
+- Not changing the existing transient error primary copy (L279 first-line text unchanged).
+- Not auditing other "terminal state with no next-step" surfaces elsewhere in the TUI (separate audit brief if pattern recurs — same scope discipline as FB-140).
+- Not wiring a new auto-retry mechanism — `[r]` refresh is the existing operator gesture; sub-line just surfaces it.
