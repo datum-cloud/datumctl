@@ -184,6 +184,7 @@ func (m ResourceTableModel) welcomePanel() string {
 	contentH := max(1, m.tableHeight-4)
 
 	muted := lipgloss.NewStyle().Foreground(styles.Muted)
+	accentBold := lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
 	sep := muted.Render(strings.Repeat("─", max(1, contentW)))
 
 	// Width/height gates (§9 of FB-042 spec).
@@ -228,6 +229,10 @@ func (m ResourceTableModel) welcomePanel() string {
 		// FB-105: all-clear flavor line when no attention items and no activity.
 		if len(m.attentionItems) == 0 && !m.activityLoading && len(m.activityRows) == 0 {
 			regions = append(regions, muted.Render("all clear · no issues detected"))
+			// FB-151: first-session sub-line — visible only before operator has navigated to a type.
+			if m.typeName == "" {
+				regions = append(regions, muted.Render("→  press ")+accentBold.Render("[?]")+muted.Render(" to see available commands"))
+			}
 		}
 		if qj := m.renderQuickJumpSection(contentW); qj != "" {
 			regions = append(regions, "", qj)
@@ -308,7 +313,7 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 	// Build status line (right-aligned).
 	var statusLine string
 	if summary.ConstrainedTypes == 0 {
-		statusLine = success.Render("✓ All clear")
+		statusLine = success.Render("✓ quota looks healthy")
 	} else {
 		statusLine = warn.Render(fmt.Sprintf("⚠ %d resource type(s) need attention", summary.ConstrainedTypes))
 	}
@@ -679,7 +684,9 @@ func (m ResourceTableModel) renderHeaderBand(contentW int) string {
 			}
 		}
 	} else if m.tuiCtx.ActiveCtx != nil && m.tuiCtx.ActiveCtx.ProjectID != "" && len(m.registrations) == 0 {
-		line3 = muted.Render("→  select a resource type from the sidebar to get started")
+		line3 = muted.Render("→  select a resource type from the sidebar, or press ") +
+			accentBold.Render("[?]") +
+			muted.Render(" for help")
 	}
 
 	switch {

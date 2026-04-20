@@ -1186,8 +1186,8 @@ func TestFB042_HealthSummary_AllClear(t *testing.T) {
 	})
 
 	got := stripANSI(m.View())
-	if !strings.Contains(got, "All clear") {
-		t.Errorf("AC1 happy: want 'All clear' when all buckets <80%%, got: %q", got)
+	if !strings.Contains(got, "quota looks healthy") {
+		t.Errorf("AC1 happy: want 'quota looks healthy' when all buckets <80%% (FB-152 copy), got: %q", got)
 	}
 }
 
@@ -2773,11 +2773,11 @@ func TestFB116_AC2_Observable_CorrectDirectivePresent(t *testing.T) {
 	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
 
 	got := stripANSI(m.View())
-	if !strings.Contains(got, "to get started") {
-		t.Errorf("AC2 [Observable]: 'to get started' absent from View() when hint fires:\n%s", got)
+	if !strings.Contains(got, "[?]") {
+		t.Errorf("AC2 [Observable]: '[?]' absent from View() when hint fires (FB-151 copy):\n%s", got)
 	}
-	if !strings.Contains(got, "select a resource type from the sidebar to get started") {
-		t.Errorf("AC2 [Observable]: full new directive absent from View():\n%s", got)
+	if !strings.Contains(got, "select a resource type from the sidebar, or press [?] for help") {
+		t.Errorf("AC2 [Observable]: full new directive absent from View() (FB-151 copy):\n%s", got)
 	}
 }
 
@@ -2790,9 +2790,9 @@ func TestFB116_AC3_InputChanged_NewCopyDiffersFromOld(t *testing.T) {
 
 	got := stripANSI(m.View())
 
-	// New copy present — FB-116: anchor updated per spec §4
-	if !strings.Contains(got, "to get started") {
-		t.Errorf("AC3 [Input-changed]: new copy 'to get started' absent:\n%s", got)
+	// New copy present — FB-151: anchor updated with [?] hint
+	if !strings.Contains(got, "[?]") {
+		t.Errorf("AC3 [Input-changed]: new copy '[?]' absent (FB-151 update):\n%s", got)
 	}
 	// Old false clause absent
 	if strings.Contains(got, "quick-jump key below") {
@@ -2812,8 +2812,8 @@ func TestFB116_AC4_AntiRegression_FB105_AnchorUpdated(t *testing.T) {
 	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
 
 	got := stripANSI(m.View())
-	if !strings.Contains(got, "select a resource type from the sidebar to get started") {
-		t.Errorf("AC4 [Anti-regression FB-105]: hint absent after FB-116 copy update:\n%s", got)
+	if !strings.Contains(got, "select a resource type from the sidebar, or press [?] for help") {
+		t.Errorf("AC4 [Anti-regression FB-105]: hint absent after FB-151 copy update:\n%s", got)
 	}
 }
 
@@ -2826,7 +2826,7 @@ func TestFB116_AC5_AntiRegression_ForceDashboardSuppression(t *testing.T) {
 	m.SetForceDashboard(true)
 
 	got := stripANSI(m.View())
-	if strings.Contains(got, "to get started") {
+	if strings.Contains(got, "for help") {
 		t.Errorf("AC5 [Anti-regression FB-054]: orientation hint present when forceDashboard=true:\n%s", got)
 	}
 }
@@ -2838,7 +2838,7 @@ func TestFB116_AC6_AntiRegression_OrgScopeSuppression(t *testing.T) {
 	m.SetTUIContext(testCtx("alice", "acme", "", false))
 
 	got := stripANSI(m.View())
-	if strings.Contains(got, "to get started") {
+	if strings.Contains(got, "for help") {
 		t.Errorf("AC6 [Anti-regression]: orientation hint present in org-scope context (no ProjectID):\n%s", got)
 	}
 }
@@ -3315,3 +3315,162 @@ func TestFB130_AC5_AntiRegression_ErrorState_SpinnerFires(t *testing.T) {
 }
 
 // ==================== End FB-130 ====================
+
+// ==================== FB-152: S2 platform-health personality copy ====================
+//
+// AC1 | Observable (healthy copy present)    | TestFB152_AC1_Observable_QuotaLooksHealthy
+// AC2 | Anti-regression (old copy absent)    | TestFB152_AC2_AntiRegression_AllClearAbsent
+// AC3 | Input-changed (healthy→degraded)     | TestFB152_AC3_InputChanged_HealthyToDegraded
+// AC4 | Anti-regression (Platform health hdr)| TestFB152_AC4_AntiRegression_PlatformHealthHeader
+// AC5–AC7 | Anti-regression (existing tests green — full suite run)
+
+// newHealthyWelcomeModel returns a wide (w=100, h=30) welcome model with two
+// under-80% buckets so ConstrainedTypes==0 (healthy state).
+func newHealthyWelcomeModel() ResourceTableModel {
+	m := newWelcomeModel(100, 30) // contentW=96 ≥ 50, contentH=26 ≥ 18
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "web", "proj-abc"))
+	m.SetBuckets([]data.AllowanceBucket{
+		{ConsumerKind: "Project", ConsumerName: "proj-abc", ResourceType: "apps/deployments", Limit: 10, Allocated: 5},
+		{ConsumerKind: "Project", ConsumerName: "proj-abc", ResourceType: "core/pods", Limit: 100, Allocated: 30},
+	})
+	return m
+}
+
+// AC1 [Observable] — healthy state shows "quota looks healthy".
+func TestFB152_AC1_Observable_QuotaLooksHealthy(t *testing.T) {
+	t.Parallel()
+	m := newHealthyWelcomeModel()
+	got := stripANSI(m.renderPlatformHealthSection(80, false, false))
+	if !strings.Contains(got, "quota looks healthy") {
+		t.Errorf("AC1: 'quota looks healthy' missing from renderPlatformHealthSection in healthy state:\n%s", got)
+	}
+}
+
+// AC2 [Anti-regression] — old "✓ All clear" absent in healthy state.
+func TestFB152_AC2_AntiRegression_AllClearAbsent(t *testing.T) {
+	t.Parallel()
+	m := newHealthyWelcomeModel()
+	got := stripANSI(m.renderPlatformHealthSection(80, false, false))
+	if strings.Contains(got, "All clear") {
+		t.Errorf("AC2: old copy '✓ All clear' still present in healthy state; want absent:\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — healthy (ConstrainedTypes=0) vs degraded (ConstrainedTypes≥1).
+func TestFB152_AC3_InputChanged_HealthyToDegraded(t *testing.T) {
+	t.Parallel()
+	m := newHealthyWelcomeModel()
+	stateA := stripANSI(m.renderPlatformHealthSection(80, false, false))
+	if !strings.Contains(stateA, "quota looks healthy") {
+		t.Fatalf("AC3 state A precondition: 'quota looks healthy' missing:\n%s", stateA)
+	}
+	if strings.Contains(stateA, "need attention") {
+		t.Fatalf("AC3 state A: 'need attention' present in healthy state:\n%s", stateA)
+	}
+
+	// State B: one bucket at ≥80% → ConstrainedTypes=1.
+	m.SetBuckets([]data.AllowanceBucket{
+		{ConsumerKind: "Project", ConsumerName: "proj-abc", ResourceType: "apps/deployments", Limit: 10, Allocated: 9},
+	})
+	stateB := stripANSI(m.renderPlatformHealthSection(80, false, false))
+	if strings.Contains(stateB, "quota looks healthy") {
+		t.Errorf("AC3 state B: 'quota looks healthy' present when ConstrainedTypes≥1:\n%s", stateB)
+	}
+	if !strings.Contains(stateB, "need attention") {
+		t.Errorf("AC3 state B: 'need attention' absent when ConstrainedTypes≥1:\n%s", stateB)
+	}
+	if stateA == stateB {
+		t.Error("AC3 [Input-changed]: View() identical between healthy and degraded states")
+	}
+}
+
+// AC4 [Anti-regression] — "Platform health" header preserved in healthy state.
+func TestFB152_AC4_AntiRegression_PlatformHealthHeader(t *testing.T) {
+	t.Parallel()
+	m := newHealthyWelcomeModel()
+	got := stripANSI(m.renderPlatformHealthSection(80, false, false))
+	if !strings.Contains(got, "Platform health") {
+		t.Errorf("AC4: 'Platform health' header missing from healthy state:\n%s", got)
+	}
+}
+
+// ==================== End FB-152 ====================
+
+// ==================== FB-151: First-session vs returning-operator detection ====================
+//
+// AC1 | Observable (S1 first-session)        | TestFB151_AC1_Observable_S1FirstSessionHint
+// AC2 | Observable (S4 sub-line)             | TestFB151_AC2_Observable_S4FirstSessionSubLine
+// AC3 | Input-changed (typeName="" vs set)   | TestFB151_AC3_InputChanged_ReturningHidesSubLine
+// AC4 | Anti-regression (FB-105 anchor)      | TestFB151_AC4_AntiRegression_SelectSubstring
+
+// TestFB151_AC1_Observable_S1FirstSessionHint asserts that with typeName="" the
+// S1 hint contains "[?]" and "for help".
+func TestFB151_AC1_Observable_S1FirstSessionHint(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	// typeName is "" by default — first-session state.
+
+	got := stripANSI(m.renderHeaderBand(80))
+	if !strings.Contains(got, "select a resource type") {
+		t.Errorf("AC1: 'select a resource type' missing from renderHeaderBand:\n%s", got)
+	}
+	if !strings.Contains(got, "[?]") {
+		t.Errorf("AC1: '[?]' missing from renderHeaderBand in first-session state:\n%s", got)
+	}
+}
+
+// TestFB151_AC2_Observable_S4FirstSessionSubLine asserts the first-session sub-line
+// renders in S4 when typeName="" and S4 is active.
+func TestFB151_AC2_Observable_S4FirstSessionSubLine(t *testing.T) {
+	t.Parallel()
+	// contentW=50, contentH=18 — just at S4 threshold.
+	m := newWelcomeModel(54, 22)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	// typeName="" by default; attentionItems nil, activityLoading=false, activityRows=nil.
+
+	got := stripANSI(m.welcomePanel())
+	if !strings.Contains(got, "press [?] to see available commands") {
+		t.Errorf("AC2: S4 sub-line 'press [?] to see available commands' missing in first-session:\n%s", got)
+	}
+}
+
+// TestFB151_AC3_InputChanged_ReturningHidesSubLine asserts the sub-line is absent
+// when typeName is non-empty (returning-operator state).
+func TestFB151_AC3_InputChanged_ReturningHidesSubLine(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(54, 22)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+
+	// State A: first-session (typeName="").
+	stateA := stripANSI(m.welcomePanel())
+	if !strings.Contains(stateA, "press [?] to see available commands") {
+		t.Fatalf("AC3 state A precondition: sub-line missing in first-session state:\n%s", stateA)
+	}
+
+	// State B: returning operator — typeName set, forceDashboard keeps welcome active.
+	m.SetTypeContext("projects", true)
+	m.SetForceDashboard(true)
+	stateB := stripANSI(m.welcomePanel())
+	if strings.Contains(stateB, "press [?] to see available commands") {
+		t.Errorf("AC3 state B: sub-line present when typeName='projects'; want absent:\n%s", stateB)
+	}
+	if stateA == stateB {
+		t.Error("AC3 [Input-changed]: welcomePanel() output identical between first-session and returning; want distinct")
+	}
+}
+
+// TestFB151_AC4_AntiRegression_SelectSubstring asserts the "select a resource type"
+// anchor from FB-105 is still present in the new copy.
+func TestFB151_AC4_AntiRegression_SelectSubstring(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+
+	got := stripANSI(m.renderHeaderBand(80))
+	if !strings.Contains(got, "select a resource type") {
+		t.Errorf("AC4: FB-105 anchor 'select a resource type' missing after FB-151 copy update:\n%s", got)
+	}
+}
+
+// ==================== End FB-151 ====================

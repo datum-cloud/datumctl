@@ -6293,7 +6293,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 
 ### FB-151 — First-session vs returning-operator detection on welcome surface
 
-**Status: PENDING TEST-ENGINEER** — spec delivered by ux-designer 2026-04-20 at `docs/tui-ux-specs/fb-151-first-session-returning-operator.md`. Option D chosen (runtime `m.typeName` heuristic). Routed test-engineer-first for coordinated FB-105 AC-update scan before engineer impl.
+**Status: ACCEPTED 2026-04-20** — engineer delivered 2026-04-20. Two render-site changes in `resourcetable.go`: S1 line3 appends `[?]` help hint (`renderHeaderBand`); S4 sub-line `"→  press [?] to see available commands"` gated on `m.typeName == ""` (`welcomePanel`). 4/4 TestFB151_* PASS. Coordinated FB-116 test updates (AC2–AC6) handled without scope creep. FB-105 S4 `"all clear"` anchor preserved intact. Spec: `docs/tui-ux-specs/fb-151-first-session-returning-operator.md`.
 
 **Priority: P2** — welcome surface reads identically to a first-time operator and a returning operator on their hundredth launch. First-timers get under-explained; returning operators get over-oriented. Two audiences, one copy.
 
@@ -6359,7 +6359,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 
 ### FB-152 — S2 platform-health section personality copy
 
-**Status: PENDING TEST-ENGINEER** — spec delivered by ux-designer 2026-04-20 at `docs/tui-ux-specs/fb-152-s2-platform-health-personality.md`. Option C chosen (inline status-line replace; `"✓ All clear"` → `"✓ quota looks healthy"`). Routed test-engineer-first for coordinated FB-042 AC-update scan before engineer impl.
+**Status: ACCEPTED 2026-04-20** — engineer delivered 2026-04-20. Single string change in `resourcetable.go:311` (`renderPlatformHealthSection`): `"✓ All clear"` → `"✓ quota looks healthy"` in healthy path (ConstrainedTypes==0, contentW≥50). 4/4 TestFB152_* PASS. Coordinated FB-042 update to `TestFB042_HealthSummary_AllClear` handled surgically. S4's `"all clear · no issues detected"` (distinct string) preserved intact. Spec: `docs/tui-ux-specs/fb-152-s2-platform-health-personality.md`.
 
 **Priority: P2** — S2 "Platform health" section is flat-utilitarian. Healthy state shows bucket rows with no warmth; mixed/degraded state shows raw quota ratios. The section reads as an admin status board, not a welcome surface. FB-105 intentionally deferred S2 personality ("touches S2 which has complex quota render paths; defer to follow-up") — this brief picks up that work.
 
