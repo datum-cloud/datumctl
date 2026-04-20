@@ -37,10 +37,10 @@ func (m HelpOverlayModel) View() string {
 		row.Render("[Esc]  back / home"),
 	}
 	if m.ShowConditionsHint {
-		actionLines = append(actionLines, row.Render("[C]  conditions")) // AC#22
+		actionLines = append(actionLines, row.Render("[C]    conditions")) // AC#22
 	}
 	if m.ShowEventsHint { // AC#26
-		actionLines = append(actionLines, row.Render("[E]  events"))
+		actionLines = append(actionLines, row.Render("[E]    events"))
 	}
 	if m.ShowDeleteHint {
 		actionLines = append(actionLines, row.Render("[x]    delete resource"))

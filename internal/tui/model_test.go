@@ -6634,8 +6634,8 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 			t.Fatalf("AC#22 setup: expected HelpOverlayID, got %v", appM.overlay)
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if !strings.Contains(view, "[C]  conditions") {
-			t.Errorf("AC#22 DetailPane: '[C]  conditions' hint missing:\n%s", view)
+		if !strings.Contains(view, "[C]    conditions") {
+			t.Errorf("AC#22 DetailPane: '[C]    conditions' hint missing:\n%s", view)
 		}
 		if !strings.Contains(view, "conditions") {
 			t.Errorf("AC#22 DetailPane: 'conditions' text missing:\n%s", view)
@@ -6651,8 +6651,8 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 			t.Fatalf("AC#22 TablePane setup: expected HelpOverlayID, got %v", appM.overlay)
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "[C]  conditions") {
-			t.Errorf("AC#22 TablePane: '[C]  conditions' must be absent (pane-local to DetailPane only):\n%s", view)
+		if strings.Contains(view, "[C]    conditions") {
+			t.Errorf("AC#22 TablePane: '[C]    conditions' must be absent (pane-local to DetailPane only):\n%s", view)
 		}
 	})
 
@@ -6665,8 +6665,8 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 			t.Fatalf("AC#22 NavPane setup: expected HelpOverlayID, got %v", appM.overlay)
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "[C]  conditions") {
-			t.Errorf("AC#22 NavPane: '[C]  conditions' must be absent:\n%s", view)
+		if strings.Contains(view, "[C]    conditions") {
+			t.Errorf("AC#22 NavPane: '[C]    conditions' must be absent:\n%s", view)
 		}
 	})
 }
@@ -7427,8 +7427,8 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 			t.Error("AC#26 DetailPane: ShowEventsHint = false, want true")
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if !strings.Contains(view, "[E]  events") {
-			t.Errorf("AC#26 DetailPane: '[E]  events' hint missing:\n%s", view)
+		if !strings.Contains(view, "[E]    events") {
+			t.Errorf("AC#26 DetailPane: '[E]    events' hint missing:\n%s", view)
 		}
 		if !strings.Contains(view, "events") {
 			t.Errorf("AC#26 DetailPane: 'events' text missing:\n%s", view)
@@ -7447,8 +7447,8 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 			t.Error("AC#26 TablePane: ShowEventsHint = true, want false (pane-local to DetailPane)")
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "[E]  events") {
-			t.Errorf("AC#26 TablePane: '[E]  events' must be absent:\n%s", view)
+		if strings.Contains(view, "[E]    events") {
+			t.Errorf("AC#26 TablePane: '[E]    events' must be absent:\n%s", view)
 		}
 	})
 
@@ -7464,8 +7464,8 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 			t.Error("AC#26 NavPane: ShowEventsHint = true, want false")
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "[E]  events") {
-			t.Errorf("AC#26 NavPane: '[E]  events' must be absent:\n%s", view)
+		if strings.Contains(view, "[E]    events") {
+			t.Errorf("AC#26 NavPane: '[E]    events' must be absent:\n%s", view)
 		}
 	})
 }
@@ -14561,11 +14561,11 @@ func TestFB026_AC2_HelpOverlay_CanonicalFormat(t *testing.T) {
 
 	view := stripANSIModel(appM.helpOverlay.View())
 
-	if !strings.Contains(view, "[C]  conditions") {
-		t.Errorf("AC2 [Observable FB-026]: View() missing \"[C]  conditions\".\nView:\n%s", view)
+	if !strings.Contains(view, "[C]    conditions") {
+		t.Errorf("AC2 [Observable FB-026]: View() missing \"[C]    conditions\".\nView:\n%s", view)
 	}
-	if !strings.Contains(view, "[E]  events") {
-		t.Errorf("AC2 [Observable FB-026]: View() missing \"[E]  events\".\nView:\n%s", view)
+	if !strings.Contains(view, "[E]    events") {
+		t.Errorf("AC2 [Observable FB-026]: View() missing \"[E]    events\".\nView:\n%s", view)
 	}
 	if strings.Contains(view, "Shift+C") {
 		t.Errorf("AC2 [Observable FB-026]: View() still contains \"Shift+C\"; want absent.\nView:\n%s", view)
@@ -14626,8 +14626,8 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
-		if !strings.Contains(view, "[C]  conditions") {
-			t.Errorf("AC5 [Anti-regression FB-026]: '[C]  conditions' absent in DetailPane HelpOverlay.\nView:\n%s", view)
+		if !strings.Contains(view, "[C]    conditions") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[C]    conditions' absent in DetailPane HelpOverlay.\nView:\n%s", view)
 		}
 	})
 
@@ -14637,8 +14637,8 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "[C]  conditions") {
-			t.Errorf("AC5 [Anti-regression FB-026]: '[C]  conditions' present in TablePane HelpOverlay; want absent.\nView:\n%s", view)
+		if strings.Contains(view, "[C]    conditions") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[C]    conditions' present in TablePane HelpOverlay; want absent.\nView:\n%s", view)
 		}
 	})
 
@@ -14648,8 +14648,8 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
-		if !strings.Contains(view, "[E]  events") {
-			t.Errorf("AC5 [Anti-regression FB-026]: '[E]  events' absent in DetailPane HelpOverlay.\nView:\n%s", view)
+		if !strings.Contains(view, "[E]    events") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[E]    events' absent in DetailPane HelpOverlay.\nView:\n%s", view)
 		}
 	})
 
@@ -14659,8 +14659,8 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "[E]  events") {
-			t.Errorf("AC5 [Anti-regression FB-026]: '[E]  events' present in TablePane HelpOverlay; want absent.\nView:\n%s", view)
+		if strings.Contains(view, "[E]    events") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[E]    events' present in TablePane HelpOverlay; want absent.\nView:\n%s", view)
 		}
 	})
 }

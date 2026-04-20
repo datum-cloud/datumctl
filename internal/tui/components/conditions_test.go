@@ -416,8 +416,8 @@ func TestHelpOverlayModel_ShowConditionsHint_Renders(t *testing.T) {
 		m.Width = 120
 		m.Height = 40
 		got := stripANSI(m.View())
-		if !strings.Contains(got, "[C]  conditions") {
-			t.Errorf("ShowConditionsHint=true: want '[C]  conditions' in View(), got:\n%s", got)
+		if !strings.Contains(got, "[C]    conditions") {
+			t.Errorf("ShowConditionsHint=true: want '[C]    conditions' in View(), got:\n%s", got)
 		}
 		if !strings.Contains(got, "conditions") {
 			t.Errorf("ShowConditionsHint=true: want 'conditions' in View(), got:\n%s", got)
@@ -431,8 +431,8 @@ func TestHelpOverlayModel_ShowConditionsHint_Renders(t *testing.T) {
 		m.Width = 120
 		m.Height = 40
 		got := stripANSI(m.View())
-		if strings.Contains(got, "[C]  conditions") {
-			t.Errorf("ShowConditionsHint=false: '[C]  conditions' must not appear in View(), got:\n%s", got)
+		if strings.Contains(got, "[C]    conditions") {
+			t.Errorf("ShowConditionsHint=false: '[C]    conditions' must not appear in View(), got:\n%s", got)
 		}
 	})
 }
