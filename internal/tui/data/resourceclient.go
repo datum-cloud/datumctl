@@ -533,18 +533,18 @@ func (k *KubeResourceClient) DeleteResource(ctx context.Context, rt ResourceType
 	return dc.Resource(gvr).Delete(ctx, name, opts)
 }
 
-// ListEvents fetches core/v1 Events with involvedObject field selectors for the given resource. // AC#27
+// ListEvents fetches events.k8s.io/v1 Events with regarding field selectors for the given resource. // AC#27
 func (k *KubeResourceClient) ListEvents(ctx context.Context, involvedObjectKind, involvedObjectName, involvedObjectNamespace string) ([]EventRow, error) {
 	dc, err := k.dynamicClient()
 	if err != nil {
 		return nil, fmt.Errorf("dynamic client: %w", err)
 	}
 
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
+	gvr := schema.GroupVersionResource{Group: "events.k8s.io", Version: "v1", Resource: "events"}
 
-	fieldSelector := "involvedObject.name=" + involvedObjectName
+	fieldSelector := "regarding.name=" + involvedObjectName
 	if involvedObjectNamespace != "" {
-		fieldSelector += ",involvedObject.namespace=" + involvedObjectNamespace
+		fieldSelector += ",regarding.namespace=" + involvedObjectNamespace
 	}
 
 	var list *unstructured.UnstructuredList
@@ -570,10 +570,17 @@ func parseEventRowFromUnstructured(item unstructured.Unstructured) EventRow {
 
 	r.Type, _ = raw["type"].(string)
 	r.Reason, _ = raw["reason"].(string)
-	r.Message, _ = raw["message"].(string)
+	// events.k8s.io/v1 uses "note" instead of core/v1's "message"
+	r.Message, _ = raw["note"].(string)
 
-	if count, ok := raw["count"]; ok {
-		switch v := count.(type) {
+	// count lives inside series in events.k8s.io/v1
+	if series, ok := raw["series"].(map[string]any); ok {
+		if ts, ok2 := series["lastObservedTime"].(string); ok2 && ts != "" {
+			if t, err := time.Parse(time.RFC3339, ts); err == nil {
+				r.LastTimestamp = t
+			}
+		}
+		switch v := series["count"].(type) {
 		case int64:
 			r.Count = int32(v)
 		case float64:
@@ -583,25 +590,9 @@ func parseEventRowFromUnstructured(item unstructured.Unstructured) EventRow {
 		}
 	}
 
-	if ts, ok := raw["lastTimestamp"].(string); ok && ts != "" {
-		if t, err := time.Parse(time.RFC3339, ts); err == nil {
-			r.LastTimestamp = t
-		}
-	}
-
-	if series, ok := raw["series"].(map[string]any); ok {
-		if ts, ok2 := series["lastObservedTime"].(string); ok2 && ts != "" {
-			if t, err := time.Parse(time.RFC3339, ts); err == nil {
-				if r.LastTimestamp.IsZero() {
-					r.LastTimestamp = t
-				}
-			}
-		}
-	}
-
-	meta, _ := raw["metadata"].(map[string]any)
-	if ts := stringField(meta, "creationTimestamp"); ts != "" && r.LastTimestamp.IsZero() {
-		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+	// eventTime is the primary timestamp in events.k8s.io/v1
+	if ts, ok := raw["eventTime"].(string); ok && ts != "" {
+		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
 			r.EventTime = t
 		}
 	}
