@@ -920,7 +920,7 @@ Axis tags: `[Observable]`, `[Repeat-press]`, `[Anti-behavior]`, `[Integration]`.
 
 ### FB-039 — DetailPane placeholder copy + title-bar mode coherence for describe-unavailable state
 
-**Status: ACCEPTED 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-039-detail-placeholder-coherence.md` (option B2 — keep mode label, update body copy; selected because FB-051's `"describe [unavailable]"` label already partially resolves the bare-`describe` vs `Describe unavailable` contradiction — B2 closes the remaining gap with action-directive body). Engineer-direct classification (pinned copy, single render-site at `model.go:2128`, 6 ACs, no state-machine change). Engineer implemented three-segment render `muted("Describe unavailable. Press ") + accentBold("[E]") + muted(" to view loaded events.")` — parity with `placeholderActionRow`'s `eKey` styling. `TestFB024_ToggleOut_DescribeNil_EventsLoaded_ShowsPlaceholder` substring assertion updated from the old em-dash copy to `"Press [E]"` (regression coverage preserved). 3 new FB-039 tests at `model_test.go` end (AC1 Observable `"Press [E]"` in `buildDetailContent()`, AC2 Anti-regression `"only events loaded"` absent, AC3 Observable mode-label + body coexistence in `detail.View()`). `go install ./...` clean; `go test ./internal/tui/... -count=1` green (3/3 FB-039 tests PASS; full FB-024 suite green). Commit `6b219b9` on `feat/console`. Filed 2026-04-19 from user-persona FB-024 follow-up (P3-1 + P3-2 bundled: same thesis — when describe is unavailable, the DetailPane body and title-bar header should tell a single coherent story, and the body should be action-directive rather than state-descriptive).
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — user-persona delivered strong positive + 1 P3 (filed as **FB-150** — extreme-narrow-width wrap orphans `[E]` from `Press` below ~28 cols content area; designer chooses reorder / accept-as-artifact / width-gate / recopy). Positive findings: first-encounter discoverability meaningfully improved; `[E]` accent-bold pulls eye correctly; "loaded events" qualifier is honest (does not over-promise a fresh fetch); header/body pairing works as complementary registers (navigation-register vs comprehension-register); prose + action-row redundancy is additive (first-encounter vs return-encounter). Prior Status: ACCEPTED 2026-04-20 — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-039-detail-placeholder-coherence.md` (option B2 — keep mode label, update body copy; selected because FB-051's `"describe [unavailable]"` label already partially resolves the bare-`describe` vs `Describe unavailable` contradiction — B2 closes the remaining gap with action-directive body). Engineer-direct classification (pinned copy, single render-site at `model.go:2128`, 6 ACs, no state-machine change). Engineer implemented three-segment render `muted("Describe unavailable. Press ") + accentBold("[E]") + muted(" to view loaded events.")` — parity with `placeholderActionRow`'s `eKey` styling. `TestFB024_ToggleOut_DescribeNil_EventsLoaded_ShowsPlaceholder` substring assertion updated from the old em-dash copy to `"Press [E]"` (regression coverage preserved). 3 new FB-039 tests at `model_test.go` end (AC1 Observable `"Press [E]"` in `buildDetailContent()`, AC2 Anti-regression `"only events loaded"` absent, AC3 Observable mode-label + body coexistence in `detail.View()`). `go install ./...` clean; `go test ./internal/tui/... -count=1` green (3/3 FB-039 tests PASS; full FB-024 suite green). Commit `6b219b9` on `feat/console`. Filed 2026-04-19 from user-persona FB-024 follow-up (P3-1 + P3-2 bundled: same thesis — when describe is unavailable, the DetailPane body and title-bar header should tell a single coherent story, and the body should be action-directive rather than state-descriptive).
 
 **Priority: P3** (polish after the structural FB-037/FB-038 fixes; operator isn't blocked but reads the surface as incoherent)
 
@@ -6237,3 +6237,55 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 - Not redesigning the overall narrow-mode title-bar layout.
 - Not changing the status-bar error surface.
 - Not changing the `>= 2` gate threshold value.
+
+---
+
+### FB-150 — FB-039 placeholder body wrap orphans `[E]` from `Press` at extreme narrow widths
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-039 user-persona P3.
+
+**Priority: P3** — requires content width below ~28 columns AND the describe-unavailable placeholder state AND events-loaded precondition. Edge-case in practice, but when the break point lands between `Press` and `[E]` the grammar disrupts the directive — the orphaned imperative `Press` without its key object is costlier than a mid-word wrap would be.
+
+#### User problem
+
+FB-039 shipped the action-directive body copy at `model.go:2128`:
+
+```
+muted("Describe unavailable. Press ") + accentBold("[E]") + muted(" to view loaded events.")
+```
+
+Rendered ANSI-stripped is 54 chars. The viewport wraps naturally at content width. Persona eval:
+
+> *"At content widths below ~28 columns — where the line breaks after 'Press' — the result is `Describe unavailable. Press\n[E] to view loaded events.` The grammatical connective `Press … [E]` is disrupted. `[E]` still renders on the next line and is still comprehensible, but a cold operator may parse it as two unrelated lines ('Press [something]' + '[E] to view loaded events') rather than one directive. This requires a genuinely extreme pane width (below 28 cols of content area), so it's edge-case in practice. No width gate was shipped intentionally, which I'm not re-litigating — the observation is that at this particular split the grammar break has a higher cost than a mid-word break would, because `Press` without an object looks like an orphaned imperative. Filed for awareness; could be addressed by reordering to `Press [E] — view loaded events` so the key is never orphaned from its verb regardless of wrap point."*
+
+Reproducible state: DetailPane at content width ≤ 27 cols, describe-less resource with events loaded in memory, not in `yamlMode`/`conditionsMode`/`eventsMode`. The wrapping responsibility lives inside the viewport; FB-039 did not add a width gate (confirmed in §6 of its spec, "no width gate applies to this line").
+
+#### Proposed interaction — ux-designer picks
+
+- **A. Reorder so `[E]` follows `Press` at a no-break position.** E.g., `Press [E] — view loaded events` or `Press [E] to view loaded events.` (current structure, just restructured to keep `[E]` adjacent on both sides, allowing a later break at `— view` instead of between `Press` and `[E]`). The non-break connective would need a non-breaking construction — either a literal `\u00A0` before `[E]`, or reworking the sentence so the `[E]` sits before the verb, so the wrap preference lands elsewhere. Investigate whether lipgloss/viewport respects `\u00A0`; if not, option A collapses into C.
+- **B. Accept the wrap-break as a rendering artifact.** Document in FB-039 non-goals addendum; rely on the `placeholderActionRow` below (which renders `[E] events` as a separate scannable line) to cover the directive discoverability gap at extreme narrow widths. No copy change.
+- **C. Introduce a minimum-width gate.** Below ~28 cols, render a truncated form like `Press [E] for events.` (24 chars) that fits on one line even at very narrow widths. Introduces a new gate in a previously gate-free render site; matches `placeholderActionRow`'s `contentW < 40` precedent structurally but adds a lower threshold.
+- **D. Designer-ratified recopy.** Any rephrasing that keeps the `[E]` inside the verb's immediate clause and robust to arbitrary wrap points. Example from persona: `Press [E] — view loaded events.` (the em-dash shifts the clausal break so `Press [E]` is treated as an atomic unit).
+
+Designer coordinates with FB-039's existing three-segment render (must preserve `accentBold("[E]")`; changing that would regress FB-039 AC2/AC3).
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
+
+1. **[Observable — narrow width, wrap preserves directive atomicity]** At content width = 25, `stripANSI(buildDetailContent())` rendered through the viewport wrap does NOT contain the substring `"Press\n"` or `"Press "` immediately followed by a newline. Test: construct AppModel in placeholder state, set content width to 25, render, split by `"\n"`, assert no line ends with `"Press"` alone.
+2. **[Anti-regression — FB-039 AC1 preserved]** At any width, `stripANSI(buildDetailContent())` still contains `"Press [E]"` OR the designer-ratified successor (e.g., `"Press [E] —"`) as an atomic substring. Test: existing `TestFB039_AC1_Observable_PressEPresentInBody` still passes OR is updated to the successor with test-engineer review.
+3. **[Anti-regression — FB-039 AC2 preserved]** `stripANSI(buildDetailContent())` does NOT contain the old `"only events loaded"` phrase. Test: existing `TestFB039_AC2_AntiRegression_OldCopyAbsent` unchanged.
+4. **[Anti-regression — FB-039 AC3 preserved]** `stripANSI(detail.View())` contains both `"describe [unavailable]"` (FB-051 mode label) AND the directive substring (original `"Press [E]"` or successor). Test: `TestFB039_AC3_Observable_HeaderAndBodyCoexist` unchanged or updated for successor copy.
+5. **[Anti-regression — `[E]` accent-bold preserved]** Designer's rephrase continues to render `[E]` via `accentBold`. Test: the rendered string contains the accentBold ANSI sequence wrapping `[E]`.
+6. **[Integration]** `go install ./...` compiles; `go test ./internal/tui/...` green.
+
+**Dependencies:** FB-039 ACCEPTED.
+
+**Non-goals:**
+
+- Not introducing a width gate for the second sentence fragment (`to view loaded events.`) — that can wrap at any point without grammar cost.
+- Not changing `placeholderActionRow` or its `contentW < 40` threshold.
+- Not changing `detailModeLabel()` (FB-051 stays intact).
+- Not coordinating with FB-026 `[Shift+E]` vs `[E]` notation — unrelated.
+
