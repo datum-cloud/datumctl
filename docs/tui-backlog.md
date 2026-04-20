@@ -6293,7 +6293,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 
 ### FB-151 — First-session vs returning-operator detection on welcome surface
 
-**Status: ACCEPTED 2026-04-20** — engineer delivered 2026-04-20. Two render-site changes in `resourcetable.go`: S1 line3 appends `[?]` help hint (`renderHeaderBand`); S4 sub-line `"→  press [?] to see available commands"` gated on `m.typeName == ""` (`welcomePanel`). 4/4 TestFB151_* PASS. Coordinated FB-116 test updates (AC2–AC6) handled without scope creep. FB-105 S4 `"all clear"` anchor preserved intact. Spec: `docs/tui-ux-specs/fb-151-first-session-returning-operator.md`.
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — engineer delivered 2026-04-20. Two render-site changes in `resourcetable.go`: S1 line3 appends `[?]` help hint (`renderHeaderBand`); S4 sub-line `"→  press [?] to see available commands"` gated on `m.typeName == ""` (`welcomePanel`). 4/4 TestFB151_* PASS. Coordinated FB-116 test updates (AC2–AC6) handled without scope creep. FB-105 S4 `"all clear"` anchor preserved intact. Spec: `docs/tui-ux-specs/fb-151-first-session-returning-operator.md`. **Persona eval:** strong positive — two `[?]` placements give cold operators a reliable discovery path; `len(m.registrations) == 0` gate degrades gracefully; S4 sub-line disappears seamlessly after navigation. **One P3 finding filed as FB-153** (`[?]` described inconsistently as `"for help"` in S1 vs `"to see available commands"` in S4 on the same screen — copy alignment needed). Commit `ce2f139` on `feat/console`.
 
 **Priority: P2** — welcome surface reads identically to a first-time operator and a returning operator on their hundredth launch. First-timers get under-explained; returning operators get over-oriented. Two audiences, one copy.
 
@@ -6359,7 +6359,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 
 ### FB-152 — S2 platform-health section personality copy
 
-**Status: ACCEPTED 2026-04-20** — engineer delivered 2026-04-20. Single string change in `resourcetable.go:311` (`renderPlatformHealthSection`): `"✓ All clear"` → `"✓ quota looks healthy"` in healthy path (ConstrainedTypes==0, contentW≥50). 4/4 TestFB152_* PASS. Coordinated FB-042 update to `TestFB042_HealthSummary_AllClear` handled surgically. S4's `"all clear · no issues detected"` (distinct string) preserved intact. Spec: `docs/tui-ux-specs/fb-152-s2-platform-health-personality.md`.
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — engineer delivered 2026-04-20. Single string change in `resourcetable.go:311` (`renderPlatformHealthSection`): `"✓ All clear"` → `"✓ quota looks healthy"` in healthy path (ConstrainedTypes==0, contentW≥50). 4/4 TestFB152_* PASS. Coordinated FB-042 update to `TestFB042_HealthSummary_AllClear` handled surgically. S4's `"all clear · no issues detected"` (distinct string) preserved intact. Spec: `docs/tui-ux-specs/fb-152-s2-platform-health-personality.md`. **Persona eval:** strong positive — `"quota looks healthy"` reads as honest-assessment language (Grafana/k8s register); the "looks" qualifier matches the sampled nature of quota data without undermining confidence; S2/S4 vocabulary divergence (`"quota looks healthy"` vs `"all clear · no issues detected"`) successfully signals distinct scopes and reduces the pre-change redundancy. **No new findings filed.** Commit `ce2f139` on `feat/console`.
 
 **Priority: P2** — S2 "Platform health" section is flat-utilitarian. Healthy state shows bucket rows with no warmth; mixed/degraded state shows raw quota ratios. The section reads as an admin status board, not a welcome surface. FB-105 intentionally deferred S2 personality ("touches S2 which has complex quota render paths; defer to follow-up") — this brief picks up that work.
 
@@ -6433,4 +6433,67 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 - Not coordinating with FB-151 first-session detection — paired designer batch, but independent ACs.
 
 **Dependencies:** FB-105 ACCEPTED + PERSONA-EVAL-COMPLETE. Coordinate paired routing with FB-151. Upstream anti-regression targets (FB-140/143/144/145) are PENDING UX-DESIGNER; FB-152 must stay compatible with their designs without depending on them shipping first.
+
+---
+
+### FB-153 — Align `[?]` copy between S1 and S4 first-session lines
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-151+152 persona eval (P3 finding).
+
+**Priority: P3** — same `[?]` key described as `"for help"` in S1 and `"to see available commands"` in S4 simultaneously on the welcome panel. Cold operator reads both lines and has a small doubt: does this key do different things? Not a blocker — pressing `[?]` works either way — but costs the confident first impression.
+
+#### User problem (from persona eval)
+
+At `contentH >= 18 && contentW >= 50` (the `showS4` gate), both first-session lines render together:
+- S1 line3 (`renderHeaderBand`, line 682): `"→  select a resource type from the sidebar, or press [?] for help"`
+- S4 sub-line (`welcomePanel`, line 234): `"→  press [?] to see available commands"`
+
+Same key, two framings. Persona finding: "A cold operator reading both on the same screen has a small but real doubt: does this key do different things, or are these two different ways of describing the same thing?"
+
+#### Design question for ux-designer
+
+**Which single phrasing applies to both sites?**
+
+- **Option A — `"for help"` applied to both** (shortest, matches S1's existing choice; `[?]` handler toggles `HelpOverlayID` so "help" is accurate — verified `model.go:1226`)
+- **Option B — `"for available commands"` applied to both** (persona-suggested variant; more concrete but longer; slight register shift toward command-reference framing)
+- **Option C — Keep distinct scopes but clarify** (e.g., S1 says "for help" since it's orientation; S4 says nothing about `[?]` at all and removes the sub-line redundancy — would also resolve the duplication issue persona flagged)
+- **Option D — Drop S4 sub-line entirely** (`[?]` is already in S1; the S4 sub-line is decorative — removing it eliminates the inconsistency at the cost of one reinforcement site)
+
+#### Render sites
+
+- **S1 line3:** `internal/tui/components/resourcetable.go:682` (`renderHeaderBand()`)
+- **S4 sub-line:** `internal/tui/components/resourcetable.go:234` (`welcomePanel()`)
+
+#### Coordinated test updates
+
+The chosen option must coordinate AC updates in:
+- `TestFB151_AC1_Observable_S1FirstSessionHint` (line 3408)
+- `TestFB151_AC2_Observable_S4FirstSessionSubLine` (line 3425)
+- `TestFB151_AC3_InputChanged_ReturningHidesSubLine` (line 3440)
+- `TestFB116_AC2_Observable_CorrectDirectivePresent` (line 2770) — if S1 copy changes
+- `TestFB116_AC4_AntiRegression_FB105_AnchorUpdated` (line 2809) — if S1 full-string changes
+- `TestFB116_AC5/AC6` (lines 2821, 2835) — anti-behavior assertions on `"for help"`
+
+ux-designer names the option; test-engineer owns the coordinated-update scope scan before engineer impl.
+
+#### Acceptance criteria (skeleton — ux-designer extends)
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable — aligned copy]** With first-session state (`typeName=""`), `stripANSI(m.View())` contains the designer-ratified single phrasing in both S1 line3 AND S4 sub-line positions (or contains it in exactly one position if Option D is chosen).
+2. **[Anti-regression — `[?]` keybind still present]** `"[?]"` substring still present wherever the designer's final copy places it. Test: assert.
+3. **[Anti-regression — FB-105 `"select a resource type"` anchor preserved]** Test: existing FB-105 AC#1 green.
+4. **[Anti-regression — FB-042 S1–S6 ordering preserved]** Test: existing FB-042 tests green.
+5. **[Anti-regression — S4 `"all clear · no issues detected"` preserved]** If Option D chosen, the S4 all-clear flavor line remains; only the sub-line is dropped.
+6. **[Integration]** `go install ./...` + `go test ./internal/tui/...` green.
+
+#### Non-goals
+
+- Not changing the `[?]` keybind handler.
+- Not re-opening FB-105 S4 all-clear flavor line (`"all clear · no issues detected"`) copy.
+- Not changing FB-152 S2 `"quota looks healthy"` copy.
+- Not redesigning the HelpOverlay itself.
+- Not gating on terminal height/width beyond the existing `showS4` thresholds.
+
+**Dependencies:** FB-151 ACCEPTED + PERSONA-EVAL-COMPLETE; FB-152 ACCEPTED + PERSONA-EVAL-COMPLETE. Parked behind FB-023 / FB-020 / FB-117 in the queue per team-lead; route when priority cycles back to polish work.
 
