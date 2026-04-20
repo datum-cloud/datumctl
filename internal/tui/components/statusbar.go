@@ -73,7 +73,7 @@ func (m StatusBarModel) View() string {
 		modeLabel = "NORMAL"
 		switch m.Pane {
 		case "NAV":
-			hints = "[j/k] move  [Enter] select  [c] ctx  [?] help  [q] quit"
+			hints = "[j/k] move  [Enter] select  [r] refresh  [c] ctx  [?] help  [q] quit"
 		case "NAV_DASHBOARD":
 			hints = "[j/k] move  [Enter] select  [c] ctx  [3] quota  [4] activity  [?] help  [q] quit"
 		case "TABLE":
