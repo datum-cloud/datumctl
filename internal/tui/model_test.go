@@ -16253,3 +16253,77 @@ func TestFB140_AC7_AntiRegression_NarrowHealthyPath(t *testing.T) {
 }
 
 // ==================== End FB-140 ====================
+
+// ==================== FB-143: Welcome S2 transient platform-health sub-line ====================
+//
+// Fix: resourcetable.go:279 — transient error branch gets "Refresh to retry." sub-line when contentW>=40.
+// Same contentW>=40 gate as FB-140 unauthorized/unconfigured branches.
+//
+// Axis-coverage:
+// AC  | Axis             | Test
+// ----+------------------+------------------------------------------------------------
+// AC1 | Observable       | TestFB143_AC1_Observable_TransientSubLinePresent
+// AC2 | Observable       | TestFB143_AC2_Observable_Narrow_SubLineSuppressed
+// AC3 | Input-changed    | TestFB143_AC3_InputChanged_ThreeBranchDistinct
+// AC4 | Anti-regression  | (FB-140 suite — AC1/AC2/AC3/AC4 existing tests pass)
+// AC5 | Anti-regression  | (FB-139 suite — AC1/AC2/AC3 existing tests pass)
+// AC6 | Integration      | go install ✓
+
+// TestFB143_AC1_Observable_TransientSubLinePresent: non-unauthorized bucket error, contentW>=40 → sub-line present.
+func TestFB143_AC1_Observable_TransientSubLinePresent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("connection refused"), Unauthorized: false})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.table.View())
+	if !strings.Contains(got, "Refresh to retry.") {
+		t.Errorf("AC1: 'Refresh to retry.' absent from transient error branch at contentW>=40:\n%s", got)
+	}
+}
+
+// TestFB143_AC2_Observable_Narrow_SubLineSuppressed: non-unauthorized error, contentW<40 → sub-line absent.
+func TestFB143_AC2_Observable_Narrow_SubLineSuppressed(t *testing.T) {
+	t.Parallel()
+	m := newNarrowWelcomePanelAppModel(&stubBucketClient{})
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("connection refused"), Unauthorized: false})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.table.View())
+	if strings.Contains(got, "Refresh to retry.") {
+		t.Errorf("AC2: 'Refresh to retry.' present at contentW<40 — should be suppressed:\n%s", got)
+	}
+}
+
+// TestFB143_AC3_InputChanged_ThreeBranchDistinct: unauthorized / transient / unconfigured produce
+// three pairwise-distinct View() outputs at contentW>=40.
+func TestFB143_AC3_InputChanged_ThreeBranchDistinct(t *testing.T) {
+	t.Parallel()
+
+	// Unauthorized.
+	m1 := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	r1, _ := m1.Update(data.BucketsErrorMsg{Err: errors.New("forbidden"), Unauthorized: true})
+	v1 := stripANSIModel(r1.(AppModel).table.View())
+
+	// Transient (non-unauthorized).
+	m2 := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	r2, _ := m2.Update(data.BucketsErrorMsg{Err: errors.New("connection refused"), Unauthorized: false})
+	v2 := stripANSIModel(r2.(AppModel).table.View())
+
+	// Unconfigured (bc==nil).
+	m3 := newWelcomePanelAppModel(nil, nil)
+	m3.refreshLandingInputs()
+	v3 := stripANSIModel(m3.table.View())
+
+	if v1 == v2 {
+		t.Error("AC3: unauthorized and transient produce identical View()")
+	}
+	if v1 == v3 {
+		t.Error("AC3: unauthorized and unconfigured produce identical View()")
+	}
+	if v2 == v3 {
+		t.Error("AC3: transient and unconfigured produce identical View()")
+	}
+}
+
+// ==================== End FB-143 ====================

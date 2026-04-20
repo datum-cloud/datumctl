@@ -276,7 +276,11 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 			}
 			return leftHeader + "\n\n" + line
 		}
-		return leftHeader + "\n\n" + muted.Render("Platform health temporarily unavailable")
+		line := muted.Render("Platform health temporarily unavailable")
+		if contentW >= 40 {
+			line += "\n" + muted.Render("Refresh to retry.")
+		}
+		return leftHeader + "\n\n" + line
 	}
 
 	// FB-074: no bucket client wired — disambiguate from "configured but zero governed types".

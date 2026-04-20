@@ -5934,7 +5934,7 @@ This brief moves to PENDING UX-DESIGNER once condition scanning ships AND first-
 
 ### FB-143 — Welcome S2 transient platform-health error has no sub-line affordance
 
-**Status: PENDING ENGINEER** — spec complete at `docs/tui-ux-specs/fb-143-transient-platform-health-sub-line.md`. Option A (`"Refresh to retry."`) pinned. Routed 2026-04-20 by ux-designer.
+**Status: ACCEPTED — PERSONA-EVAL-PENDING (2026-04-20)** — implementation at `internal/tui/components/resourcetable.go:279-283` adds a single muted sub-line `"Refresh to retry."` below `"Platform health temporarily unavailable"` on the transient (non-unauthorized) error branch. Same `contentW >= 40` narrow-suppression gate as FB-140 L274/L285 — codebase has one consistent narrow-width boundary across all three Platform health sub-line branches and the FB-106 placeholder action row. 3 FB-143 tests cover AC1/AC2 Observable (presence + narrow suppression via `BucketsErrorMsg{Unauthorized: false}`) and AC3 Input-changed (three-branch pairwise distinctness: unauthorized vs transient vs unconfigured). All Observable ACs use `stripANSIModel(appM.table.View())` View-level assertions. Anti-regression: 5 FB-140 tests + 3 FB-139 tests all green; `go install ./...` clean; full TUI suite `-count=1` green. **Original Status: PENDING ENGINEER** — spec complete at `docs/tui-ux-specs/fb-143-transient-platform-health-sub-line.md`. Option A (`"Refresh to retry."`) pinned. Routed 2026-04-20 by ux-designer.
 **Priority: P3** — discoverability/asymmetry gap; persona surfaced after FB-140 ACCEPTED.
 
 #### User problem
