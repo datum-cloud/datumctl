@@ -90,3 +90,27 @@ func TestFB114_AC4_AntiRegression_ConditionalLinesUnaffected(t *testing.T) {
 }
 
 // ==================== End FB-114 (component layer) ====================
+
+// ==================== FB-119: HelpOverlay static content unchanged ====================
+
+// TestFB119_AC5_AntiRegression_HelpOverlay_StaticContent verifies that the
+// HelpOverlay VIEW section is unaffected by the describeAvailable gate.
+// The overlay is a static reference document (FB-026 D3) — its [d] describe entry
+// and [C] conditions entry (when ShowConditionsHint=true) are always present.
+func TestFB119_AC5_AntiRegression_HelpOverlay_StaticContent(t *testing.T) {
+	t.Parallel()
+	m := NewHelpOverlayModel()
+	m.Width = 120
+	m.Height = 40
+	m.ShowConditionsHint = true
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "[d]") {
+		t.Errorf("AC5 [Anti-regression FB-119]: '[d]' absent from HelpOverlay VIEW section; static content must not be affected:\n%s", got)
+	}
+	if !strings.Contains(got, "[C]  conditions") {
+		t.Errorf("AC5 [Anti-regression FB-119]: '[C]  conditions' absent when ShowConditionsHint=true; static content must not be affected:\n%s", got)
+	}
+}
+
+// ==================== End FB-119 (HelpOverlay layer) ====================

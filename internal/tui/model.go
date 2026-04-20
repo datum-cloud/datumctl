@@ -344,6 +344,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case data.DescribeResultMsg:
 		m.describeContent = msg.Content
 		m.describeRaw = msg.Raw
+		m.detail.SetDescribeAvailable(true)
 		// FB-005: clear describe-error state on successful describe.
 		if m.loadState == data.LoadStateError && m.lastFailedFetchKind == "describe" {
 			m.loadState = data.LoadStateIdle
@@ -611,6 +612,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activityDashboard.SetOriginLabel("")
 		m.describeContent = ""
 		m.describeRaw = nil
+		m.detail.SetDescribeAvailable(false)
 		m.yamlMode = false
 		m.conditionsMode = false // AC#5
 		m.eventsMode = false     // AC#5 FB-019
@@ -1533,6 +1535,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			m.eventsLoading = false
 			m.eventsErr = nil
 			m.describeRaw = nil
+			m.detail.SetDescribeAvailable(false)
 			m.detail.SetMode("")
 			// FB-005 AC#17: describe-error state always returns to TABLE, not NAV.
 			if m.loadState == data.LoadStateError && m.lastFailedFetchKind == "describe" {
@@ -1666,6 +1669,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 					m.statusBar.Mode = components.ModeDetail
 					m.describeRT = rt
 					m.describeRaw = nil
+					m.detail.SetDescribeAvailable(false)
 					m.yamlMode = false
 					m.conditionsMode = false // AC#4
 					m.eventsMode = false     // AC#4 FB-019
@@ -1703,6 +1707,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 						m.statusBar.Mode = components.ModeDetail
 						m.describeRT = rt
 						m.describeRaw = nil
+						m.detail.SetDescribeAvailable(false)
 						m.yamlMode = false
 						m.conditionsMode = false // AC#4
 						m.eventsMode = false     // AC#4 FB-019
@@ -1812,6 +1817,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 					m.statusBar.Mode = components.ModeDetail
 					m.describeRT = rt
 					m.describeRaw = nil
+					m.detail.SetDescribeAvailable(false)
 					m.yamlMode = false
 					m.conditionsMode = false // AC#4
 					m.eventsMode = false     // AC#4 FB-019
@@ -2199,6 +2205,7 @@ func (m AppModel) recalcLayout() AppModel {
 	m.detail.SetLoading(prevDetail.Loading())
 	m.detail.SetFocused(m.activePane == DetailPane)
 	m.detail.SetMode(prevDetail.Mode())
+	m.detail.SetDescribeAvailable(prevDetail.DescribeAvailable())
 
 	m.quota.SetSize(tableW, mainH)
 	m.quota.SetFocused(m.activePane == QuotaDashboardPane)

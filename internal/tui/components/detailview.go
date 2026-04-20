@@ -24,7 +24,8 @@ type DetailViewModel struct {
 	width        int
 	height       int
 	focused      bool
-	mode         string // "describe", "yaml", or "conditions"; empty treated as "describe" (FB-018 adds "conditions")
+	mode             string // "describe", "yaml", or "conditions"; empty treated as "describe" (FB-018 adds "conditions")
+	describeAvailable bool
 }
 
 func NewDetailViewModel(width, height int) DetailViewModel {
@@ -106,16 +107,21 @@ func (m *DetailViewModel) SetMode(mode string) {
 	m.mode = mode
 }
 
+func (m *DetailViewModel) SetDescribeAvailable(available bool) {
+	m.describeAvailable = available
+}
+
 func (m *DetailViewModel) ScrollToTop() {
 	m.vp.GotoTop()
 }
 
-func (m DetailViewModel) ResourceKind() string  { return m.resourceKind }
-func (m DetailViewModel) ResourceName() string  { return m.resourceName }
-func (m DetailViewModel) Loading() bool         { return m.loading }
-func (m DetailViewModel) Width() int            { return m.width }
-func (m DetailViewModel) Mode() string          { return m.mode }
-func (m DetailViewModel) Spinner() spinner.Model { return m.spinner } // AC#24
+func (m DetailViewModel) ResourceKind() string    { return m.resourceKind }
+func (m DetailViewModel) ResourceName() string    { return m.resourceName }
+func (m DetailViewModel) Loading() bool           { return m.loading }
+func (m DetailViewModel) Width() int              { return m.width }
+func (m DetailViewModel) Mode() string            { return m.mode }
+func (m DetailViewModel) Spinner() spinner.Model  { return m.spinner } // AC#24
+func (m DetailViewModel) DescribeAvailable() bool { return m.describeAvailable }
 
 func (m DetailViewModel) titleBar() string {
 	w := m.width
@@ -136,19 +142,24 @@ func (m DetailViewModel) titleBar() string {
 
 	var rightText string
 	if !m.loading {
-		yHint := "[y] yaml"
-		if m.mode == "yaml" {
-			yHint = "[y] describe"
-		}
-		cHint := "[C] conditions" // AC#6
-		if m.mode == "conditions" {
-			cHint = "[C] describe"
-		}
 		eHint := "[E] events" // FB-024
 		if m.mode == "events" {
 			eHint = "[E] describe"
 		}
-		rightText = muted.Render("[j/k] scroll  " + yHint + "  " + cHint + "  " + eHint + "  [x] delete  [Esc] back")
+		hintRow := "[j/k] scroll"
+		if m.describeAvailable {
+			yHint := "[y] yaml"
+			if m.mode == "yaml" {
+				yHint = "[y] describe"
+			}
+			cHint := "[C] conditions" // AC#6
+			if m.mode == "conditions" {
+				cHint = "[C] describe"
+			}
+			hintRow += "  " + yHint + "  " + cHint
+		}
+		hintRow += "  " + eHint + "  [x] delete  [Esc] back"
+		rightText = muted.Render(hintRow)
 	}
 
 	gap := w - lipgloss.Width(leftText) - lipgloss.Width(rightText)
@@ -168,6 +179,9 @@ func (m DetailViewModel) titleBar() string {
 			leftText = accentBold.Render(m.resourceKind) +
 				muted.Render(" / ") +
 				accentBold.Render(name)
+			if m.mode != "" {
+				leftText += muted.Render("  ") + accentBold.Render(m.mode)
+			}
 			gap = w - lipgloss.Width(leftText) - rightWidth
 		} else {
 			// Drop keybind hint entirely

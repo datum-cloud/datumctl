@@ -3708,6 +3708,7 @@ func newDetailPaneModelWithRaw() AppModel {
 	m := newDetailPaneModelWithHC()
 	m.describeContent = "describe text\nsome fields here"
 	m.describeRaw = testRawObject()
+	m.detail.SetDescribeAvailable(true)
 	return m
 }
 
@@ -14499,6 +14500,7 @@ func TestFB026_AC1_TitleBar_HintMatrix(t *testing.T) {
 	newDV := func(mode string) components.DetailViewModel {
 		dv := components.NewDetailViewModel(120, 20)
 		dv.SetResourceContext("pods", "my-pod")
+		dv.SetDescribeAvailable(true)
 		dv.SetMode(mode)
 		return dv
 	}

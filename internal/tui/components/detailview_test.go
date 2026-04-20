@@ -34,14 +34,15 @@ func makeContent(n int) string {
 func TestDetailViewModel_TitleBar(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name         string
-		width        int
-		height       int
-		kind         string
-		resourceName string
-		loading      bool
-		wantContains []string
-		wantAbsent   []string
+		name             string
+		width            int
+		height           int
+		kind             string
+		resourceName     string
+		loading          bool
+		describeAvailable bool
+		wantContains     []string
+		wantAbsent       []string
 	}{
 		{
 			name:         "renders resource kind and name with slash separator",
@@ -52,12 +53,13 @@ func TestDetailViewModel_TitleBar(t *testing.T) {
 			wantContains: []string{"httproutes", " / ", "my-route-name"},
 		},
 		{
-			name:         "shows keybind hint when not loading",
-			width:        100,
-			height:       20,
-			kind:         "pods",
-			resourceName: "my-pod",
-			wantContains: []string{"[j/k] scroll", "[y] yaml", "[C] conditions", "[x] delete", "[Esc] back"},
+			name:              "shows keybind hint when not loading",
+			width:             100,
+			height:            20,
+			kind:              "pods",
+			resourceName:      "my-pod",
+			describeAvailable: true,
+			wantContains:      []string{"[j/k] scroll", "[y] yaml", "[C] conditions", "[x] delete", "[Esc] back"},
 		},
 		{
 			name:         "loading state appends loading suffix and hides keybind hint",
@@ -105,6 +107,7 @@ func TestDetailViewModel_TitleBar(t *testing.T) {
 			m := NewDetailViewModel(tt.width, tt.height)
 			m.SetResourceContext(tt.kind, tt.resourceName)
 			m.SetLoading(tt.loading)
+			m.SetDescribeAvailable(tt.describeAvailable)
 			got := stripANSI(m.View())
 
 			for _, want := range tt.wantContains {
@@ -285,6 +288,7 @@ func TestDetailViewModel_SetMode_YamlMode_FlipsKeyHint(t *testing.T) {
 	t.Parallel()
 	m := NewDetailViewModel(120, 20)
 	m.SetResourceContext("pods", "my-pod")
+	m.SetDescribeAvailable(true)
 	m.SetMode("yaml")
 
 	got := stripANSI(m.View())
@@ -308,6 +312,7 @@ func TestDetailViewModel_SetMode_DescribeMode_DefaultKeyHint(t *testing.T) {
 			t.Parallel()
 			m := NewDetailViewModel(120, 20)
 			m.SetResourceContext("pods", "my-pod")
+			m.SetDescribeAvailable(true)
 			m.SetMode(tt.mode)
 			got := stripANSI(m.View())
 			if !strings.Contains(got, "[y] yaml") {
@@ -823,3 +828,124 @@ func TestFB024_TitleBar_EHint(t *testing.T) {
 }
 
 // ==================== End FB-024 ====================
+
+// ==================== FB-119: [y]/[C] hint gate when describe unavailable ====================
+
+// TestFB119_AC1_Observable_DescribeUnavailable_YCHintsAbsent verifies that
+// when describeAvailable=false, [y] and [C] are absent from View().
+func TestFB119_AC1_Observable_DescribeUnavailable_YCHintsAbsent(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetDescribeAvailable(false)
+	m.SetLoading(false)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "[y]") {
+		t.Errorf("AC1 [Observable FB-119]: '[y]' present when describeAvailable=false:\n%s", got)
+	}
+	if strings.Contains(got, "[C]") {
+		t.Errorf("AC1 [Observable FB-119]: '[C]' present when describeAvailable=false:\n%s", got)
+	}
+}
+
+// TestFB119_AC2_Observable_DescribeAvailable_YCHintsPresent verifies that
+// when describeAvailable=true, [y] yaml and [C] conditions are in View().
+func TestFB119_AC2_Observable_DescribeAvailable_YCHintsPresent(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetDescribeAvailable(true)
+	m.SetLoading(false)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "[y] yaml") {
+		t.Errorf("AC2 [Observable FB-119]: '[y] yaml' absent when describeAvailable=true:\n%s", got)
+	}
+	if !strings.Contains(got, "[C] conditions") {
+		t.Errorf("AC2 [Observable FB-119]: '[C] conditions' absent when describeAvailable=true:\n%s", got)
+	}
+}
+
+// TestFB119_AC3_Observable_DescribeUnavailable_OtherHintsPresent verifies that
+// [E], [x], and [Esc] remain visible when describeAvailable=false.
+func TestFB119_AC3_Observable_DescribeUnavailable_OtherHintsPresent(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetDescribeAvailable(false)
+	m.SetLoading(false)
+
+	got := stripANSI(m.View())
+	for _, want := range []string{"[E] events", "[x] delete", "[Esc] back"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("AC3 [Observable FB-119]: %q absent when describeAvailable=false (gate must not suppress non-describe hints):\n%s", want, got)
+		}
+	}
+}
+
+// TestFB119_AC4_AntiRegression_Loading_SuppressesAllHints verifies that
+// loading=true suppresses all rightText hints regardless of describeAvailable.
+func TestFB119_AC4_AntiRegression_Loading_SuppressesAllHints(t *testing.T) {
+	t.Parallel()
+	for _, avail := range []bool{true, false} {
+		avail := avail
+		t.Run(fmt.Sprintf("describeAvailable=%v", avail), func(t *testing.T) {
+			t.Parallel()
+			m := NewDetailViewModel(160, 40)
+			m.SetResourceContext("pods", "my-pod")
+			m.SetDescribeAvailable(avail)
+			m.SetLoading(true)
+
+			got := stripANSI(m.View())
+			for _, absent := range []string{"[y]", "[C]", "[E]", "[x]"} {
+				if strings.Contains(got, absent) {
+					t.Errorf("AC4 [Anti-regression FB-119]: loading=true: %q present; want all hints suppressed:\n%s", absent, got)
+				}
+			}
+		})
+	}
+}
+
+// TestFB119_AC6_InputChanged_ToggleDescribeAvailable verifies that toggling
+// describeAvailable true→false produces different View() output.
+func TestFB119_AC6_InputChanged_ToggleDescribeAvailable(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetLoading(false)
+
+	m.SetDescribeAvailable(true)
+	v1 := stripANSI(m.View())
+
+	m.SetDescribeAvailable(false)
+	v2 := stripANSI(m.View())
+
+	if v1 == v2 {
+		t.Errorf("AC6 [Input-changed FB-119]: View() unchanged after SetDescribeAvailable(true→false); want different output")
+	}
+	if !strings.Contains(v1, "[y]") {
+		t.Errorf("AC6 [Input-changed FB-119]: v1 (describeAvailable=true) missing '[y]':\n%s", v1)
+	}
+	if strings.Contains(v2, "[y]") {
+		t.Errorf("AC6 [Input-changed FB-119]: v2 (describeAvailable=false) still contains '[y]':\n%s", v2)
+	}
+}
+
+// TestFB119_AC7_AntiRegression_EToggleSwap_WhenDescribeUnavailable verifies
+// that [E] toggle-swap to "[E] describe" still works when describeAvailable=false.
+func TestFB119_AC7_AntiRegression_EToggleSwap_WhenDescribeUnavailable(t *testing.T) {
+	t.Parallel()
+	m := NewDetailViewModel(160, 40)
+	m.SetResourceContext("pods", "my-pod")
+	m.SetDescribeAvailable(false)
+	m.SetLoading(false)
+	m.SetMode("events")
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "[E] describe") {
+		t.Errorf("AC7 [Anti-regression FB-119]: '[E] describe' absent in events mode with describeAvailable=false:\n%s", got)
+	}
+}
+
+// ==================== End FB-119 (component layer) ====================
