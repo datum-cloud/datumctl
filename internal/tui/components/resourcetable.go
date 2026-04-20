@@ -641,7 +641,7 @@ func (m ResourceTableModel) renderHeaderBand(contentW int) string {
 			}
 		}
 	} else if m.tuiCtx.ActiveCtx != nil && m.tuiCtx.ActiveCtx.ProjectID != "" && len(m.registrations) == 0 {
-		line3 = muted.Render("→  select a resource type from the sidebar, or use a quick-jump key below")
+		line3 = muted.Render("→  select a resource type from the sidebar to get started")
 	}
 
 	switch {

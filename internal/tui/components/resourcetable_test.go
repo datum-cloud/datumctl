@@ -2049,6 +2049,12 @@ func TestFB099_AC3_InputChanged_PendingVsIdle_DifferentStrip(t *testing.T) {
 	if idle == pending {
 		t.Errorf("AC3 [Input-changed]: strip identical in idle and pending states:\n  idle:    %q\n  pending: %q", idle, pending)
 	}
+	if !strings.Contains(idle, "quota") {
+		t.Errorf("AC3 [Input-changed]: idle strip %q, want contains 'quota'", idle)
+	}
+	if !strings.Contains(pending, "cancel") {
+		t.Errorf("AC3 [Input-changed]: pending strip %q, want contains 'cancel'", pending)
+	}
 }
 
 // AC4 [Anti-behavior] — typed-table context (forceDashboard=false, typeName="backends"):
@@ -2274,3 +2280,259 @@ func TestFB104_AC8_AntiRegression_S3Unaffected(t *testing.T) {
 }
 
 // ==================== End FB-104 (component layer) ====================
+
+// ==================== FB-105: Welcome screen improvements ====================
+
+// AC1 [Observable] — orientation hint rendered in header band when project context + empty registrations.
+func TestFB105_AC1_Observable_OrientationHintShown(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	// registrations empty by default → hint fires
+
+	got := stripANSI(m.View())
+	const want = "select a resource type from the sidebar"
+	if !strings.Contains(got, want) {
+		t.Errorf("AC1 [Observable]: orientation hint %q absent from View():\n%s", want, got)
+	}
+}
+
+// AC2 [Observable] — orientation hint suppressed when registrations are populated.
+func TestFB105_AC2_Observable_OrientationHintSuppressedWhenRegistrations(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	m.SetRegistrations([]data.ResourceRegistration{
+		{Group: "networking.datum.net", Name: "backends"},
+	})
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "select a resource type from the sidebar") {
+		t.Errorf("AC2 [Observable]: orientation hint present despite populated registrations:\n%s", got)
+	}
+}
+
+// AC3 [Observable] — "jump to:" prefix present in quick-jump section when matching registrations exist.
+func TestFB105_AC3_Observable_JumpToPrefix(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(120, 30)
+	m.SetRegistrations([]data.ResourceRegistration{
+		{Group: "networking.datum.net", Name: "backends"},
+	})
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "jump to:") {
+		t.Errorf("AC3 [Observable]: 'jump to:' prefix absent from View() when registrations match quick-jump table:\n%s", got)
+	}
+}
+
+// AC4 [Observable] — all-clear flavor line rendered when attention empty + activity empty + not loading.
+func TestFB105_AC4_Observable_AllClearLine(t *testing.T) {
+	t.Parallel()
+	// showS4 requires contentH >= 18 && contentW >= 50; tableWidth=80 → contentW=76; tableHeight=25 → contentH=21
+	m := newWelcomeModel(80, 25)
+	// attentionItems, activityRows empty + activityLoading false by default
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "all clear") {
+		t.Errorf("AC4 [Observable]: 'all clear' line absent from View() when attention empty + activity empty:\n%s", got)
+	}
+}
+
+// AC5 [Input-changed] — empty vs populated registrations changes orientation hint visibility.
+func TestFB105_AC5_InputChanged_RegistrationsTransition(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+
+	emptyView := stripANSI(m.View())
+
+	m.SetRegistrations([]data.ResourceRegistration{
+		{Group: "networking.datum.net", Name: "backends"},
+	})
+	populatedView := stripANSI(m.View())
+
+	if emptyView == populatedView {
+		t.Error("AC5 [Input-changed]: View() unchanged after SetRegistrations() — orientation hint not toggling")
+	}
+	if !strings.Contains(emptyView, "select a resource type from the sidebar") {
+		t.Errorf("AC5 [Input-changed]: orientation hint absent when registrations empty:\n%s", emptyView)
+	}
+	if strings.Contains(populatedView, "select a resource type from the sidebar") {
+		t.Errorf("AC5 [Input-changed]: orientation hint still present after registrations populated:\n%s", populatedView)
+	}
+}
+
+// AC6 [Input-changed] — populated attention items suppresses the all-clear line.
+func TestFB105_AC6_InputChanged_AttentionItemsSuppressAllClear(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 25)
+
+	clearView := stripANSI(m.View())
+	if !strings.Contains(clearView, "all clear") {
+		t.Fatalf("AC6 setup: 'all clear' absent before attention items added:\n%s", clearView)
+	}
+
+	m.SetAttentionItems([]AttentionItem{
+		{Kind: "condition", Label: "cert-expiry", Detail: "cert expires in 3 days"},
+	})
+	withAttention := stripANSI(m.View())
+
+	if clearView == withAttention {
+		t.Error("AC6 [Input-changed]: View() unchanged after SetAttentionItems()")
+	}
+	if strings.Contains(withAttention, "all clear") {
+		t.Errorf("AC6 [Input-changed]: 'all clear' still present after attention items added:\n%s", withAttention)
+	}
+}
+
+// AC7 [Anti-behavior] — orientation hint suppressed when forceDashboard=true (FB-054 branch active).
+func TestFB105_AC7_AntiBehavior_HintSuppressedWhenForceDashboard(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	m.SetTypeContext("backends", true)
+	m.SetForceDashboard(true)
+	// registrations empty → FB-054 Tab-to-resume takes line3, FB-105 branch is else-if
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "select a resource type from the sidebar") {
+		t.Errorf("AC7 [Anti-behavior]: orientation hint present when forceDashboard=true (FB-054 active):\n%s", got)
+	}
+	if !strings.Contains(got, "resume backends") {
+		t.Errorf("AC7 [Anti-behavior]: Tab-to-resume band absent when forceDashboard=true:\n%s", got)
+	}
+}
+
+// AC8 [Anti-behavior] — all-clear line suppressed when activityLoading=true.
+func TestFB105_AC8_AntiBehavior_AllClearSuppressedWhenLoading(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 25)
+	m.SetActivityLoading(true)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "all clear") {
+		t.Errorf("AC8 [Anti-behavior]: 'all clear' rendered while activityLoading=true:\n%s", got)
+	}
+}
+
+// AC9 [Anti-regression] — org-scope context (no ProjectID) produces no orientation hint.
+func TestFB105_AC9_AntiRegression_OrgScopeNoOrientationHint(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	// testCtx sets no ActiveCtx → ProjectID == "" → hint branch skipped
+	m.SetTUIContext(testCtx("alice", "acme", "", false))
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "select a resource type from the sidebar") {
+		t.Errorf("AC9 [Anti-regression]: orientation hint present in org-scope context (no ProjectID):\n%s", got)
+	}
+}
+
+// AC10 [Anti-regression] — all-clear absent below showS4 height threshold (contentH < 18).
+func TestFB105_AC10_AntiRegression_AllClearAbsentBelowHeightThreshold(t *testing.T) {
+	t.Parallel()
+	// tableHeight=20 → contentH=16 → showS4 false (requires >= 18)
+	m := newWelcomeModel(80, 20)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "all clear") {
+		t.Errorf("AC10 [Anti-regression]: 'all clear' present at contentH<18 (showS4 should be false):\n%s", got)
+	}
+}
+
+// ==================== End FB-105 (component layer) ====================
+
+// ==================== FB-116: Orientation hint drop false "quick-jump key below" clause ====================
+
+// AC1 [Observable] — false clause absent: View() does NOT contain "quick-jump key below" when hint fires.
+func TestFB116_AC1_Observable_FalseClauseAbsent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	// registrations empty → hint fires
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "quick-jump key below") {
+		t.Errorf("AC1 [Observable]: false clause 'quick-jump key below' present in View():\n%s", got)
+	}
+}
+
+// AC2 [Observable] — correct directive present: View() contains "to get started" when hint fires.
+func TestFB116_AC2_Observable_CorrectDirectivePresent(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "to get started") {
+		t.Errorf("AC2 [Observable]: 'to get started' absent from View() when hint fires:\n%s", got)
+	}
+	if !strings.Contains(got, "select a resource type from the sidebar to get started") {
+		t.Errorf("AC2 [Observable]: full new directive absent from View():\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — before (old copy with false clause) vs after (new copy without it): renders differ.
+// This pins the post-fix state: new copy present, old clause absent. Documents intentional anchor change per spec §4.
+func TestFB116_AC3_InputChanged_NewCopyDiffersFromOld(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+
+	got := stripANSI(m.View())
+
+	// New copy present — FB-116: anchor updated per spec §4
+	if !strings.Contains(got, "to get started") {
+		t.Errorf("AC3 [Input-changed]: new copy 'to get started' absent:\n%s", got)
+	}
+	// Old false clause absent
+	if strings.Contains(got, "quick-jump key below") {
+		t.Errorf("AC3 [Input-changed]: old false clause 'quick-jump key below' still present:\n%s", got)
+	}
+	// Hint itself present (base directive unchanged)
+	if !strings.Contains(got, "select a resource type from the sidebar") {
+		t.Errorf("AC3 [Input-changed]: base directive 'select a resource type from the sidebar' absent:\n%s", got)
+	}
+}
+
+// AC4 [Anti-regression] — FB-105 anchor: hint still fires when project context + empty registrations.
+// FB-116: anchor updated per spec §4 — asserts new copy, not old.
+func TestFB116_AC4_AntiRegression_FB105_AnchorUpdated(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "select a resource type from the sidebar to get started") {
+		t.Errorf("AC4 [Anti-regression FB-105]: hint absent after FB-116 copy update:\n%s", got)
+	}
+}
+
+// AC5 [Anti-regression] — forceDashboard=true suppression intact (FB-054 path).
+func TestFB116_AC5_AntiRegression_ForceDashboardSuppression(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme", "proj", "proj-123"))
+	m.SetTypeContext("backends", true)
+	m.SetForceDashboard(true)
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "to get started") {
+		t.Errorf("AC5 [Anti-regression FB-054]: orientation hint present when forceDashboard=true:\n%s", got)
+	}
+}
+
+// AC6 [Anti-regression] — org-scope suppression intact: hint absent when ProjectID == "".
+func TestFB116_AC6_AntiRegression_OrgScopeSuppression(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(80, 30)
+	m.SetTUIContext(testCtx("alice", "acme", "", false))
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "to get started") {
+		t.Errorf("AC6 [Anti-regression]: orientation hint present in org-scope context (no ProjectID):\n%s", got)
+	}
+}
+
+// ==================== End FB-116 (component layer) ====================
