@@ -6293,7 +6293,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 
 ### FB-151 — First-session vs returning-operator detection on welcome surface
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-105 deferred item per team-lead direction (welcome-surface iteration after FB-135 closes).
+**Status: PENDING TEST-ENGINEER** — spec delivered by ux-designer 2026-04-20 at `docs/tui-ux-specs/fb-151-first-session-returning-operator.md`. Option D chosen (runtime `m.typeName` heuristic). Routed test-engineer-first for coordinated FB-105 AC-update scan before engineer impl.
 
 **Priority: P2** — welcome surface reads identically to a first-time operator and a returning operator on their hundredth launch. First-timers get under-explained; returning operators get over-oriented. Two audiences, one copy.
 
@@ -6359,7 +6359,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 
 ### FB-152 — S2 platform-health section personality copy
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-105 deferred item per team-lead direction (welcome-surface iteration after FB-135 closes).
+**Status: PENDING TEST-ENGINEER** — spec delivered by ux-designer 2026-04-20 at `docs/tui-ux-specs/fb-152-s2-platform-health-personality.md`. Option C chosen (inline status-line replace; `"✓ All clear"` → `"✓ quota looks healthy"`). Routed test-engineer-first for coordinated FB-042 AC-update scan before engineer impl.
 
 **Priority: P2** — S2 "Platform health" section is flat-utilitarian. Healthy state shows bucket rows with no warmth; mixed/degraded state shows raw quota ratios. The section reads as an admin status board, not a welcome surface. FB-105 intentionally deferred S2 personality ("touches S2 which has complex quota render paths; defer to follow-up") — this brief picks up that work.
 
