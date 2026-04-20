@@ -15340,3 +15340,191 @@ func TestFB124_AC8_Integration_TabPaneSwitchRemovesHint(t *testing.T) {
 }
 
 // ==================== End FB-124 (model layer) ====================
+
+// ==================== FB-103: [r] in-flight signal on empty activity rows ====================
+
+// newFB103ProjectModel builds a project-scoped NavPane model at welcome-panel size
+// (table 80×32 → contentH=28 ≥ 24, S3 renders) with no pre-loaded activity rows.
+func newFB103ProjectModel() AppModel {
+	m := AppModel{
+		ctx:         context.Background(),
+		rc:          stubResourceClient{},
+		ac:          data.NewActivityClient(nil),
+		activePane:  NavPane,
+		sidebar:     components.NewNavSidebarModel(22, 32),
+		table:       components.NewResourceTableModel(80, 32),
+		detail:      components.NewDetailViewModel(80, 32),
+		filterBar:   components.NewFilterBarModel(),
+		helpOverlay: components.NewHelpOverlayModel(),
+	}
+	m.tuiCtx.ActiveCtx = &datumconfig.DiscoveredContext{ProjectID: "test-proj"}
+	m.updatePaneFocus()
+	return m
+}
+
+// AC1 [Observable] — empty-rows + NavPane [r] + project-scope → View() contains "⟳ loading…".
+func TestFB103_AC1_Observable_EmptyRows_RPress_ShowsLoading(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	// no rows loaded
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "loading") {
+		t.Errorf("AC1 [Observable]: 'loading' absent from View() after [r] with empty rows:\n%s", got)
+	}
+}
+
+// AC2 [Anti-behavior] — empty-rows + NavPane [r] + org-scope → View() still "no recent activity".
+func TestFB103_AC2_AntiBehavior_OrgScope_RPress_NoLoadingSignal(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	m.tuiCtx.ActiveCtx = nil // org scope — no activity fetch dispatched
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.View())
+	if strings.Contains(got, "loading") {
+		t.Errorf("AC2 [Anti-behavior]: 'loading' present in View() for org-scope [r] (no activity fetch):\n%s", got)
+	}
+	if !strings.Contains(got, "no recent activity") {
+		t.Errorf("AC2 [Anti-behavior]: 'no recent activity' absent from org-scope View():\n%s", got)
+	}
+}
+
+// AC3 [Anti-behavior] — populated-rows + NavPane [r] + project-scope → stale rows preserved, no spinner.
+func TestFB103_AC3_AntiBehavior_PopulatedRows_RPress_RowsPreserved(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	m.table.SetActivityRows([]data.ActivityRow{
+		{ActorDisplay: "alice@example.com", Summary: "created cluster", Timestamp: time.Now().Add(-1 * time.Minute)},
+	})
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "alice@example.com") {
+		t.Errorf("AC3 [Anti-behavior]: stale rows 'alice@example.com' gone after [r] with populated rows:\n%s", got)
+	}
+	if strings.Contains(got, "loading") {
+		t.Errorf("AC3 [Anti-behavior]: 'loading' present after [r] with populated rows (should be silent re-fetch):\n%s", got)
+	}
+}
+
+// AC4 [Input-changed] — empty-rows before vs after [r]: "no recent activity" → "⟳ loading…".
+func TestFB103_AC4_InputChanged_EmptyRows_BeforeAfterRPress(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+
+	v1 := stripANSIModel(m.View())
+	if !strings.Contains(v1, "no recent activity") {
+		t.Fatalf("AC4 precondition: 'no recent activity' absent before [r]:\n%s", v1)
+	}
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	v2 := stripANSIModel(appM.View())
+	if v1 == v2 {
+		t.Error("AC4 [Input-changed]: View() unchanged after [r] with empty rows")
+	}
+	if !strings.Contains(v2, "loading") {
+		t.Errorf("AC4 [Input-changed]: 'loading' absent from View() after [r]:\n%s", v2)
+	}
+}
+
+// AC5 [Anti-regression] — FB-076 dispatch: [r] still batches activity cmd on project scope.
+func TestFB103_AC5_AntiRegression_FB076_DispatchPreserved(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+	if batchLen(cmd) < 2 {
+		t.Errorf("AC5 [Anti-regression FB-076]: batchLen=%d, want ≥2 (resource types + activity cmd)", batchLen(cmd))
+	}
+}
+
+// AC6 [Anti-regression] — FB-082 fetch-failed: after error arrives, body re-renders error copy.
+func TestFB103_AC6_AntiRegression_FB082_FetchFailedReRendersError(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+
+	// Press [r] → loading state
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = r.(AppModel)
+
+	// Simulate error response
+	r, _ = m.Update(data.ProjectActivityErrorMsg{Err: errors.New("network timeout")})
+	appM := r.(AppModel)
+
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC6 [Anti-regression FB-082]: 'activity unavailable' absent after fetch error:\n%s", got)
+	}
+}
+
+// AC7 [Observable] — error-state + NavPane [r] → View() shows "⟳ loading…", not error copy.
+func TestFB103_AC7_Observable_ErrorState_RPress_ShowsLoading(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	m.table.SetActivityFetchFailed(true)
+	m.table.SetActivityCRDAbsent(false)
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "loading") {
+		t.Errorf("AC7 [Observable]: 'loading' absent from View() after [r] in error state:\n%s", got)
+	}
+	if strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC7 [Observable]: error copy still present after [r] in error state:\n%s", got)
+	}
+}
+
+// AC8 [Input-changed] — error-state before vs after [r]: error copy → loading signal.
+func TestFB103_AC8_InputChanged_ErrorState_BeforeAfterRPress(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	m.table.SetActivityFetchFailed(true)
+	m.table.SetActivityCRDAbsent(false)
+
+	v1 := stripANSIModel(m.View())
+	if !strings.Contains(v1, "activity unavailable") {
+		t.Fatalf("AC8 precondition: 'activity unavailable' absent before [r]:\n%s", v1)
+	}
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	v2 := stripANSIModel(appM.View())
+	if v1 == v2 {
+		t.Error("AC8 [Input-changed]: View() unchanged after [r] in error state")
+	}
+	if !strings.Contains(v2, "loading") {
+		t.Errorf("AC8 [Input-changed]: 'loading' absent after [r] in error state:\n%s", v2)
+	}
+}
+
+// AC9 [Observable] — CRD-absent state + NavPane [r] → View() shows "⟳ loading…" immediately.
+func TestFB103_AC9_Observable_CRDAbsent_RPress_ShowsLoading(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	m.table.SetActivityFetchFailed(true)
+	m.table.SetActivityCRDAbsent(true)
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "loading") {
+		t.Errorf("AC9 [Observable]: 'loading' absent from View() after [r] in CRD-absent state:\n%s", got)
+	}
+}
+
+// ==================== End FB-103 ====================

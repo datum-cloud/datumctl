@@ -1314,6 +1314,10 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			rCmds := []tea.Cmd{data.LoadResourceTypesCmd(m.ctx, m.rc)}
 			// FB-076: refresh activity teaser on welcome panel when project-scoped.
 			if m.ac != nil && m.tuiCtx.ActiveCtx != nil && m.tuiCtx.ActiveCtx.ProjectID != "" {
+				// FB-103: show spinner only when no rows exist; stale rows stay visible (FB-076).
+				if m.table.ActivityRowCount() == 0 {
+					m.table.SetActivityLoading(true)
+				}
 				rCmds = append(rCmds, data.LoadRecentProjectActivityCmd(m.ctx, m.ac, 24*time.Hour, 10))
 			}
 			return m, tea.Batch(rCmds...)
