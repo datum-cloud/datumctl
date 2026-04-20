@@ -57,7 +57,7 @@ func TestDetailViewModel_TitleBar(t *testing.T) {
 			height:       20,
 			kind:         "pods",
 			resourceName: "my-pod",
-			wantContains: []string{"[j/k] scroll", "[y] yaml", "toggle conditions", "[x] delete", "[Esc] back"},
+			wantContains: []string{"[j/k] scroll", "[y] yaml", "[C] conditions", "[x] delete", "[Esc] back"},
 		},
 		{
 			name:         "loading state appends loading suffix and hides keybind hint",

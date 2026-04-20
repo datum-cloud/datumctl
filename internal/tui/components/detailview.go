@@ -140,9 +140,9 @@ func (m DetailViewModel) titleBar() string {
 		if m.mode == "yaml" {
 			yHint = "[y] describe"
 		}
-		cHint := "[C] toggle conditions" // AC#6
+		cHint := "[C] conditions" // AC#6
 		if m.mode == "conditions" {
-			cHint = "[C] toggle conditions"
+			cHint = "[C] describe"
 		}
 		eHint := "[E] events" // FB-024
 		if m.mode == "events" {

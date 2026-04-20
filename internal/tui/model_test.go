@@ -6633,8 +6633,8 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 			t.Fatalf("AC#22 setup: expected HelpOverlayID, got %v", appM.overlay)
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if !strings.Contains(view, "Shift+C") {
-			t.Errorf("AC#22 DetailPane: 'Shift+C' conditions hint missing:\n%s", view)
+		if !strings.Contains(view, "[C]  conditions") {
+			t.Errorf("AC#22 DetailPane: '[C]  conditions' hint missing:\n%s", view)
 		}
 		if !strings.Contains(view, "conditions") {
 			t.Errorf("AC#22 DetailPane: 'conditions' text missing:\n%s", view)
@@ -6650,8 +6650,8 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 			t.Fatalf("AC#22 TablePane setup: expected HelpOverlayID, got %v", appM.overlay)
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "Shift+C") {
-			t.Errorf("AC#22 TablePane: 'Shift+C' must be absent (pane-local to DetailPane only):\n%s", view)
+		if strings.Contains(view, "[C]  conditions") {
+			t.Errorf("AC#22 TablePane: '[C]  conditions' must be absent (pane-local to DetailPane only):\n%s", view)
 		}
 	})
 
@@ -6664,8 +6664,8 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 			t.Fatalf("AC#22 NavPane setup: expected HelpOverlayID, got %v", appM.overlay)
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "Shift+C") {
-			t.Errorf("AC#22 NavPane: 'Shift+C' must be absent:\n%s", view)
+		if strings.Contains(view, "[C]  conditions") {
+			t.Errorf("AC#22 NavPane: '[C]  conditions' must be absent:\n%s", view)
 		}
 	})
 }
@@ -7410,7 +7410,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 	}
 }
 
-// AC#26 — HelpOverlay [Shift+E] events hint is pane-gated — present only on DetailPane.
+// AC#26 — HelpOverlay [E] events hint is pane-gated — present only on DetailPane.
 func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 	t.Parallel()
 
@@ -7426,8 +7426,8 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 			t.Error("AC#26 DetailPane: ShowEventsHint = false, want true")
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if !strings.Contains(view, "Shift+E") {
-			t.Errorf("AC#26 DetailPane: '[Shift+E] events' hint missing:\n%s", view)
+		if !strings.Contains(view, "[E]  events") {
+			t.Errorf("AC#26 DetailPane: '[E]  events' hint missing:\n%s", view)
 		}
 		if !strings.Contains(view, "events") {
 			t.Errorf("AC#26 DetailPane: 'events' text missing:\n%s", view)
@@ -7446,8 +7446,8 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 			t.Error("AC#26 TablePane: ShowEventsHint = true, want false (pane-local to DetailPane)")
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "Shift+E") {
-			t.Errorf("AC#26 TablePane: 'Shift+E' must be absent:\n%s", view)
+		if strings.Contains(view, "[E]  events") {
+			t.Errorf("AC#26 TablePane: '[E]  events' must be absent:\n%s", view)
 		}
 	})
 
@@ -7463,8 +7463,8 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 			t.Error("AC#26 NavPane: ShowEventsHint = true, want false")
 		}
 		view := stripANSIModel(appM.helpOverlay.View())
-		if strings.Contains(view, "Shift+E") {
-			t.Errorf("AC#26 NavPane: 'Shift+E' must be absent:\n%s", view)
+		if strings.Contains(view, "[E]  events") {
+			t.Errorf("AC#26 NavPane: '[E]  events' must be absent:\n%s", view)
 		}
 	})
 }
@@ -14485,3 +14485,196 @@ func TestFB038_AC3_PreCheck_Inert_AfterEventsLoaded(t *testing.T) {
 }
 
 // ==================== End FB-038 ====================
+
+// ==================== FB-026: keybind hint format consistency ====================
+
+// TestFB026_AC1_TitleBar_HintMatrix verifies the 6-case title-bar hint matrix
+// across all mode states for the three toggle keys (y, C, E).
+func TestFB026_AC1_TitleBar_HintMatrix(t *testing.T) {
+	t.Parallel()
+
+	newDV := func(mode string) components.DetailViewModel {
+		dv := components.NewDetailViewModel(120, 20)
+		dv.SetResourceContext("pods", "my-pod")
+		dv.SetMode(mode)
+		return dv
+	}
+
+	cases := []struct {
+		mode         string
+		wantContains []string
+		wantAbsent   []string
+	}{
+		{
+			mode:         "",
+			wantContains: []string{"[C] conditions", "[E] events", "[y] yaml"},
+			wantAbsent:   []string{"toggle"},
+		},
+		{
+			mode:         "yaml",
+			wantContains: []string{"[y] describe"},
+			wantAbsent:   []string{"[y] yaml"},
+		},
+		{
+			mode:         "conditions",
+			wantContains: []string{"[C] describe"},
+			wantAbsent:   []string{"[C] conditions"},
+		},
+		{
+			mode:         "events",
+			wantContains: []string{"[E] describe"},
+			wantAbsent:   []string{"[E] events"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run("mode="+tc.mode, func(t *testing.T) {
+			t.Parallel()
+			dv := newDV(tc.mode)
+			view := stripANSIModel(dv.View())
+			for _, want := range tc.wantContains {
+				if !strings.Contains(view, want) {
+					t.Errorf("AC1 [Observable FB-026] mode=%q: View() missing %q.\nView:\n%s", tc.mode, want, view)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(view, absent) {
+					t.Errorf("AC1 [Observable FB-026] mode=%q: View() contains %q; want absent.\nView:\n%s", tc.mode, absent, view)
+				}
+			}
+		})
+	}
+}
+
+// TestFB026_AC2_HelpOverlay_CanonicalFormat verifies HelpOverlay uses [C]/[E] not [Shift+C]/[Shift+E].
+func TestFB026_AC2_HelpOverlay_CanonicalFormat(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsRaw()
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	appM := result.(AppModel)
+
+	view := stripANSIModel(appM.helpOverlay.View())
+
+	if !strings.Contains(view, "[C]  conditions") {
+		t.Errorf("AC2 [Observable FB-026]: View() missing \"[C]  conditions\".\nView:\n%s", view)
+	}
+	if !strings.Contains(view, "[E]  events") {
+		t.Errorf("AC2 [Observable FB-026]: View() missing \"[E]  events\".\nView:\n%s", view)
+	}
+	if strings.Contains(view, "Shift+C") {
+		t.Errorf("AC2 [Observable FB-026]: View() still contains \"Shift+C\"; want absent.\nView:\n%s", view)
+	}
+	if strings.Contains(view, "Shift+E") {
+		t.Errorf("AC2 [Observable FB-026]: View() still contains \"Shift+E\"; want absent.\nView:\n%s", view)
+	}
+}
+
+// TestFB026_AC3_HelpOverlay_GlobalHelp_NoToggleVerb verifies [?] help (not "toggle help").
+func TestFB026_AC3_HelpOverlay_GlobalHelp_NoToggleVerb(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsRaw()
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	appM := result.(AppModel)
+
+	view := stripANSIModel(appM.helpOverlay.View())
+
+	if !strings.Contains(view, "[?]") {
+		t.Errorf("AC3 [Observable FB-026]: View() missing \"[?]\".\nView:\n%s", view)
+	}
+	if !strings.Contains(view, "help") {
+		t.Errorf("AC3 [Observable FB-026]: View() missing \"help\".\nView:\n%s", view)
+	}
+	if strings.Contains(view, "toggle help") {
+		t.Errorf("AC3 [Observable FB-026]: View() still contains \"toggle help\"; want absent.\nView:\n%s", view)
+	}
+}
+
+// TestFB026_AC4_ConditionsMode_ToggleSwap verifies [C] describe shown when in conditions mode.
+func TestFB026_AC4_ConditionsMode_ToggleSwap(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModelWithEventsRaw()
+	// Widen the detail pane so the hint row fits (default fixture is 58 wide, too narrow).
+	r0, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m = r0.(AppModel)
+	// Press C to enter conditions mode
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	appM := result.(AppModel)
+
+	view := stripANSIModel(appM.detail.View())
+	if !strings.Contains(view, "[C] describe") {
+		t.Errorf("AC4 [Anti-regression FB-026]: conditions mode: View() missing \"[C] describe\".\nView:\n%s", view)
+	}
+	if strings.Contains(view, "[C] conditions") {
+		t.Errorf("AC4 [Anti-regression FB-026]: conditions mode: View() still contains \"[C] conditions\"; want absent.\nView:\n%s", view)
+	}
+}
+
+// TestFB026_AC5_PaneGating_Preserved verifies ShowConditionsHint and ShowEventsHint
+// gating still works with the new canonical strings.
+func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
+	t.Parallel()
+
+	t.Run("conditions_hint_gated_on_in_detail", func(t *testing.T) {
+		t.Parallel()
+		m := newDetailPaneModelWithEventsRaw()
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		appM := result.(AppModel)
+		view := stripANSIModel(appM.helpOverlay.View())
+		if !strings.Contains(view, "[C]  conditions") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[C]  conditions' absent in DetailPane HelpOverlay.\nView:\n%s", view)
+		}
+	})
+
+	t.Run("conditions_hint_gated_off_in_table", func(t *testing.T) {
+		t.Parallel()
+		m := newTablePaneModel()
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		appM := result.(AppModel)
+		view := stripANSIModel(appM.helpOverlay.View())
+		if strings.Contains(view, "[C]  conditions") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[C]  conditions' present in TablePane HelpOverlay; want absent.\nView:\n%s", view)
+		}
+	})
+
+	t.Run("events_hint_gated_on_in_detail", func(t *testing.T) {
+		t.Parallel()
+		m := newDetailPaneModelWithEventsRaw()
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		appM := result.(AppModel)
+		view := stripANSIModel(appM.helpOverlay.View())
+		if !strings.Contains(view, "[E]  events") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[E]  events' absent in DetailPane HelpOverlay.\nView:\n%s", view)
+		}
+	})
+
+	t.Run("events_hint_gated_off_in_table", func(t *testing.T) {
+		t.Parallel()
+		m := newTablePaneModel()
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		appM := result.(AppModel)
+		view := stripANSIModel(appM.helpOverlay.View())
+		if strings.Contains(view, "[E]  events") {
+			t.Errorf("AC5 [Anti-regression FB-026]: '[E]  events' present in TablePane HelpOverlay; want absent.\nView:\n%s", view)
+		}
+	})
+}
+
+// TestFB026_AC6_NarrowWidth_HintRowDropped verifies that at narrow width the
+// title-bar hint row is absent (existing truncation path unchanged).
+func TestFB026_AC6_NarrowWidth_HintRowDropped(t *testing.T) {
+	t.Parallel()
+	dv := components.NewDetailViewModel(40, 20)
+	dv.SetResourceContext("pods", "my-pod")
+	dv.SetMode("")
+
+	view := stripANSIModel(dv.View())
+	if strings.Contains(view, "[C] conditions") {
+		t.Errorf("AC6 [Observable FB-026]: narrow width: View() contains \"[C] conditions\"; want hint row dropped.\nView:\n%s", view)
+	}
+	if strings.Contains(view, "[y] yaml") {
+		t.Errorf("AC6 [Observable FB-026]: narrow width: View() contains \"[y] yaml\"; want hint row dropped.\nView:\n%s", view)
+	}
+}
+
+// ==================== End FB-026 ====================

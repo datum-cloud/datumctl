@@ -55,7 +55,7 @@ func TestFB114_AC3_AntiRegression_DescribeStillInView(t *testing.T) {
 	}
 }
 
-// AC4 [Anti-regression] — conditional lines ([Shift+C], [Shift+E], [x]) still appear/suppress correctly.
+// AC4 [Anti-regression] — conditional lines ([C] conditions, [E] events, [x]) still appear/suppress correctly.
 func TestFB114_AC4_AntiRegression_ConditionalLinesUnaffected(t *testing.T) {
 	t.Parallel()
 
@@ -64,11 +64,11 @@ func TestFB114_AC4_AntiRegression_ConditionalLinesUnaffected(t *testing.T) {
 	base.Width = 120
 	base.Height = 40
 	baseView := stripANSI(base.View())
-	if strings.Contains(baseView, "[Shift+C]") {
-		t.Errorf("AC4 [Anti-regression]: '[Shift+C]' present when ShowConditionsHint=false:\n%s", baseView)
+	if strings.Contains(baseView, "[C]  conditions") {
+		t.Errorf("AC4 [Anti-regression]: '[C]  conditions' present when ShowConditionsHint=false:\n%s", baseView)
 	}
-	if strings.Contains(baseView, "[Shift+E]") {
-		t.Errorf("AC4 [Anti-regression]: '[Shift+E]' present when ShowEventsHint=false:\n%s", baseView)
+	if strings.Contains(baseView, "[E]  events") {
+		t.Errorf("AC4 [Anti-regression]: '[E]  events' present when ShowEventsHint=false:\n%s", baseView)
 	}
 	if strings.Contains(baseView, "[x]") {
 		t.Errorf("AC4 [Anti-regression]: '[x]' present when ShowDeleteHint=false:\n%s", baseView)
@@ -82,7 +82,7 @@ func TestFB114_AC4_AntiRegression_ConditionalLinesUnaffected(t *testing.T) {
 	full.ShowEventsHint = true
 	full.ShowDeleteHint = true
 	fullView := stripANSI(full.View())
-	for _, want := range []string{"[Shift+C]", "[Shift+E]", "[x]"} {
+	for _, want := range []string{"[C]  conditions", "[E]  events", "[x]"} {
 		if !strings.Contains(fullView, want) {
 			t.Errorf("AC4 [Anti-regression]: %q absent from View() when flag set:\n%s", want, fullView)
 		}
