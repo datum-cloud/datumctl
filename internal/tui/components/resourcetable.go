@@ -333,12 +333,12 @@ func (m ResourceTableModel) renderActivitySection(contentW int) string {
 	case m.activityLoading && m.activityRows == nil:
 		body = muted.Render("⟳ loading…")
 	case m.activityFetchFailed:
-		if m.activityCRDAbsent {
+		if m.activityCRDAbsent || contentW < 35 {
 			body = muted.Render("activity unavailable")
 		} else {
 			body = muted.Render("activity unavailable") +
 				" " +
-				muted.Render("(press ") + accentBold.Render("[r]") + muted.Render(")")
+				muted.Render("(") + accentBold.Render("[r]") + muted.Render(" to retry)")
 		}
 	case len(m.activityRows) == 0:
 		body = muted.Render("no recent activity")

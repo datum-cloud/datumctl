@@ -1,9 +1,9 @@
 # TUI Feature Backlog
 
 Product owner: TUI product-experience agent
-Last updated: 2026-04-20 (**FB-080 ACCEPTED + FB-080 PERSONA-EVAL-COMPLETE + FB-079 ACCEPTED + FB-094 PERSONA-EVAL-COMPLETE + FB-096/097 specs delivered + FB-088 spec validated post-rebuild + FB-099 filed + FB-095/FB-096 scope amendments + FB-096 amended + FB-099 spec delivered + FB-063 PENDING TEST-ENGINEER + FB-079 PERSONA-EVAL-COMPLETE + FB-082 ACCEPTED + FB-082 PERSONA-EVAL-COMPLETE + FB-100/101/102/103 filed + FB-084 ACCEPTED + FB-102 spec delivered + FB-104/105 filed from user feedback + FB-084 PERSONA-EVAL-COMPLETE + FB-106 filed + FB-063 ACCEPTED + FB-083 spec delivered + FB-089/090 bundled PENDING TEST-ENGINEER + FB-064 ACCEPTED + FB-089/090 ACCEPTED + FB-083 PENDING TEST-ENGINEER + FB-092 PENDING TEST-ENGINEER + FB-063 PERSONA-EVAL-COMPLETE + FB-064 PERSONA-EVAL-COMPLETE + FB-104/105 specs delivered + FB-107/108/109 filed + FB-083 ACCEPTED + FB-089+090 PERSONA-EVAL-COMPLETE + FB-110 filed + FB-092 ACCEPTED + FB-093 PENDING TEST-ENGINEER + FB-108/109 specs delivered + FB-093 ACCEPTED + FB-083 PERSONA-EVAL-COMPLETE + FB-111 filed + FB-092 PERSONA-EVAL-COMPLETE + FB-095 PENDING TEST-ENGINEER + FB-093 PERSONA-EVAL-COMPLETE + FB-095 ACCEPTED (gate-check retro: false-blocker claim from test-engineer, product-experience direct-verified suite green) + FB-095 PERSONA-EVAL-COMPLETE + FB-107 PENDING TEST-ENGINEER + FB-111 PENDING TEST-ENGINEER + FB-107 ACCEPTED + FB-111 ACCEPTED + FB-107 PERSONA-EVAL-COMPLETE + FB-111 PERSONA-EVAL-COMPLETE + FB-096 PENDING TEST-ENGINEER + FB-096 REWORK (view-output assertion push-back — evidence-verified) + FB-099 PENDING TEST-ENGINEER (Option C strip-only, 8 wire-up sites, 6 ACs, component View() assertion pattern clean) + FB-099 ACCEPTED (gate-check clean, cross-feature FB-093 + FB-054 anti-regression suites green) + FB-096 RE-GATE PENDING TEST-ENGINEER (engineer rework: `statusBarNorm` helper, Width=120, View() substring; AC2 renamed `_HintField` → `_HintShown`) + FB-099 PERSONA-EVAL-COMPLETE (7 positives, 0 findings, considered-and-dismissed discipline clean) + FB-097 PENDING ENGINEER (routed per team-lead cadence while FB-096 re-gates) + FB-096 ACCEPTED (re-gate clean: 11 ACs PASS, FB-055/079/080/099 anti-regression green, statusBarNorm helper + AC2 rename confirmed) + FB-097 PENDING TEST-ENGINEER (engineer delivered Option A 1-site change, 8 ACs PASS with View() discipline) — **cancel-path trilogy CLOSED (FB-095/FB-096/FB-099)**; team rebuild triggered per cadence + FB-104 PENDING TEST-ENGINEER (engineer S7 hoveredType section, 9 ACs with brief-AC-indexed table; flagged: AC2 truncation-overflow coverage gap, AC5 state-transition pattern, FB-082/083 named anti-regression) + FB-096 PERSONA-EVAL-COMPLETE (clean: 0 P1/P2, 2 P3 dismissed — cosmetic dead code + intentional design) + FB-097 ACCEPTED (test-engineer gate-check clean; authored `TestFB097_BriefAC4_ConfirmClearsReadyPrompt` to fill engineer's AC-indexing gap; all 9 ACs PASS with statusBarNorm View() discipline) + FB-105 PENDING TEST-ENGINEER (three additive changes: S1 orientation hint, S4 all-clear flavor, quick-jump prefix "Quick jump:" → "jump to:"; 11 ACs PASS with View() discipline; brief-AC-indexed table clean) + FB-072 PENDING TEST-ENGINEER (Option A `lastEntryViaQuickJump` flag; 5 ACs PASS incl. AC2 state-transition + AC3 FB-041 anti-regression named; FB-042 round-trip test updated to new single-Esc behavior) + FB-100 PENDING TEST-ENGINEER (rows-empty gate on SetActivityFetchFailed; new ActivityRowCount() getter; 7 ACs PASS incl. AC5 named FB-082 anti-regression tests + AC6 FB-076 `[r]` dispatch tests green) + FB-101 PENDING TEST-ENGINEER (one-line `max(1, min(16, contentW-22))` defensive fix; 5 ACs PASS incl. AC1/AC2 panic-recovery tests + AC3 truncation-unchanged at Tier 3 boundary contentW=44)** — FB-079 shipped Option D copy with 3 new tests, [Input-changed] row N/A accepted with brief-grounded rationale (one-site copy swap, AC1 vs AC2 already pair the two hint phases). FB-094 persona delivered 0 P1 + 2 P2 + 3 P3; all 5 findings triaged; **0 new briefs filed** — findings #1–#4 validate FB-088's origin-label thesis (priority elevated P3 → P2); finding #5 (help overlay stale) verified non-issue. FB-096 spec Option B (both cancel paths post acknowledgment, `"Quota dashboard cancelled"`) + FB-097 spec Option A (persistent ready-prompt, 1-char change at `model.go:401–402`) delivered; **FB-098 DISMISSED** by ux-designer (FB-079+FB-097 jointly close the uncertainty window). **FB-125 ACCEPTED + FB-126 RESOLVED + FB-125 PERSONA-EVAL-COMPLETE + FB-103 ACCEPTED (P2 elevated, covers FB-082 P3-3 + FB-102 P2-1/P3-2 — single gate `ActivityRowCount()==0` covers empty/error/CRD-absent paths, preserves FB-076 silent-refetch for populated-rows).** Next: route FB-103 to user-persona for eval.)
+Last updated: 2026-04-20 (**FB-080 ACCEPTED + FB-080 PERSONA-EVAL-COMPLETE + FB-079 ACCEPTED + FB-094 PERSONA-EVAL-COMPLETE + FB-096/097 specs delivered + FB-088 spec validated post-rebuild + FB-099 filed + FB-095/FB-096 scope amendments + FB-096 amended + FB-099 spec delivered + FB-063 PENDING TEST-ENGINEER + FB-079 PERSONA-EVAL-COMPLETE + FB-082 ACCEPTED + FB-082 PERSONA-EVAL-COMPLETE + FB-100/101/102/103 filed + FB-084 ACCEPTED + FB-102 spec delivered + FB-104/105 filed from user feedback + FB-084 PERSONA-EVAL-COMPLETE + FB-106 filed + FB-063 ACCEPTED + FB-083 spec delivered + FB-089/090 bundled PENDING TEST-ENGINEER + FB-064 ACCEPTED + FB-089/090 ACCEPTED + FB-083 PENDING TEST-ENGINEER + FB-092 PENDING TEST-ENGINEER + FB-063 PERSONA-EVAL-COMPLETE + FB-064 PERSONA-EVAL-COMPLETE + FB-104/105 specs delivered + FB-107/108/109 filed + FB-083 ACCEPTED + FB-089+090 PERSONA-EVAL-COMPLETE + FB-110 filed + FB-092 ACCEPTED + FB-093 PENDING TEST-ENGINEER + FB-108/109 specs delivered + FB-093 ACCEPTED + FB-083 PERSONA-EVAL-COMPLETE + FB-111 filed + FB-092 PERSONA-EVAL-COMPLETE + FB-095 PENDING TEST-ENGINEER + FB-093 PERSONA-EVAL-COMPLETE + FB-095 ACCEPTED (gate-check retro: false-blocker claim from test-engineer, product-experience direct-verified suite green) + FB-095 PERSONA-EVAL-COMPLETE + FB-107 PENDING TEST-ENGINEER + FB-111 PENDING TEST-ENGINEER + FB-107 ACCEPTED + FB-111 ACCEPTED + FB-107 PERSONA-EVAL-COMPLETE + FB-111 PERSONA-EVAL-COMPLETE + FB-096 PENDING TEST-ENGINEER + FB-096 REWORK (view-output assertion push-back — evidence-verified) + FB-099 PENDING TEST-ENGINEER (Option C strip-only, 8 wire-up sites, 6 ACs, component View() assertion pattern clean) + FB-099 ACCEPTED (gate-check clean, cross-feature FB-093 + FB-054 anti-regression suites green) + FB-096 RE-GATE PENDING TEST-ENGINEER (engineer rework: `statusBarNorm` helper, Width=120, View() substring; AC2 renamed `_HintField` → `_HintShown`) + FB-099 PERSONA-EVAL-COMPLETE (7 positives, 0 findings, considered-and-dismissed discipline clean) + FB-097 PENDING ENGINEER (routed per team-lead cadence while FB-096 re-gates) + FB-096 ACCEPTED (re-gate clean: 11 ACs PASS, FB-055/079/080/099 anti-regression green, statusBarNorm helper + AC2 rename confirmed) + FB-097 PENDING TEST-ENGINEER (engineer delivered Option A 1-site change, 8 ACs PASS with View() discipline) — **cancel-path trilogy CLOSED (FB-095/FB-096/FB-099)**; team rebuild triggered per cadence + FB-104 PENDING TEST-ENGINEER (engineer S7 hoveredType section, 9 ACs with brief-AC-indexed table; flagged: AC2 truncation-overflow coverage gap, AC5 state-transition pattern, FB-082/083 named anti-regression) + FB-096 PERSONA-EVAL-COMPLETE (clean: 0 P1/P2, 2 P3 dismissed — cosmetic dead code + intentional design) + FB-097 ACCEPTED (test-engineer gate-check clean; authored `TestFB097_BriefAC4_ConfirmClearsReadyPrompt` to fill engineer's AC-indexing gap; all 9 ACs PASS with statusBarNorm View() discipline) + FB-105 PENDING TEST-ENGINEER (three additive changes: S1 orientation hint, S4 all-clear flavor, quick-jump prefix "Quick jump:" → "jump to:"; 11 ACs PASS with View() discipline; brief-AC-indexed table clean) + FB-072 PENDING TEST-ENGINEER (Option A `lastEntryViaQuickJump` flag; 5 ACs PASS incl. AC2 state-transition + AC3 FB-041 anti-regression named; FB-042 round-trip test updated to new single-Esc behavior) + FB-100 PENDING TEST-ENGINEER (rows-empty gate on SetActivityFetchFailed; new ActivityRowCount() getter; 7 ACs PASS incl. AC5 named FB-082 anti-regression tests + AC6 FB-076 `[r]` dispatch tests green) + FB-101 PENDING TEST-ENGINEER (one-line `max(1, min(16, contentW-22))` defensive fix; 5 ACs PASS incl. AC1/AC2 panic-recovery tests + AC3 truncation-unchanged at Tier 3 boundary contentW=44)** — FB-079 shipped Option D copy with 3 new tests, [Input-changed] row N/A accepted with brief-grounded rationale (one-site copy swap, AC1 vs AC2 already pair the two hint phases). FB-094 persona delivered 0 P1 + 2 P2 + 3 P3; all 5 findings triaged; **0 new briefs filed** — findings #1–#4 validate FB-088's origin-label thesis (priority elevated P3 → P2); finding #5 (help overlay stale) verified non-issue. FB-096 spec Option B (both cancel paths post acknowledgment, `"Quota dashboard cancelled"`) + FB-097 spec Option A (persistent ready-prompt, 1-char change at `model.go:401–402`) delivered; **FB-098 DISMISSED** by ux-designer (FB-079+FB-097 jointly close the uncertainty window). **FB-124 ACCEPTED + FB-124 PERSONA-EVAL-COMPLETE + FB-125/126/127 filed from FB-124 persona + FB-125/126 combined spec delivered by ux-designer + FB-127 WONTFIX + FB-102 ACCEPTED (commit `b476a23`, transient vs CRD-absent distinction shipped) + FB-102 PERSONA-EVAL-COMPLETE (1 P2 + 3 P3 findings; P2-1 and P3-2 fold into FB-103 which is elevated P3 → P2 with AC7-9 added for error/CRD-absent coverage; P3-3 filed as FB-128 (copy verb); P3-4 filed as FB-129 (narrow-width guard)) + FB-128 spec delivered (Option B `([r] to retry)`, 35 chars) + FB-129 spec delivered (Option A, threshold 35 aligned with FB-082 Tier 3) + FB-128/FB-129 PENDING ENGINEER as a combined 4-line change + FB-125 ACCEPTED (commit `de407a5`) + FB-126 RESOLVED (via FB-125 noun-phrase literal, persona grep-verified cross-surface consistency) + FB-125 PERSONA-EVAL-COMPLETE (1 P3 dismissed as persona-acknowledged trade-off without evidence of teaching failure; 0 new briefs) + FB-103 ACCEPTED (commit `4c9dab1`, one-site `ActivityRowCount()==0` gate, 9 tests + Integration AC) + FB-103 PERSONA-EVAL-COMPLETE (0 P1/P2, 1 P3-1 filed as FB-130 render-gate-misses-empty-but-loaded narrower-site) + FB-130 filed (P3, engineer-direct, 1-char render gate widen `activityRows == nil` → `len(activityRows) == 0` at `resourcetable.go:333`) + FB-128 ACCEPTED + FB-129 ACCEPTED (combined 4-line change at `resourcetable.go:335-342`, Option B copy + Option A threshold=35 width guard; 3 FB-128 tests + 5 FB-129 tests + TestFB102_AC1 cross-feature update all PASS; submitter-produced axis-coverage tables pre-review verified). **Next:** FB-128+129 to user-persona for eval; FB-130 to engineer after.)
 
-**Active queue:** FB-073 *(quick-jump fires from NavPane, P2, spec-ready Option A NavPane gate)* → FB-059 *(gap-guard threshold, P3)* → FB-060 *(failed-refresh signal)* → FB-065 *(copy mismatch, P3)* → FB-071 *(BucketsErrorMsg propagation, P3)* → FB-074 *(S2 unconfigured-quota copy, P3, engineer-direct)* → FB-075 *(S5 attention-kind separator, P3, spec-ready Option A blank-row)* → FB-085 *(P3, title bar [unavailable]+spinner contradiction, spec-ready merged with FB-086 Option A)* → FB-086 *(P3, [E] silent-block on double-failure, spec-ready merged with FB-085 Option A)* → FB-088 *(**P2** elevated 2026-04-20 from FB-094 persona 2 P2 findings, origin-label affordance, impl-block LIFTED — FB-094 ACCEPTED, spec-ready Option A, PENDING ENGINEER)* → **FB-102** *(P3, "activity unavailable" no recovery affordance when !isCRDAbsent, FB-082 persona P3-2, **PENDING ENGINEER** — Option D inline parenthetical `"activity unavailable (press [r])"` transient-only, CRD-absent unchanged; new `activityCRDAbsent` field + setter auto-reset on SetActivityRows, 2 code sites, coordinates with FB-100 without bundling)* → **FB-103** *(P3, `[r]` refresh path doesn't set activityLoading=true → no spinner on empty-rows refresh, engineer-direct, FB-082 persona P3-3, **PENDING ENGINEER**)* → **FB-106** *(P3, placeholder action row `[r] retry describe` overflows at contentW < 40 — narrow-width threshold gate Option A, engineer-direct, FB-084 persona P3-2, **PENDING ENGINEER**)* → **FB-108** *(P3, ticker-driven quota refresh intentionally silent post-FB-063 — spec Option B shipped, 2-line comment doc-only at `model.go:547`, no behavior change, **PENDING ENGINEER**)* → **FB-109** *(P3, `"quota dashboard"` top vs `"full dashboard"` bottom copy alignment — Option A clean variant `"── [3] quota dashboard ──"` drops "full" + "Quota" prefix, 2-line `buildQuotaSectionHeader()` change + prefixWidth=24 constant, **PENDING ENGINEER**)* → **FB-110** *(P3, help overlay "resume cached" sub-label doesn't match S1 "(cached)" parenthetical idiom after FB-089 shipped — engineer-direct 1-line fix at `helpoverlay.go:29`, FB-089+090 persona P3-1, **PENDING ENGINEER**)* → FB-038 → FB-039 → FB-040 → FB-026 → FB-025 → *(deferred: FB-027–034)* → FB-020 → FB-021 → FB-023 → *(deferred: FB-007/008/009)*
+**Active queue:** FB-073 *(quick-jump fires from NavPane, P2, spec-ready Option A NavPane gate)* → FB-059 *(gap-guard threshold, P3)* → FB-060 *(failed-refresh signal)* → FB-065 *(copy mismatch, P3)* → FB-071 *(BucketsErrorMsg propagation, P3)* → FB-074 *(S2 unconfigured-quota copy, P3, engineer-direct)* → FB-075 *(S5 attention-kind separator, P3, spec-ready Option A blank-row)* → FB-085 *(P3, title bar [unavailable]+spinner contradiction, spec-ready merged with FB-086 Option A)* → FB-086 *(P3, [E] silent-block on double-failure, spec-ready merged with FB-085 Option A)* → FB-088 *(**P2** elevated 2026-04-20 from FB-094 persona 2 P2 findings, origin-label affordance, impl-block LIFTED — FB-094 ACCEPTED, spec-ready Option A, PENDING ENGINEER)* → **FB-102** *(P3, "activity unavailable" recovery affordance, FB-082 persona P3-2, **ACCEPTED 2026-04-20** commit `b476a23` on `feat/console`, **PERSONA-EVAL-COMPLETE** — 1 P2 folded into FB-103, 3 P3 findings triaged as FB-103/128/129)* → **FB-103** *(**P2** elevated 2026-04-20 from FB-102 persona P2-1; `[r]` refresh path doesn't set activityLoading=true → no in-flight signal on empty-rows OR error-state refresh; engineer-direct, FB-082 persona P3-3 + FB-102 persona P2-1/P3-2, **ACCEPTED 2026-04-20** commit `4c9dab1` on `feat/console`, **PERSONA-EVAL-COMPLETE** — 0 P1/P2, 1 P3-1 filed as FB-130 narrower site)* → **FB-130** *(P3, spinner render gate `activityLoading && activityRows == nil` at `resourcetable.go:333` misses empty-but-loaded case (project with genuinely 0 activity rows) — FB-103 persona P3-1, engineer-direct 1-char fix widening to `len(activityRows) == 0`, **PENDING ENGINEER**)* → **FB-106** *(P3, placeholder action row `[r] retry describe` overflows at contentW < 40 — narrow-width threshold gate Option A, engineer-direct, FB-084 persona P3-2, **PENDING ENGINEER**)* → **FB-108** *(P3, ticker-driven quota refresh intentionally silent post-FB-063 — spec Option B shipped, 2-line comment doc-only at `model.go:547`, no behavior change, **PENDING ENGINEER**)* → **FB-109** *(P3, `"quota dashboard"` top vs `"full dashboard"` bottom copy alignment — Option A clean variant `"── [3] quota dashboard ──"` drops "full" + "Quota" prefix, 2-line `buildQuotaSectionHeader()` change + prefixWidth=24 constant, **PENDING ENGINEER**)* → **FB-110** *(P3, help overlay "resume cached" sub-label doesn't match S1 "(cached)" parenthetical idiom after FB-089 shipped — engineer-direct 1-line fix at `helpoverlay.go:29`, FB-089+090 persona P3-1, **PENDING ENGINEER**)* → FB-038 → FB-039 → FB-040 → FB-026 → FB-025 → *(deferred: FB-027–034)* → FB-020 → FB-021 → FB-023 → *(deferred: FB-007/008/009)*
 
 *Removed from queue 2026-04-20: **FB-107 (ACCEPTED 2026-04-20** — P2 engineer-direct three-site quota refresh state-cleanup (Site A `BucketsErrorMsg`/`LoadErrorMsg` drop `activePane` gate; Site B `ContextSwitchedMsg` adds `SetRefreshing(false)`; new `IsRefreshing()` + `HasBuckets()` accessors on `QuotaDashboardModel`); 5 FB-107 tests AC1–AC5 PASS; anti-regression `TestFB063_*` 7 tests + `TestFB082_*` / `TestFB083_*` 26 tests executed directly; full suite green; `bucketErr` vs `statusBar.Err` path distinction correctly flagged by engineer + verified by test-engineer; user-persona dispatch pending); **FB-111 (ACCEPTED 2026-04-20** — P2 engineer-direct one-line render-layer gate update at `resourcetable.go:310` adding `&& !m.activityFetchFailed` to FB-083 rows gate; 3 FB-111 tests AC1–AC3 PASS with Observable ACs using `stripANSI(m.View())` substring checks; AC4 covered by existing `TestFB083_AC6_AntiBehavior_SuppressedHint_4KeyStillNavigates`; anti-regression `TestFB083_*` 6 tests + `TestFB082_ErrorRecovery_*` executed directly; full suite green; defense-in-depth with pending FB-100 state-layer fix preserved; user-persona dispatch pending); **FB-095 (ACCEPTED 2026-04-20** — P3 engineer-direct two-site cancel-path stash clear (nav-cancel + second-press cancel); 4 FB-095 tests + cross-feature `TestFB080_AC3` migration (necessary-consequence); `go install ./...` + full `internal/tui` suite + FB-078/FB-080/FB-087 anti-regression all green; test-engineer's initial compile-failure blocker claim not reproducible — product-experience ran gate-check directly, verdict PASS on all counts; user-persona dispatch pending); FB-093 (ACCEPTED 2026-04-20** — Option A + Option B single `renderKeybindStrip()` rewrite shipped; table branch gains `3 quota` + `4 activity` between `/ filter` and `c ctx`; dashboard branch computes `hasCachedTable := m.forceDashboard && m.typeName != ""` and conditionally drops Tab entry when cached-state hint is visible in S1 (band owns Tab copy); 6 FB-093 brief-AC-indexed tests (AC1–AC6) using `renderKeybindStrip()` directly to avoid false-matching `[Tab]` from S1 band; AC4 uses `x delete` absence as table-branch marker; test-engineer gate-check ran anti-regression suites AC7/AC8/AC9 directly rather than hand-waving (FB-054 + FB-056 + FB-041 all green); pre-existing test failures TestFB093_AC2/AC4/AC5 + TestFB089_AC4 all now PASS confirming FB-093 is the feature they were ahead of; cross-feature `TestFB089_AC4_AntiRegression_S6Strip_TabNextPaneUnchanged` update reviewed per `feedback_scope_creep_bonus_bugs` necessary-consequence pattern (FB-089's semantic invariant of cached-state Tab affordance preserved; assertion migrated S6 → S1 as mandated by FB-093 Sub-problem 2 spec); user-persona dispatch pending per cadence rule); FB-092 (ACCEPTED 2026-04-20** — Option A one-line copy swap at `model.go:1521` → `"Returned to welcome panel"` drops CTA + "dashboard" term; 6 `TestFB055_*` test updates with `strings.Fields` normalization for lipgloss narrow-width wrapping; 9 brief-AC-indexed axes green (Observable x4, Input-changed HintClearMsg, Anti-behavior x2, Anti-regression x2 FB-054+FB-041, Integration); pre-existing failures in `components/` (TestFB093_* + TestFB089_AC4) flagged as unrelated to model.go one-liner; user-persona dispatch pending); FB-083 (ACCEPTED 2026-04-20 — Option C rows-only hint suppression shipped; `renderActivitySection()` gates on `len(m.activityRows) > 0`, `lipgloss.Width("")==0` absorbs gap; test-engineer added `TestFB083_AC6_AntiBehavior_SuppressedHint_4KeyStillNavigates` to close AC6 gap, proving suppression is display-only; 9 brief-AC-indexed tests total covering all empty/loading/fetchFailed/populated body states + Input-changed pair + `[4]` navigation anti-behavior + FB-082/FB-067 anti-regression chains; user-persona dispatch pending); FB-055 (ACCEPTED 2026-04-20); FB-056 (ACCEPTED 2026-04-20); FB-057 (ACCEPTED 2026-04-20); FB-063 (ACCEPTED 2026-04-20 — Option A SetRefreshing shipped; 7 brief-AC-indexed tests green including AC3 Input-changed pair for refreshing→updated-ago transition; `buildMainContent()` used for height-sensitive AC4/AC6 per existing precedent, `m.View()` used for AC1/AC2/AC3 end-to-end); **FB-064 (ACCEPTED 2026-04-20** — Option B prepend hint shipped via `buildQuotaTopHint()` + prepend in `buildDetailContent()`, 2 sites model.go only; 7 brief-AC-indexed tests incl. `TestFB064_InputChanged_YamlModeToggle_TopHintChanges` Input-changed pair; AC3/AC4/AC5 re-tagged Anti-behavior per pre-submission guidance; `buildDetailContent()` assertions consistent with existing FB-044 precedent + FB-063 buildMainContent convention; `go install` clean + suite green); **FB-089 (ACCEPTED 2026-04-20** — Option A Tab hint copy swap bundled with FB-090; 5 brief-AC-indexed tests covering 3 width tiers + AC4 re-tagged Anti-regression per pre-submission feedback + AC5 Input-changed `typeName=""` vs `"backends"` View() diff; FB-054 AC1 copy-assertion audit documented, behavioral assertion preserved); **FB-090 (ACCEPTED 2026-04-20** — Option A `quickJumpLabel()` helper bundled with FB-089; 7 tests + 4-subtest AC4 block (helper unit + View()-level pair addresses gate flag for user-visible Input-changed); AC8 combined-result test proves FB-089+FB-090 compose correctly (`"resume dns (cached)"` for `dnsrecordsets`); all Observable assertions View()-level); FB-078 (ACCEPTED 2026-04-20 — PERSONA-EVAL-COMPLETE); FB-079 (ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20 — 0 P1/P2/P3 new briefs, P3-1 separator inconsistency DISMISSED as defensible tonal distinction, P3-2 "when ready" over-instruction already tracked in FB-099 upgrade path, P3-3 positive cross-feature copy coordination finding); **FB-084 (ACCEPTED 2026-04-20** — Options A+D shipped at `model.go:1950/1976`, `placeholderActionRow(errMode, retryable)` signature gates `[r]` on severity, copy `[r] retry describe` when shown; 6 tests green; **scope-creep process flag logged** — engineer bundled cross-feature test-assertion modifications into FB-064 impl (View() → buildDetailContent() narrowing for AC1/AC4/AC5); end-state internally consistent with submitted axis-coverage table, no working behavior ripped out, accepted with rule-reinforcement note to engineer; user-persona dispatch pending); **FB-082 (ACCEPTED 2026-04-20** — Option B activity-unavailable + 3-tier width truncation + `activityFetchFailed` state field; 15 new tests + 2 existing anti-regression anchors green, `go install ./...` clean; AC4 dual-duty anti-regression+stuck-flag-anti-behavior; bonus state-priority + empty-rows-clears component tests in file); **FB-080 (ACCEPTED 2026-04-20** — Option C second-press cancel shipped; `!m.pendingQuotaOpen` stash guard at `model.go:1165` + else-branch cancel at `model.go:1184` clears `pendingQuotaOpen` + hint; 6 new brief-AC-indexed tests + updated FB-047 regression; [Input-changed] pair + FB-095 cross-ref stash-preservation test both present; all `stripANSIModel(appM.View())` observable assertions; `go install ./...` clean); FB-087 (ACCEPTED 2026-04-20); FB-091 (DISSOLVED 2026-04-20); **FB-094 (ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — P1 HOTFIX, Option A dashboard-as-origin guard; unblocks FB-088 impl + FB-095 engineer-direct fix; **0 new briefs from persona — findings all fold into FB-088 priority elevation**); **FB-098 (DISMISSED 2026-04-20** — FB-079 persistent loading-hint + FB-097 Option A persistent ready-prompt jointly resolve the uncertainty window; refile with evidence if confusion recurs). Added to queue 2026-04-20: FB-090 PENDING ENGINEER; FB-093 PENDING UX-DESIGNER; FB-095 P3 PENDING ENGINEER; **FB-096 P2 PENDING ENGINEER** (spec Option B delivered — both Esc-cancel + nav-cancel paths post acknowledgment); **FB-097 P2 PENDING ENGINEER** (spec Option A delivered — persistent ready-prompt). Priority changes 2026-04-20: **FB-088 P3 → P2** (FB-094 persona 2 P2 findings converge on its origin-label thesis; impl-block LIFTED with FB-094 acceptance).*
 
@@ -483,7 +483,7 @@ FB-002 (force-refresh) is equally important from an operator-workflow perspectiv
 
 ### FB-025 — Events freshness: in-place refresh + staleness indicator
 
-**Status: PENDING UX-DESIGNER** — written 2026-04-19 by product-experience after user-persona's FB-019 evaluation.
+**Status: ACCEPTED 2026-04-20** — spec at `docs/tui-ux-specs/fb-025-events-freshness-in-place-refresh.md`. Implementation: `detailview.go:29` (eventsFetchedAt field) + setter/getter at 115-116 + age label in titleBar at 169-170 + `RenderEventsTable` signature extended with fetchedAt at 335 (stale-empty recovery copy at ≥5m at 347-350). `model.go:367` sets timestamp on `EventsLoadedMsg` success; 3 reset sites at 623, 1469, 1482 clear on context/resource/pane transitions. D1 r-refresh dispatcher (r on DetailPane when `(eventsMode || events!=nil) && !eventsLoading`). Tests: 10 functions / 13 leaf cases (TestFB025_AC1/AC2/AC3 = r-key dispatch behavior; AC4 = SetFetchedAt on success; AC5 = error retains prior — third submission strengthened to pre/post `" · "` View() pair proving fetchedAt survives error reload; AC8 = reset sites × 5 sub-tests — third submission strengthened with `setFetchedAt` precondition + `assertNoAgeLabel` postcondition at identical width/mode so reset is the only suppressor; AC9 = refresh guard; Component AC4/AC6/AC7 = age label rendering + empty-state divergence). Test-engineer gate PASS on third submission after 3 violation rework rounds (AC4 model, AC5 labeling, AC8 helper) + 2 hardening rounds (second pass fixed bounded assertions, third pass eliminated vacuousness). Product-experience independent verification: all 13 leaf cases PASS, `go install ./...` clean, component hooks verified. Next: engineer commits FB-025 to `feat/console`, then user-persona evaluation. Prior: written 2026-04-19 by product-experience after user-persona's FB-019 evaluation.
 
 **Priority: High** — in-flight incidents are the exact use case the events sub-view exists for. Current behavior (no `r`-refresh, no staleness signal) actively misleads the operator.
 
@@ -546,7 +546,7 @@ Axis tags as before.
 
 ### FB-026 — Keybind hint format consistency pass
 
-**Status: PENDING UX-DESIGNER** — written 2026-04-19 by product-experience after user-persona FB-019 eval surfaced cross-surface inconsistency. **Update 2026-04-19:** user-persona FB-024 eval re-flagged this as P3-3 (title-bar uses `[E]`, HelpOverlay uses `[Shift+E]`); operator hit the notation mismatch immediately after FB-024 shipped the first `[E]` title-bar surface — confirming FB-026's priority is "address before more surfaces ship," not "defer." Carry-over: HelpOverlay `[Shift+E]` at `helpoverlay.go:43` should resolve as part of the format-consistency pass.
+**Status: ACCEPTED 2026-04-20** — spec at `docs/tui-ux-specs/fb-026-keybind-hint-format-consistency.md`. Implementation: `detailview.go:143-150` (toggle-swap on C) + helpoverlay format normalization. Tests: `TestFB026_AC1_TitleBar_HintMatrix` (4 sub-tests: empty/yaml/conditions/events modes), `TestFB026_AC2_HelpOverlay_CanonicalFormat`, `TestFB026_AC3_HelpOverlay_GlobalHelp_NoToggleVerb`, `TestFB026_AC4_ConditionsMode_ToggleSwap`, `TestFB026_AC5_PaneGating_Preserved` (4 sub-tests), `TestFB026_AC6_NarrowWidth_HintRowDropped`. Test-engineer gate PASS. Product-experience independent verification: 10 sub-tests PASS, `go install ./...` clean, code matches spec at `detailview.go:143-150`. Next: engineer commits FB-026 to `feat/console` with product-prose message. Prior: written 2026-04-19 by product-experience after user-persona FB-019 eval surfaced cross-surface inconsistency. **Update 2026-04-19:** user-persona FB-024 eval re-flagged this as P3-3 (title-bar uses `[E]`, HelpOverlay uses `[Shift+E]`); operator hit the notation mismatch immediately after FB-024 shipped the first `[E]` title-bar surface — confirming FB-026's priority is "address before more surfaces ship," not "defer." Carry-over: HelpOverlay `[Shift+E]` at `helpoverlay.go:43` resolved as part of the format-consistency pass.
 
 **Priority: Medium** — cosmetic correctness, no operator-workflow blocker, but the accumulated inconsistency will calcify as more briefs ship.
 
@@ -855,7 +855,7 @@ Axis tags: `[Happy]`, `[Repeat-press]`, `[Input-changed]`, `[Anti-behavior]`, `[
 
 ### FB-038 — DetailPane empty-viewport oscillation on rapid-E mash during in-flight fetch
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-19 from user-persona FB-024 follow-up (P2-3: rapid-E pressed during paired-fetch in-flight produces alternating spinner/blank viewport; FB-024's re-dispatch guard test name implies the rapid-E case was considered, but coverage is for dispatch count, not rendered output).
+**Status: ACCEPTED 2026-04-20** — Option A implementation verified at `model.go:2046` (3-line pre-check in `buildDetailContent()` returning muted `"Loading…"` placeholder when `describeRaw == nil && events == nil && !eventsMode && eventsLoading`). 3 AC-indexed tests green: AC1 [Observable] `TestFB038_AC1_InFlight_ViewContainsLoading` (asserts `stripANSI(m.View())` contains `"Loading"` during in-flight state); AC2 [Repeat-press] `TestFB038_AC2_RapidEPress_NoBlankBody` (4 rapid E presses — presses 2/4 at eventsMode=false are the regression check, both non-blank + contain `"Loading"`); AC3 [Anti-behavior] `TestFB038_AC3_PreCheck_Inert_AfterEventsLoaded` (after `EventsLoadedMsg`, View() does NOT contain `"Loading…"` AND DOES contain `"Describe unavailable"` — FB-024 placeholder correctly takes over). AC4 N/A per spec (Option B not chosen). AC5 [Anti-regression] FB-024 rapid-E dispatch guard preserved via full suite. AC6 [Integration] `go install ./...` clean + full `go test ./internal/tui/...` green. Test-engineer gate-check initial FAIL on AC1/AC3 (Observable/Anti-behavior asserting state-only); engineer rework added `stripANSI(appM.View())` assertions; re-gate PASS. Product-experience independent verification: `go test ./internal/tui/ -run 'TestFB038' -count=1 -v` all 3 PASS. **Resolves FB-024 follow-up P2-3.** FB-024 D1 relaxation preserved (operators can still pre-toggle to events mode during loading — render side is the defect, input side correct). **Next:** engineer commits FB-038 to `feat/console` with product-prose message describing the no-more-blank-body fix + push. **Prior Status: PENDING ENGINEER 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-038-detail-empty-viewport-oscillation.md` (Option A: 3-line render-layer pre-check; Option B rejected because it removes FB-024's D1 relaxation). **Original Status: PENDING UX-DESIGNER** — filed 2026-04-19 from user-persona FB-024 follow-up (P2-3: rapid-E pressed during paired-fetch in-flight produces alternating spinner/blank viewport; FB-024's re-dispatch guard test name implies the rapid-E case was considered, but coverage is for dispatch count, not rendered output).
 
 **Priority: P2** (reads as a rendering bug; the body oscillates between spinner and blank while the title bar shows steady "loading…" — reinforces a "TUI is broken" impression on the very surface FB-024 was hardening)
 
@@ -2757,8 +2757,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-behavior]`, `[Anti-regressi
 
 ### FB-085 — Title bar shows `describe [unavailable]` and `⟳ loading…` simultaneously
 
-**Merged-spec note:** spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-085-086-detail-error-state-fixes.md` (shared with FB-086). FB-085 Option A: `detailModeLabel()` returns `""` when `m.detail.Loading() == true` AND placeholder condition is met — title bar shows only `⟳ loading…` during refresh, no contradiction. One-line change.
-**Status: PENDING ENGINEER.**
+**Status: ACCEPTED 2026-04-20** — Option A implementation verified in `model.go:detailModeLabel` (guard `if m.detail.Loading() { return "" }` inside placeholder branch; spinner authoritative during loading; `[unavailable]` restored post-load when describe still nil). 3 AC-indexed tests green: AC1 [Observable] `TestFB085_AC1_LoadingTrue_UnavailableLabelAbsent` (`stripANSI(View())` does NOT contain `[unavailable]` during loading+placeholder); AC2 [Observable] `TestFB085_AC2_LoadingFalse_UnavailableLabelPresent` (`[unavailable]` present when loading=false); AC3 [Input-changed] `TestFB085_AC3_LoadingTransition_FlipsLabel` (true→false transition flips label; both legs use `stripANSIModel(View())`). AC4 [Anti-regression] via full suite — FB-024 yaml/conditions mode-switch coverage, FB-051/FB-052 placeholder tests all green. AC9 [Integration] `go install ./...` clean + full `go test ./internal/tui/...` green. Test-engineer gate-check initial FAIL on AC5+AC6 (FB-086) Observable/Anti-behavior axes asserting model-state only; engineer rework added `stripANSIModel(appM.View())` + `strings.Contains(view, "Loading events")` substring assertions on both; re-gate PASS. Cross-feature anti-regression anchors green: FB-024 (E-guard, both-failed, E-after-error, yaml/conditions), FB-051/FB-052 (all). Product-experience independent verification: `go test ./internal/tui/... -run 'TestFB085|TestFB086' -count=1 -v` all 6 PASS. **Next:** engineer commits FB-085 separately from FB-086 to `feat/console` (one-commit-per-feature rule) with product-prose message describing the title-bar contradiction fix. **Prior Status: PENDING ENGINEER 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-085-086-detail-error-state-fixes.md` (shared with FB-086). FB-085 Option A: `detailModeLabel()` returns `""` when `m.detail.Loading() == true` AND placeholder condition is met — title bar shows only `⟳ loading…` during refresh, no contradiction. One-line change.
 
 
 **Status: PENDING UX-DESIGNER (designer-call)** — filed 2026-04-19 by product-experience from FB-051+FB-052 user-persona P3-1.
@@ -2806,8 +2805,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 
 ### FB-086 — `[E]` silently blocked when both describe AND events fail
 
-**Merged-spec note:** spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-085-086-detail-error-state-fixes.md` (shared with FB-085). FB-086 Option A: relax `case "E"` admission gate from `describeRaw != nil || events != nil || eventsLoading` to add `|| eventsErr != nil`. In double-failure state, `[E]` now passes admission and re-fires `LoadEventsCmd` via existing re-dispatch at model.go:1113. One-line change.
-**Status: PENDING ENGINEER.**
+**Status: ACCEPTED 2026-04-20** — Option A implementation verified at `model.go:1164` (case "E" admission gate relaxed with `|| m.eventsErr != nil`; existing re-dispatch at `model.go:1171` handles `LoadEventsCmd` re-fire). 3 AC-indexed tests green: AC5 [Observable] `TestFB086_AC5_EKey_DoubleFailure_AdmitsAndRedispatches` (double-failure + [E] → `stripANSIModel(View())` contains "Loading events" spinner + model state confirms `eventsMode=true` + `eventsLoading=true` + cmd dispatched); AC6 [Anti-behavior] `TestFB086_AC6_EKey_SingleFailure_DescribePresent_StillAdmits` (pre-existing `describeRaw != nil` admission path unbroken; View() shows "Loading events" spinner); AC7 [Input-changed] `TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition` (double-failure → [E] → `EventsLoadedMsg` → View() transitions to event content, describe error block absent). AC8 [Anti-regression] via full suite — FB-024 E-guard tests, FB-019 yaml/conditions coverage via `TestFB024_YamlAndConditions_Noop_DescribeNil`, FB-051/FB-052 placeholder tests all green. AC9 [Integration] `go install ./...` clean + full `go test ./internal/tui/...` green. Test-engineer gate-check initial FAIL caught AC5+AC6 Observable/Anti-behavior axes asserting model-state only (memory rule violation: "Observable ACs must assert View() output"); engineer rework added view-output substring assertions; re-gate PASS. Product-experience independent verification via `go test ./internal/tui/... -run 'TestFB085|TestFB086' -count=1 -v` all 6 PASS. **Affordance now honest:** `[E]` in double-failure either recovers via re-fetch or surfaces the events error card — no more silently-swallowed keypress. **Next:** engineer commits FB-086 separately from FB-085 to `feat/console` (one-commit-per-feature rule) with product-prose message describing the [E]-unblock. **Prior Status: PENDING ENGINEER 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-085-086-detail-error-state-fixes.md` (shared with FB-085). FB-086 Option A: relax `case "E"` admission gate from `describeRaw != nil || events != nil || eventsLoading` to add `|| eventsErr != nil`. In double-failure state, `[E]` now passes admission and re-fires `LoadEventsCmd` via existing re-dispatch at model.go:1113. One-line change.
 
 
 **Status: PENDING UX-DESIGNER (designer-call)** — filed 2026-04-19 by product-experience from FB-051+FB-052 user-persona P3-3 (out-of-scope finding).
@@ -3397,7 +3395,7 @@ Axis tags: `[Observable]`, `[Repeat-press]`, `[Anti-regression]`, `[Input-change
 
 ### FB-073 — Quick-jump keys fire from any pane while welcome panel is visible (NavPane focus does not gate)
 
-**Status: PENDING UX-DESIGNER (semantic decision)** — filed 2026-04-19 by product-experience from FB-042 user-persona P2-3.
+**Status: ACCEPTED 2026-04-20** — product-experience ruling. Spec at `docs/tui-ux-specs/fb-073-navpane-quickjump-gate.md` (Option A — NavPane focus gate). Engineer delivered the one-line guard in `model.go:1047`: `if (m.tableTypeName == "" || m.showDashboard) && m.activePane != NavPane`. Tests pass: `TestFB073_AC1_NavPane_QuickJump_NoFire`, `TestFB073_AC2_NavPane_QuickJump_ViewUnchanged`, `TestFB073_AC3_TablePane_QuickJump_StillFires` — all three use `stripANSIModel(appM.View())` with substring checks (no model-field-only inspection). Axis coverage complete: Anti-behavior (AC1 + view), Observable (AC2), Anti-regression (AC3 TablePane intact, AC4 FB-042 tests green), Input-changed (AC1 vs AC3 pair — same `'b'` press, opposite outcomes driven by `activePane`), Repeat-press N/A (stateless guard). Filed 2026-04-19 from FB-042 user-persona P2-3.
 **Priority: P2** — accidental navigation reachable in the most common welcome-panel interaction (sidebar scrolling).
 
 #### User problem
@@ -4019,7 +4017,7 @@ If the team wants stronger defense: early-return a placeholder (`"—"` or simil
 
 ### FB-102 — "activity unavailable" has no recovery affordance when `!isCRDAbsent`
 
-**Status: ACCEPTED 2026-04-20** — Option D (compact parenthetical, transient-only) shipped. Spec: `docs/tui-ux-specs/fb-102-activity-unavailable-recovery-affordance.md`. When `activityFetchFailed=true` and the error is NOT CRD-absent, S3 body renders `"activity unavailable (press [r])"` with `[r]` accent+bold and the parenthetical muted. CRD-absent keeps clean `"activity unavailable"` — the action hint only appears where the action actually recovers. Implementation: `resourcetable.go:93` `activityCRDAbsent bool` field + `:336-342` conditional body + `:929` auto-clear on `SetActivityRows()` + `:942` `SetActivityCRDAbsent()` setter; `model.go:501` one-line propagation (`m.table.SetActivityCRDAbsent(isCRDAbsent)` after `SetActivityFetchFailed(true)`). Axis coverage: Observable × 2 (AC1 transient / AC2 CRD-absent), Input-changed × 1 (AC3 crd-absent toggle), Anti-behavior × 2 (AC4 normal state / AC5 rows-arrival clears), Anti-regression × 3 (AC6/AC7 FB-082 existing + AC8 FB-076 existing), Integration (AC9 `go install` + full suite exit 0). FB-082 and FB-076 anti-regression anchors green; product-experience independent verification PASS. Coordinates with FB-100: no bundling — FB-100 handles populated-rows case (stale rows retained), FB-102 handles empty-rows case (inline copy); complementary surfaces. **Prior Status: PENDING ENGINEER 2026-04-20** — spec delivered 2026-04-20 by ux-designer. Originally filed 2026-04-20 by product-experience from FB-082 user-persona P3-2.
+**Status: ACCEPTED 2026-04-20** — Option D (compact parenthetical, transient-only) shipped via commit `b476a23` on `feat/console`. Implementation: `resourcetable.go` adds `activityCRDAbsent bool` field (line 93), `SetActivityCRDAbsent(bool)` setter (line 942), auto-clear in `SetActivityRows()` (line 929); body conditional at `renderActivitySection()` lines 336-342 renders `"activity unavailable"` + muted `" (press "` + accent-bold `[r]` + muted `")"` when `!activityCRDAbsent`, else clean `"activity unavailable"`. `model.go:501` wires `m.table.SetActivityCRDAbsent(isCRDAbsent)` alongside `SetActivityFetchFailed(true)`. Tests: 5 ACs covering Observable (transient hint visible), Observable (CRD-absent no hint), Input-changed (rows-arrival clears), Anti-behavior (normal state no hint), Anti-regression (FB-082 CRD-absent path unchanged). Submitter-produced axis-coverage table confirmed before acceptance; `go test ./internal/tui/...` exit-0 verified. Originally filed 2026-04-20 by product-experience from FB-082 user-persona P3-2. Spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-102-activity-unavailable-recovery-affordance.md`.
 
 **Priority: P3** — cancel-on-transient-error UX refinement; FB-082 shipped the state machine + copy, but operators who hit a transient error have no signal that pressing `[r]` recovers them. `"activity unavailable"` reads as permanent. This is a refinement, not a blocker — operators can figure out to press `[r]` by convention. Mild severity elevates in combination with FB-100 (if stale-rows case gets a transient hint) since the unified recovery story matters.
 
@@ -4060,7 +4058,7 @@ Output a spec file at `docs/tui-ux-specs/fb-102-activity-unavailable-recovery-af
 
 ### FB-103 — `[r]` refresh on empty activity rows doesn't set `activityLoading=true` → no spinner feedback
 
-**Status: ACCEPTED 2026-04-20** — one-site source change at `model.go:1317-1320` (guard `if m.table.ActivityRowCount() == 0 { m.table.SetActivityLoading(true) }` inside existing project-scope branch before dispatching `LoadRecentProjectActivityCmd`). 9 tests with View()-substring discipline: AC1 empty-rows → spinner; AC2 org-scope → no spinner (ActiveCtx=nil), "no recent activity" preserved; AC3 populated-rows → stale rows preserved, no spinner (FB-076 silent-refetch guard); AC4 input-changed empty→loading; AC5 FB-076 dispatch preserved; AC6 FB-082 error-re-render; AC7 error-state → spinner (`"activity unavailable"` absent, covers FB-102 P2-1); AC8 error→loading input-changed; AC9 CRD-absent → spinner (covers FB-102 P3-2). AC10 Integration: `go install ./...` exit 0, `go test ./internal/tui/...` all packages `ok`. Submitter-produced axis-coverage table confirmed pre-review. **Prior Status: PENDING ENGINEER** — engineer-direct. Filed 2026-04-20 by product-experience from FB-082 user-persona P3-3. **Priority elevated P3 → P2** on 2026-04-20 from FB-102 user-persona P2-1/P3-2.
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — one-site source change at `model.go:1317-1320` (guard `if m.table.ActivityRowCount() == 0 { m.table.SetActivityLoading(true) }` inside existing project-scope branch before dispatching `LoadRecentProjectActivityCmd`). 9 tests with View()-substring discipline: AC1 empty-rows → spinner; AC2 org-scope → no spinner (ActiveCtx=nil), "no recent activity" preserved; AC3 populated-rows → stale rows preserved, no spinner (FB-076 silent-refetch guard); AC4 input-changed empty→loading; AC5 FB-076 dispatch preserved; AC6 FB-082 error-re-render; AC7 error-state → spinner (`"activity unavailable"` absent, covers FB-102 P2-1); AC8 error→loading input-changed; AC9 CRD-absent → spinner (covers FB-102 P3-2). AC10 Integration: `go install ./...` exit 0, `go test ./internal/tui/...` all packages `ok`. Submitter-produced axis-coverage table confirmed pre-review; all 9 test functions exist with state-transition assertion patterns. **Persona eval** (2026-04-20): all 3 target scenarios (empty/never-loaded, transient error, CRD-absent) confirmed spinner fires on `[r]` press; populated-rows silent-refetch (FB-076) preserved; CRD-absent brief spinner-flash reads as informative "keypress received, fetch attempted, still unavailable". 0 P1/P2, 1 P3-1 filed as **FB-130** (render gate at `resourcetable.go:333` uses `activityRows == nil`; misses empty-but-non-nil case — project that genuinely has no activity shows frozen `"no recent activity"` teaser during `[r]` round-trip despite FB-103's state gate firing). Shipped in commit `4c9dab1` on `feat/console`. **Prior Status: PENDING ENGINEER** — engineer-direct. Filed 2026-04-20 by product-experience from FB-082 user-persona P3-3. **Priority elevated P3 → P2** on 2026-04-20 from FB-102 user-persona P2-1: same user-problem re-observed from the error-state path (`[r]` on `"activity unavailable (press [r])"` surface also produces no in-flight signal). Because FB-082 clears `activityRows` on fetch-failure, the error-state surface is a strict subset of "empty-rows" — the fix covers it via the body switch ordering (`activityLoading && rows == nil` before `activityFetchFailed`).
 
 **Priority: P2** — refresh-feedback gap; FB-076 (ACCEPTED 2026-04-19) added the dispatch but not the visual feedback. Operators who press `[r]` with an empty activity teaser see no change on S3 and can't tell whether the refresh is in flight. Once a row arrives the teaser updates; until then S3 silently sits on `"no recent activity"` (or `"activity unavailable (press [r])"` on the error path). Persona-observed on both surfaces; on a slow API (2-5s) operators press `[r]` twice or assume key-capture failure.
 
@@ -4110,8 +4108,11 @@ Future refinement path (not scope): if the team wants the rows-populated case to
 | AC3 | Anti-behavior | **Populated-rows** state + NavPane `[r]` press + project-scope → `SetActivityLoading(true)` NOT called; View() still contains the prior actor labels (stale rows preserved). This preserves the FB-076 silent re-fetch pattern. |
 | AC4 | Input-changed | Empty-rows state before vs after `[r]` press: View() before contains `"no recent activity"`, View() after contains `"⟳ loading…"`. |
 | AC5 | Anti-regression | FB-076 tests green: `[r]` still dispatches `LoadRecentProjectActivityCmd` on project scope; org-scope `[r]` still doesn't. |
-| AC6 | Anti-regression | FB-082 tests green. `ActivityFetchFailed` path unaffected. |
-| AC7 | Integration | `go install ./...` compiles; `go test ./internal/tui/...` green. |
+| AC6 | Anti-regression | FB-082 tests green. `ActivityFetchFailed` path unaffected (post-fetch: if fetch fails again, body re-renders error copy). |
+| AC7 | Observable (error→loading) | Error-state (`activityFetchFailed=true`, `activityCRDAbsent=false`, `activityRows=nil`) + NavPane `[r]` press + project-scope → `stripANSIModel(appM.View())` contains `"⟳ loading…"` and does NOT contain `"activity unavailable (press [r])"`. Covers FB-102 persona P2-1: error-surface `[r]` press now shows in-flight signal. |
+| AC8 | Input-changed (error→loading) | Error-state before vs after `[r]` press: View() before contains `"activity unavailable (press [r])"`, View() after contains `"⟳ loading…"`. |
+| AC9 | Observable (CRD-absent→loading→CRD-absent) | CRD-absent state (`activityFetchFailed=true`, `activityCRDAbsent=true`, `activityRows=nil`) + NavPane `[r]` press → `SetActivityLoading(true)` IS called (rows==0 gate). View() momentarily contains `"⟳ loading…"`; post-fetch, View() returns to `"activity unavailable"` (no parenthetical, CRD-absent retained). This is the incidental keystroke-received signal covering FB-102 persona P3-2 — the spinner flash confirms the keypress even though the retry permanently fails. |
+| AC10 | Integration | `go install ./...` compiles; `go test ./internal/tui/...` green. |
 
 #### Non-goals
 
@@ -4683,7 +4684,7 @@ Where does the loading-window hint sit in the FB-079/FB-097/FB-099 triad?
 
 ### FB-116 — Orientation hint promises "quick-jump key below" to operators who have no quick-jump keys
 
-**Status: COMMITTED TO FEAT/CONSOLE 2026-04-20** — test-engineer PASS 2026-04-20: `go build ./internal/tui/...` clean; 6/6 `TestFB116_*` green; full suite + `go install ./...` green. Production code verified at `resourcetable.go:644` — false clause absent from source. **FB-105 anchor independence verified:** test-engineer grep confirmed `"quick-jump key below"` appears only in FB-116 test negation checks (no FB-105 test relied on trailing false clause). Ux-spec §4 anchor-update prediction unnecessary; engineer's diff-simplification discovery correct. **AC3 axis-mislabel ruling — accept as-is:** same call as FB-114 AC2. Static copy-change brief with no state-transition behavior; real empty→populated transition coverage already exists in FB-105 tests at `resourcetable_test.go:2358-2361`. AC3 three-assertion post-fix snapshot (new pos + old neg + base pos) is genuine regression detector, not pass-through. No relabel cycle warranted. **Next:** engineer commits to `feat/console` as its own product-prose commit (strict one-commit-per-feature rule — genuinely-new production change, not retroactive-closeout). This closes the copy-polish batch per team-lead direction. **Prior Status: PENDING TEST-ENGINEER 2026-04-20** — engineer delivered Option A implementation: `internal/tui/components/resourcetable.go:644` substring swap `"→  select a resource type from the sidebar, or use a quick-jump key below"` → `"→  select a resource type from the sidebar to get started"`. 6 `TestFB116_*` tests green (AC1 Observable false-clause-absent via `!strings.Contains(got, "quick-jump key below")`; AC2 Observable full new directive present; AC3 "Input-changed" — post-fix snapshot style, new copy + old clause absent + base directive intact; AC4 Anti-regression FB-105 anchor; AC5 Anti-regression forceDashboard suppression; AC6 Anti-regression org-scope suppression). Anti-behavior marked N/A with justification (static copy change). Integration confirmed via full `./internal/tui/...` + `go install ./...` green. **FB-105 anchor discovery — spec §4 prediction was unnecessary:** engineer verified all 6 existing FB-105 anchor references use prefix `"select a resource type from the sidebar"` which still matches new copy; no anchor updates needed. Good catch that simplified the diff over spec expectation. **Pre-submission note flagged to test-engineer:** AC3 labeled "Input-changed" but is effectively a post-fix-state snapshot (same pattern as FB-114 AC2). Brief AC3 criterion ("hint stable across empty/populated registrations") was poorly scoped for a stateless Option A — the genuine state-transition behavior (empty→populated suppression) is already covered by existing TestFB105_AC3-family tests at `resourcetable_test.go:2358-2361`. Test-engineer to decide accept-as-is vs relabel. **Prior Status: IN-PROGRESS (engineer) 2026-04-20** — routed to engineer 2026-04-20 after FB-114+FB-115 feat/console commits landed. Ux-designer spec delivered 2026-04-20 at `docs/tui-ux-specs/fb-116-orientation-hint-false-quickjump.md`. Decision: Option A — `"→  select a resource type from the sidebar to get started"` (single substring changed at `resourcetable.go:644`). Rationale over B: Option B's post-registration phase provides zero marginal information — when `len(m.registrations) > 0`, `renderQuickJumpSection()` already renders quick-jump keys visibly below the hint; two-phase copy would restate what the operator already sees. Option B also requires expanding gate condition with internal branching, adding complexity for no net signal gain. Hint is most valuable as calm single directive at maximum-disorientation (zero registrations); once registrations arrive interface communicates the rest. Spec includes explicit §4 calling out FB-105 test-anchor update as intentional (same pattern as FB-115 → FB-079). ACs cover Observable ×2 (false clause absent, correct directive present), Input-changed, Anti-regression ×3 (FB-105 anchor, forceDashboard suppression, org-scope suppression), Integration. **Prior Status: PENDING UX-DESIGNER 2026-04-20** — designer-call required on copy fix (Option A minimal strip vs Option B stateful two-phase hint). Filed 2026-04-20 by product-experience from FB-105 user-persona P2 finding. Persona interpretation verified in code.
+**Status: ACCEPTED + PERSONA-EVAL-COMPLETE 2026-04-20** — user-persona eval 2026-04-20 returned 0 P1/P2/P3 + 1 positive finding. Persona confirmed: false "or use a quick-jump key below" clause gone; new operator in empty project sees one calm directive pointing at the sidebar (the one always-present always-correct affordance in that state); `"to get started"` lands as a natural first-time-instruction closing phrase (stateless, accurate regardless of what loads after); no new interaction-induced confusion (`line3` hint location + registration-populated suppression keep the surface clean). Fix resolved the originally filed false-promise confusion exactly. **Copy-polish batch (FB-114 + FB-115 + FB-116) formally closed.** **Prior Status: ACCEPTED + COMMITTED + PENDING PERSONA-EVAL 2026-04-20** — engineer committed `b036d91` on `feat/console`: _"First-time project view no longer promises quick-jump keys that aren't there"_. Strict one-commit-per-feature rule honored (genuinely-new production change, not retroactive-closeout). **Prior Status: COMMITTED TO FEAT/CONSOLE 2026-04-20** — test-engineer PASS 2026-04-20: `go build ./internal/tui/...` clean; 6/6 `TestFB116_*` green; full suite + `go install ./...` green. Production code verified at `resourcetable.go:644` — false clause absent from source. **FB-105 anchor independence verified:** test-engineer grep confirmed `"quick-jump key below"` appears only in FB-116 test negation checks (no FB-105 test relied on trailing false clause). Ux-spec §4 anchor-update prediction unnecessary; engineer's diff-simplification discovery correct. **AC3 axis-mislabel ruling — accept as-is:** same call as FB-114 AC2. Static copy-change brief with no state-transition behavior; real empty→populated transition coverage already exists in FB-105 tests at `resourcetable_test.go:2358-2361`. AC3 three-assertion post-fix snapshot (new pos + old neg + base pos) is genuine regression detector, not pass-through. No relabel cycle warranted. **Next:** engineer commits to `feat/console` as its own product-prose commit (strict one-commit-per-feature rule — genuinely-new production change, not retroactive-closeout). This closes the copy-polish batch per team-lead direction. **Prior Status: PENDING TEST-ENGINEER 2026-04-20** — engineer delivered Option A implementation: `internal/tui/components/resourcetable.go:644` substring swap `"→  select a resource type from the sidebar, or use a quick-jump key below"` → `"→  select a resource type from the sidebar to get started"`. 6 `TestFB116_*` tests green (AC1 Observable false-clause-absent via `!strings.Contains(got, "quick-jump key below")`; AC2 Observable full new directive present; AC3 "Input-changed" — post-fix snapshot style, new copy + old clause absent + base directive intact; AC4 Anti-regression FB-105 anchor; AC5 Anti-regression forceDashboard suppression; AC6 Anti-regression org-scope suppression). Anti-behavior marked N/A with justification (static copy change). Integration confirmed via full `./internal/tui/...` + `go install ./...` green. **FB-105 anchor discovery — spec §4 prediction was unnecessary:** engineer verified all 6 existing FB-105 anchor references use prefix `"select a resource type from the sidebar"` which still matches new copy; no anchor updates needed. Good catch that simplified the diff over spec expectation. **Pre-submission note flagged to test-engineer:** AC3 labeled "Input-changed" but is effectively a post-fix-state snapshot (same pattern as FB-114 AC2). Brief AC3 criterion ("hint stable across empty/populated registrations") was poorly scoped for a stateless Option A — the genuine state-transition behavior (empty→populated suppression) is already covered by existing TestFB105_AC3-family tests at `resourcetable_test.go:2358-2361`. Test-engineer to decide accept-as-is vs relabel. **Prior Status: IN-PROGRESS (engineer) 2026-04-20** — routed to engineer 2026-04-20 after FB-114+FB-115 feat/console commits landed. Ux-designer spec delivered 2026-04-20 at `docs/tui-ux-specs/fb-116-orientation-hint-false-quickjump.md`. Decision: Option A — `"→  select a resource type from the sidebar to get started"` (single substring changed at `resourcetable.go:644`). Rationale over B: Option B's post-registration phase provides zero marginal information — when `len(m.registrations) > 0`, `renderQuickJumpSection()` already renders quick-jump keys visibly below the hint; two-phase copy would restate what the operator already sees. Option B also requires expanding gate condition with internal branching, adding complexity for no net signal gain. Hint is most valuable as calm single directive at maximum-disorientation (zero registrations); once registrations arrive interface communicates the rest. Spec includes explicit §4 calling out FB-105 test-anchor update as intentional (same pattern as FB-115 → FB-079). ACs cover Observable ×2 (false clause absent, correct directive present), Input-changed, Anti-regression ×3 (FB-105 anchor, forceDashboard suppression, org-scope suppression), Integration. **Prior Status: PENDING UX-DESIGNER 2026-04-20** — designer-call required on copy fix (Option A minimal strip vs Option B stateful two-phase hint). Filed 2026-04-20 by product-experience from FB-105 user-persona P2 finding. Persona interpretation verified in code.
 
 **Priority: P2** — fires at the worst UX moment: a new operator's first view of a project, when they're most disoriented and the hint is specifically designed to orient them. Offering a false second option invites the operator to look for something that isn't there; the most likely interpretation when nothing appears below is "something didn't load" rather than "the hint was wrong."
 
@@ -4751,9 +4752,296 @@ Operator-visible impact: a first-time arrival in a project sees the hint, scans 
 
 ---
 
+---
+
+### FB-117 — End-to-end test harness for `datumctl tui`
+
+**Status: PENDING** — filed 2026-04-20 by team-lead per user request.
+
+**Priority: P2** — the TUI has ~400 unit tests but zero end-to-end coverage. No test verifies the TUI works against a real Datum Cloud session, real terminal rendering, or real keyboard interaction chains. All existing tests mock the API layer.
+
+#### User problem
+
+Unit tests confirm model behavior in isolation but cannot catch:
+- Real API auth/context failures at startup
+- Lipgloss rendering regressions at actual terminal widths
+- Keyboard interaction sequences that span multiple model updates
+- Session lifecycle: login → context selection → resource navigation → detail view
+- The welcome panel, quota dashboard, and activity dashboard in a live environment
+
+The `docs/tui-e2e-requirements.md` defines 30+ REQ-TUI-XXX scenarios that have never been executed by automation.
+
+#### Proposed approach
+
+Build a VHS-based e2e harness:
+- [VHS](https://github.com/charmbracelet/vhs) records terminal sessions as `.tape` files and produces GIF/MP4 output; assertions can be made on screenshot frames or terminal output captures.
+- One `.tape` file per REQ-TUI-XXX scenario, stored at `tests/e2e/tui/`.
+- CI step: `vhs tests/e2e/tui/*.tape` + diff against golden screenshots or text output.
+- Requires a live Datum Cloud environment with seeded resources (test org/project).
+
+#### Alternative approach (lighter weight)
+
+Use `expect`/`pexpect` or a Go PTY harness (`github.com/creack/pty`) to drive `datumctl tui` stdin/stdout programmatically, assert on ANSI output after each keypress sequence. No VHS dependency; runnable in CI with a real API token.
+
+#### Acceptance criteria
+
+1. At minimum 5 REQ-TUI scenarios from `docs/tui-e2e-requirements.md` have automated coverage covering: startup, sidebar navigation, resource table load, detail view open, context switcher.
+2. Tests run against a real Datum Cloud test environment (not mocks).
+3. Tests are gated in CI (or documented as manual gate with reproduction steps).
+4. A `README` or `docs/tui-e2e-runbook.md` explains how to run locally and how to update golden output.
+
+#### Non-goals
+- 100% REQ-TUI coverage in the first pass — 5 core flows is the target.
+- Replacing existing unit tests.
+- Testing mutation operations (TUI is read-only).
+
+**Maps to:** `docs/tui-e2e-requirements.md` (all REQ-TUI-XXX).
+
+---
+
+### FB-118 — Describe error card wins over eventsMode in double-failure state → FB-086 recovery path shows wrong body
+
+**Status: ACCEPTED 2026-04-20** — spec at `docs/tui-ux-specs/fb-118-describe-error-eventsmode-guard.md`. Implementation: one-word guard at `model.go:2069` (`&& !m.eventsMode` added to describe error block predicate) + `newDoubleFailureDetailModel` fixture tightened at `model_test.go:14319` with `loadState=LoadStateError`, `lastFailedFetchKind="describe"`, `loadErr=errors.New("describe fetch failed")`. Tests: `TestFB118_AC1/AC2/AC3` (Observable: events spinner/table/error when eventsMode=true), `TestFB118_AC4` (Anti-regression: describe card still shows when eventsMode=false), `TestFB118_AC5` (Anti-regression: fixture fields set), `TestFB118_AC6` (Anti-regression: FB-038 pre-check unaffected). Test-engineer gate PASS. Product-experience independent verification: 6 tests PASS, `go install ./...` clean, code matches spec. Next: engineer commits FB-118 to `feat/console`. Prior: written 2026-04-20 by product-experience after user-persona FB-085/FB-086 eval raised P2. Follow-up completion of FB-086 (`fd91904`).
+
+**Priority: P2** — FB-086's admission fix is honest, but the body rendering path is still wrong. The operator presses [E], lands in eventsMode, and sees the describe error card instead of events loading/error. The affordance succeeds; the destination misleads.
+
+#### User problem
+
+In double-failure state (describe fetch settled-failed, events fetch settled-failed), pressing [E] correctly admits and sets `m.eventsMode = true` (FB-086 fix). But `buildDetailContent()` at `internal/tui/model.go:2069` checks the describe error block **before** the `m.eventsMode` branch (line 2104), and the describe error block has no `!m.eventsMode` guard. Order of checks:
+
+1. FB-038 loading placeholder — guarded by `!m.eventsMode`, skipped
+2. FB-024/051/052 placeholder — guarded by `!m.eventsMode && events != nil`, skipped
+3. **FB-005 describe error block** — `m.loadState == LoadStateError && m.lastFailedFetchKind == "describe"` — FIRES
+4. yamlMode / conditionsMode / eventsMode — never reached
+
+Consequences:
+- **During events re-fetch after [E]:** mode label says "events," body shows the describe error card. The operator pressed [E] to retry events; the body shows a describe error, not a loading indicator.
+- **If the re-fetch fails again:** same result — describe error card fills the pane, events error card at `components.RenderEventsTable(eventsErr)` never renders. No surface communicates why events failed.
+- **If the re-fetch succeeds:** describe error card still wins over the rendered events table. The [E] affordance is reachable but the rendered body is unreachable.
+
+Also: the AC7 test (`TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition`) passes because the `newDoubleFailureDetailModel` fixture doesn't set `loadState`/`lastFailedFetchKind`/`loadErr`. Real field state in double-failure has describe settled-failed (loadState = LoadStateError, lastFailedFetchKind = "describe", loadErr set). The fixture modeled "describe nil + events err" but not "describe failed + events failed" — which is the state the user actually hits.
+
+#### Designer call
+
+Preferred approach is to add `&& !m.eventsMode` to the describe error block admission at line 2069 — mirroring the guards already present on the FB-038 and FB-051/052 branches. Once the operator has entered events mode, the events surface owns the body; the describe error is communicated by whatever mode label the title bar is carrying (e.g., describe-error context still visible in status bar / mode transitions).
+
+Open designer questions:
+- Should the describe error carry a breadcrumb on the events surface when events also fail? (E.g., "describe also failed" badge in the events error card.) Or is title-bar context enough?
+- Tightening the `newDoubleFailureDetailModel` fixture to reflect true double-failure state: set `loadState = LoadStateError`, `lastFailedFetchKind = "describe"`, `loadErr = errors.New("describe fetch failed")` alongside the existing `eventsErr` field. New Observable AC must assert `stripANSI(View())` contains events loading/error content and does **not** contain the describe error card when `eventsMode=true`.
+
+#### Dependencies
+
+- FB-086 ACCEPTED (`fd91904`) — admission fix in place.
+- FB-038 ACCEPTED (`bb609ce`) — loading placeholder uses `!m.eventsMode`; describe error block should match.
+- FB-051/052/005 — surrounding placeholder and error-card logic.
+
+#### Non-goals
+
+- Not re-opening FB-086; the admission is correct. This is completion of the rendered destination.
+- Not changing FB-005 error card copy or dimensions.
+- Not touching single-failure paths.
+
+---
+
+### FB-119 — Describe-requiring keybind hints (`[y]`, `[C]`) remain visible in double-failure state
+
+**Status: ACCEPTED 2026-04-20** — spec at `docs/tui-ux-specs/fb-119-describe-hint-gate.md`. Implementation: `detailview.go:28` (field), `detailview.go:110-111` (setter), `detailview.go:124` (getter), `detailview.go:150` (gate in `titleBar()`) + 6 AppModel integration points (`model.go:347` set true on DescribeResultMsg; `model.go:615, 1538, 1672, 1710, 1820` set false on 5 describeRaw=nil sites; `model.go:2208` preserves across state restoration). Tests: 7 tests (Observable × 3, Input-changed × 1, Anti-regression × 3) — `TestFB119_AC1` through `TestFB119_AC7`. Test-engineer gate PASS. Product-experience independent verification: all 7 tests PASS including AC4 sub-tests, `go install ./...` clean, code matches spec. Next: engineer commits FB-119 to `feat/console`. Prior: written 2026-04-20 by product-experience after user-persona FB-085/FB-086 eval raised P3.
+
+**Priority: P3** — minor friction, but newly prominent via FB-086's navigable double-failure path.
+
+#### User problem
+
+In double-failure state (describe nil, events nil, eventsErr set, describe settled-failed), the DetailPane title-bar keybind strip at `detailview.go` renders `[y] yaml  [C] conditions  [E] events  [x] delete  [Esc] back`. Both `[y]` and `[C]` require `m.describeRaw != nil` to produce meaningful content — yaml rendering and conditions rendering both depend on the parsed unstructured object. In double-failure, pressing `[y]` or `[C]` toggles the mode flag but the rendered body is empty/unchanged.
+
+Pre-existing behavior. FB-086 promoted this state from "unreachable dead end" to "navigable via [E]," which makes the non-functional hints more visible: an operator who lands in double-failure and tries `[y]` after `[E]` arrives in a confusing state (blank yaml view or describe-error-card depending on FB-118 resolution).
+
+#### Designer call
+
+Preferred approaches:
+- **A (gate):** suppress `[y]` and `[C]` hints when `m.describeRaw == nil`. Keep `[E]` and `[Esc]`. Hint strip communicates what actually works.
+- **B (inert-with-tooltip):** render hints but style muted + status-bar message on press ("describe unavailable — yaml/conditions require a successful describe fetch").
+- **C (do nothing):** treat as acceptable noise.
+
+A mirrors the general principle "affordances must not lie." B preserves discoverability for recovery scenarios where describe succeeds after the user has been shown the hints. C is cheap but perpetuates the honesty gap FB-086 fixed.
+
+Open designer questions:
+- Should placeholder surfaces (FB-024/051/052) also suppress these hints in their own action rows? The placeholder action row already only renders `[E]` and `[Esc]` (plus `[r]` for retry) — it's the title-bar strip that's leaking the full hint set. Scope: title-bar + help overlay alignment.
+- Does suppression also apply to `[x] delete` when `describeRaw == nil`? (Delete is a separate mutation path; may or may not require describe depending on how the mutation flow constructs the payload.)
+
+#### Dependencies
+
+- FB-118 (describe error card guard) — same code area, same test fixture tightening.
+- FB-026 (keybind hint format consistency) — currently IN-PROGRESS; FB-119 is a separate thesis (conditional visibility) not a format fix.
+
+#### Non-goals
+
+- Not changing `[E]` or `[Esc]` visibility.
+- Not changing keybind format (FB-026 scope).
+- Not changing the describe-required check on the `[y]`/`[C]` handler side; they already no-op usefully when `describeRaw == nil`. Scope is discoverability-surface honesty.
+
+---
+
+### FB-120 — Dual loading signals on initial DetailPane open don't distinguish describe-vs-events fetch
+
+**Status: DEFERRED** — written 2026-04-20 by product-experience after user-persona FB-038 eval. Persona explicitly framed as a note for future dual-fetch UX revisit, not an independent actionable item.
+
+**Priority: P3** — minor; the blank-body regression FB-038 fixed was clearly worse. Signals aren't wrong, just not specific.
+
+#### User problem
+
+On initial DetailPane open with both fetches in-flight, the operator sees:
+- Title bar: `⟳ loading…` (describe spinner from `DetailViewModel.titleBar()`)
+- Body: `Loading…` (FB-038 placeholder, muted)
+
+Both signals are accurate but not differentiated. Transition behavior:
+- **Describe returns first, events still loading:** body switches to describe content; the body `Loading…` disappears. Operator never learns events were still pending.
+- **Events returns first, describe still loading:** body switches to the FB-024/051/052 "Describe unavailable — only events loaded" placeholder. The transition from generic `Loading…` to that placeholder can feel abrupt.
+
+#### Why deferred
+
+Persona self-limited the finding: "This is minor — blank was clearly worse. The signals aren't wrong, just not specific. Worth noting if a future brief ever revisits the dual-fetch loading UX."
+
+No active designer-call. Keep filed for when a future dual-fetch UX pass wants the signal.
+
+#### Dependencies
+
+- FB-038 ACCEPTED (`bb609ce`) — loading placeholder; FB-120 would refine it.
+- FB-024/051/052 — placeholder surface that the events-first transition lands on.
+
+#### Non-goals (if ever promoted)
+
+- Not re-opening FB-038.
+- Not changing the title-bar spinner semantics.
+
+---
+
+### FB-121 — HelpOverlay ACTIONS column: `[C]` and `[E]` labels misaligned 2 columns left of siblings
+
+**Status: ACCEPTED 2026-04-20 — committed `d9f29f1` on `feat/console`** ("Help overlay [C] and [E] rows align with their siblings"). Spec at `docs/tui-ux-specs/fb-121-helpoverlay-actions-column-alignment.md`. Option A (2-space → 4-space) shipped. Implementation: `components/helpoverlay.go:40` (`[C]    conditions`) + `:43` (`[E]    events`). Assertion migrations per spec §2 all landed: `helpoverlay_test.go:67/70/85/111/129/146` + `conditions_test.go:419/434` + `model_test.go:6637/6654/6668 (AC#22)` + `:7430/7450/7468 (AC#26)` — all moved from 2-space to 4-space form. Bonus defensive negative assertions added at `helpoverlay_test.go:132/149` to assert 2-space form must NOT appear. Tests: 4 top-level functions, 6 leaf cases (AC3 has 2 sub-tests for Conditions/Events gating). Engineer-produced axis-coverage table — upgraded on 3rd iteration to defend **Input-changed as COVERED** (not N/A): AC1+AC2 pre/post `ShowConditionsHint=true` delta (2-space form absent + 4-space form present asserts the padding change itself is the observable-delta). Repeat-press remains N/A (no call-count state; fix is a string literal; no key involved). Test-engineer gate PASS on second submission after push-back 1 for missing table + improvements through axis-classification upgrade. Product-experience independent verification: 4 tests PASS, `go test ./internal/tui/...` green, `go install ./...` clean, spec §1 C1/C2 code diff verified, commit `d9f29f1` verified on origin/feat/console. Prior state: **PENDING PRODUCT-EXPERIENCE (push-back 1)** — test-engineer's first submission to me had no axis-coverage table; rejected at pre-submission gate; re-routed engineer to produce one. Prior: written 2026-04-20 by product-experience after user-persona FB-026 eval raised P3. Spec note: Option A selected (2-space → 4-space); queued after FB-119. **Coordination note from designer:** pre-existing `[C]  conditions`/`[E]  events` 2-space assertions in `model_test.go` (at lines ~6636/6653/6667/7429/7449/7467 — AC#22 and AC#26 from TUI bootstrap) MUST migrate to 4-space form; §2 table in spec enumerates all affected assertion strings.
+
+**Priority: P3** — minor visual roughness introduced by FB-026's format normalization. Content is correct; only column alignment is off.
+
+#### User problem
+
+In `internal/tui/components/helpoverlay.go`, the ACTIONS section mixes key widths with inconsistent padding:
+
+```go
+row.Render("[Enter] select"),           // [Enter] = 7 chars + 1 space = label at col 8
+row.Render("[/]    filter"),            // [/] = 3 chars + 4 spaces = label at col 7
+row.Render("[Esc]  back / home"),       // [Esc] = 5 chars + 2 spaces = label at col 7
+row.Render("[C]  conditions"),          // [C] = 3 chars + 2 spaces = label at col 5  ← outlier
+row.Render("[E]  events"),              // [E] = 3 chars + 2 spaces = label at col 5  ← outlier
+row.Render("[x]    delete resource"),   // [x] = 3 chars + 4 spaces = label at col 7
+```
+
+Rendered:
+```
+[Enter] select
+[/]    filter
+[Esc]  back / home
+[C]  conditions       ← 2 columns left of siblings
+[E]  events           ← 2 columns left of siblings
+[x]    delete resource
+```
+
+FB-026 brought `[C]` and `[E]` into the ACTIONS section by normalizing them from `[Shift+C]` / `[Shift+E]`, but the padding wasn't adjusted to match the section's column-7 alignment. The previous `[Shift+C]` (10-char prefix = label at col 11) was misaligned in the other direction; FB-026 fixed the format but introduced a new misalignment.
+
+#### Designer call
+
+Two options:
+- **A (match ACTIONS column-7):** bump `[C]` and `[E]` to 4 spaces each — `[C]    conditions`, `[E]    events`. Matches `[/]` and `[x]` siblings in this section. No changes elsewhere.
+- **B (rework to uniform column-5 across the overlay):** VIEW and GLOBAL sections already use column-5 (3-char key + 2 spaces). ACTIONS is the odd section with column-7. B would mean pulling `[/]`, `[Esc]`, `[x]` down to column 5 — requiring revisiting `[Enter]` (7-char key, natural landing at col 8).
+
+A is the minimum viable fix — one line change on two rows.
+B is a larger restructure that addresses cross-section inconsistency, but that inconsistency pre-dated FB-026 and is not the user-surfaced complaint.
+
+Recommended: A. The ACTIONS column-7 convention was the established baseline; FB-026's new entries just need to meet it.
+
+Open designer questions:
+1. Is there a title-bar strip analog? (Checked: title-bar uses single-space separators between hint tokens, not columnar alignment — no analog.)
+2. Any other overlay sections have the same bug? (Checked: VIEW and GLOBAL are internally consistent at column 5; NAV section at the top uses `[↑↓]` 4-char key + 2 spaces; they're self-consistent.)
+
+#### Dependencies
+
+- FB-026 ACCEPTED (`0366a36`) — this brief is a direct follow-up; FB-026's normalization set the stage.
+
+#### Non-goals
+
+- Not revisiting `[Shift+K]` → `[K]` format (FB-026 done).
+- Not changing the ACTIONS / VIEW / GLOBAL section structure.
+- Not touching title-bar hint strip.
+
+---
+
+### FB-122 — Events age label persists during in-flight re-fetch (title-bar says "4m ago" while body shows loading spinner)
+
+**Status: ACCEPTED 2026-04-20** — product-experience ruling. Spec at `docs/tui-ux-specs/fb-122-events-age-label-suppress-during-loading.md` (Option A — suppress age label when `eventsLoading=true`). Engineer delivered: `eventsLoading bool` field at `detailview.go:30`, `SetEventsLoading(bool)` setter + `EventsLoading()` getter at lines 118–119, guard update at line 169 (`if m.mode == "events" && !m.eventsFetchedAt.IsZero() && !m.eventsLoading`), and 13 `m.detail.SetEventsLoading(...)` call sites in `model.go` (true on resource-entry paths ~1180/1342/1698/1737/1849 and r-key re-fetch; false on EventsLoadedMsg/context-switch/Esc-back/errors at ~361/623/1473/1487/1536/1554/1767). All 5 tests pass with `stripANSI(dv.View())` + `strings.Contains`/`!strings.Contains` assertions — no model-field-only inspection. Axis coverage: Observable × 2 (AC1 label absent when loading, AC2 present when not), Input-changed (AC3 toggle true→false changes View()), Anti-regression × 2 (AC4 non-events modes unaffected across `""`/`"yaml"`/`"conditions"` subtests, AC5 zero fetchedAt + cross-check), Anti-behavior N/A (pure render suppression, no keypress to block — defense accepted), Repeat-press N/A (stateless render function — defense accepted), Integration (`go install` + full suite green). Filed 2026-04-20 from user-persona FB-025 evaluation (P3-1).
+
+**Priority: P3** — cosmetic mismatch lasting one fetch cycle. The title bar keeps rendering `events · 4m ago` for the old `eventsFetchedAt` while `eventsLoading=true` and the body shows `⟳ Loading events…`. Short-lived, but incoherent: title and body briefly tell different stories about the same surface.
+
+#### User problem
+
+Operator saw "4m ago", pressed `[r]` to refresh *because* of that signal. The label persists through the in-flight fetch, then snaps to "just now" once the fetch resolves. During the loading window the label is actively misleading — it tells the operator the events they're looking at are 4m old, but they aren't looking at *any* events right now (body is in the loading branch).
+
+#### Designer call
+
+Two options to consider:
+- **A (suppress age label when `eventsLoading=true`):** during the loading window, title-bar segment drops back to just `events` (no `· age`). Restores on fetch completion. Consistent with how the hint row already suppresses under loading.
+- **B ("refreshing…" replacement segment):** title-bar segment becomes `events · refreshing…` for the loading window. Explicitly narrates state, but adds a new copy string.
+
+Designer should pick. A is minimum-footprint; B more explicitly tells the story. The age label is computed at render time from `eventsFetchedAt`, so either option is a single conditional in `detailview.go:169-170`.
+
+#### Dependencies
+
+- FB-025 ACCEPTED (`9e310e3`) — this is a direct follow-up to the age label FB-025 introduced.
+
+#### Non-goals
+
+- Not touching the body-side spinner (FB-019 territory).
+- Not changing the `eventsFetchedAt` reset semantics (FB-025 already covers these).
+- Not touching the stale-empty recovery copy (FB-025 already diverges at ≥5m).
+
+---
+
+### FB-123 — No inline `[r] refresh` hint in DetailPane title bar while in events mode
+
+**Status: ACCEPTED 2026-04-20** — product-experience ruling. Spec at `docs/tui-ux-specs/fb-123-events-mode-refresh-hint.md` (Option A — always-on when events loaded). Engineer delivered: 3-line `rHint` block at `detailview.go:168-172` matching spec §1.2 exactly — `rHint := ""; if m.mode == "events" && !m.eventsFetchedAt.IsZero() && !m.eventsLoading { rHint = "  [r] refresh" }; hintRow += "  " + eHint + rHint + "  [x] delete  [Esc] back"`. All 7 tests pass with `stripANSI(dv.View())` + `strings.Contains`/`!strings.Contains` assertions. Axis coverage: Observable × 3 (AC1 hint present when loaded + not refreshing, AC2 absent during re-fetch, AC3 absent before first load), Input-changed (AC4 zero→non-zero fetchedAt toggles View()), Anti-regression × 3 (AC5 non-events modes across `""`/`"yaml"`/`"conditions"` subtests, AC6 position `[E] describe < [r] refresh < [x] delete`, AC7 `describeAvailable=false` does NOT suppress `[r]` — pins FB-119 independence), Anti-behavior N/A (render-only hint, no keypress intercepted — defense accepted), Repeat-press N/A (stateless predicate, no accumulated state — defense accepted), Integration (`go install` + full suite green). Dependency FB-122 satisfied in-commit `59a75fc` (shared `eventsLoading` field). Prior: filed 2026-04-20 from user-persona FB-025 evaluation (P3-2).
+
+**Priority: P3** — age label creates a staleness signal ("6m ago") but the action to remedy it (`[r]`) isn't on the most visible surface. Discoverable via `?` help overlay or the stale-empty recovery copy after 5m, but a first-time events-tab user seeing "6m ago" won't know to press `[r]` without leaving the view to consult the overlay.
+
+#### User problem
+
+The current DetailPane events-mode title-bar hint row reads something like:
+```
+[j/k] scroll  [E] describe  [x] delete  [Esc] back
+```
+
+`[r]` is absent. FB-025 created the signal (age label) that makes `[r]` operator-relevant, but left the affordance off the title-bar hint strip. Returning operators who know the `[r]` convention from other panes are fine; first-time events-tab users see the signal without the remedy.
+
+#### Designer call
+
+Two options:
+- **A (add `[r] refresh` to the hint row when events-mode and `events != nil`):** minimum addition; gate on the same predicate FB-025 uses for the dispatcher so the hint only appears when `[r]` actually does something. Order in the hint row TBD — near the mode label (`events · 4m ago`) for proximity to the staleness signal, or grouped with other action keys.
+- **B (contextual hint appears only when age >= some threshold, e.g. 5m):** hides the hint while data is fresh, reducing hint-row density; surfaces only when the operator plausibly needs it. More targeted but two-state rendering.
+
+Designer should pick. A mirrors the "always-on-when-available" convention for other action hints; B introduces a new context-sensitivity pattern. Recommended default: A, unless hint-row width pressure at narrow terminal widths argues for B.
+
+#### Dependencies
+
+- FB-025 ACCEPTED (`9e310e3`) — this is a discoverability follow-up to the age label FB-025 introduced.
+- FB-040 (title-bar hint suppression during loading, DEFERRED) — intersects; if/when FB-040 lands, FB-123's hint should obey the same suppression rule.
+
+#### Non-goals
+
+- Not changing the `[r]` keybinding semantics or dispatcher (FB-025 already covers these).
+- Not rewriting the help overlay VIEW section (FB-025 already documents `[r]` there).
+- Not proposing a rename of the `r` key.
+
+---
+
 ### FB-124 — S4 quick-jump keys give no signal that NavPane focus suppresses them (silent no-op on first-press from NavPane)
 
-**Status: ACCEPTED 2026-04-20** — Option A (conditional prefix) shipped. Spec: `docs/tui-ux-specs/fb-124-s4-quickjump-activation-hint.md`. When `activePane == NavPane`, S4's quick-jump row reads `jump to ([Tab] to focus):  [b] backends …`; when TablePane has focus, it reverts to `jump to:`. Axis coverage: Observable × 2 (AC1/AC2), Input-changed × 1 (AC3), Anti-regression × 4 (AC4–AC7), Integration × 2 (AC8/AC9). FB-073 anti-regression tests green. Filed 2026-04-20 by product-experience from FB-073 user-persona P3.
+**Status: ACCEPTED + COMMITTED + PERSONA-EVAL-COMPLETE 2026-04-20** — commit `079bf8f` on `feat/console` ("Welcome-panel quick-jump row now tells you to press Tab first when the sidebar has focus"). Persona eval 2026-04-20 returned positive-findings block + 3 P3 follow-ups (FB-125 label consistency, FB-126 `):  ` copy nit, FB-127 narrow-width trim amplification), zero P1/P2. Fix correctly resolves the originally-filed discoverability gap. **Prior Status: ACCEPTED 2026-04-20** — Option A (conditional prefix) shipped. Spec: `docs/tui-ux-specs/fb-124-s4-quickjump-activation-hint.md`. When `activePane == NavPane`, S4's quick-jump row reads `jump to ([Tab] to focus):  [b] backends …`; when TablePane has focus, it reverts to `jump to:`. Axis coverage: Observable × 2 (AC1/AC2), Input-changed × 1 (AC3), Anti-regression × 4 (AC4–AC7), Integration × 2 (AC8/AC9). FB-073 anti-regression tests green. Filed 2026-04-20 by product-experience from FB-073 user-persona P3.
 **Priority: P3** — first-press friction for welcome-panel newcomers; returning operators unaffected. Emerged directly from FB-073 ACCEPTED (`7c042aa`) — gate is correct, discoverability of the activation step is the residual gap.
 
 #### User problem
@@ -4799,7 +5087,7 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 
 ### FB-125 — Tab keybind label inconsistency: "to focus" (S4 hint) vs "next pane" (help overlay + status bar)
 
-**Status: ACCEPTED 2026-04-20** — one-line source change at `resourcetable.go:432` (`"jump to ([Tab] next pane):  "`), plus 10 literal updates in test files (`resourcetable_test.go` ×8, `model_test.go` ×2). Tests: 3 ACs covered — AC1 `TestFB125_AC1_Observable_NewCopyPresent` (View() substring assertion of new copy present + old copy absent); AC2/AC3 anti-regression reuse `TestFB124_AC1_Observable_HintPresentWhenNavFocused` and `TestFB124_AC2_Observable_HintAbsentWhenTableFocused` (gating predicate `if m.navPaneFocused` unchanged — only asserted string updated). Submitter-produced axis-coverage table confirmed; `go install ./...` clean; `go test ./internal/tui/...` exit 0 (all packages `ok`). Also resolves FB-126 (designer predicted `):  ` awkwardness dissolves with noun-phrase literal). Combined spec with FB-126 at `docs/tui-ux-specs/fb-125-126-s4-hint-copy-alignment.md`. Ux-designer chose Option A (align S4 hint to "next pane"). **Prior Status: PENDING ENGINEER 2026-04-20** → PENDING UX-DESIGNER (copy decision) — filed 2026-04-20 by product-experience from FB-124 user-persona P3-1.
+**Status: ACCEPTED 2026-04-20 + PERSONA-EVAL-COMPLETE 2026-04-20** — one-line source change at `resourcetable.go:432` (`"jump to ([Tab] next pane):  "`), plus 10 literal updates in test files. Shipped in commit `de407a5` on `feat/console`. Tests: 3 ACs covered — AC1 `TestFB125_AC1_Observable_NewCopyPresent` (View() substring assertion); AC2/AC3 anti-regression reuse FB-124 tests with updated literals (gating predicate unchanged). Submitter-produced axis-coverage table confirmed; `go install ./...` clean; `go test ./internal/tui/...` exit 0. Resolves FB-126 (designer predicted `):  ` awkwardness dissolves with noun-phrase literal; persona grep-verified all 4 Tab-description sites now read identically — `resourcetable.go:432/739/757` + `helpoverlay.go:28`). **Persona eval 2026-04-20:** positive findings on cross-surface consistency; FB-126 dissolution verified. **1 P3 finding DISMISSED with rationale** (P3-1: persona-self-labeled trade-off — "to focus" pedagogy marginally stronger than "next pane" descriptive framing, but persona explicitly notes "no evidence the new copy actually fails to teach the mechanic" and "consistency benefit outweighs the pedagogy delta"; revisit only on operator evidence). **0 new briefs filed.** Combined spec with FB-126 at `docs/tui-ux-specs/fb-125-126-s4-hint-copy-alignment.md`. Ux-designer chose Option A. **Prior Status: PENDING ENGINEER 2026-04-20** → PENDING UX-DESIGNER (copy decision) — filed 2026-04-20 by product-experience from FB-124 user-persona P3-1.
 **Priority: P3** — cross-surface label drift; operator cross-referencing `?` help may briefly wonder if these describe different actions.
 
 #### User problem
@@ -4857,4 +5145,204 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 4. **[Integration]** Build + test suite green.
 
 **Maps to:** FB-124 user-persona P3-2.
+
+---
+
+### FB-127 — S4 hint amplifies narrow-width trim: operators in hint state see more destinations clipped
+
+**Status: WONTFIX 2026-04-20** — ux-designer ruling: Option C (close without fix). Rationale: narrow-width clip is a known tradeoff already documented in FB-124 spec §2.4. FB-125's copy change saves only 1 rendered char (28→27), negligible impact on clipping. Operators in the hint state have dormant keys regardless of visible destination count, so "missing destinations" read has no functional consequence. Adding width-conditional copy adds complexity for a P3 minority-case (narrow-terminal mode). If narrow-terminal support is later elevated as a priority area, re-file with evidence of recurring operator confusion from that width range. **Prior Status: PENDING UX-DESIGNER (decision — fix, ack, or close)** — filed 2026-04-20 by product-experience from FB-124 user-persona P3-3.
+**Priority: P3** — not a regression in behavior; known tradeoff from FB-124 spec §2.4.
+
+#### User problem
+
+The FB-124 hint prefix is ~18 chars longer than the plain prefix. At narrow terminal widths (~65 cols content), the existing trim-from-right logic in `renderQuickJumpSection` clips more destinations before the `…` kicks in. Operators in the hint state (who can't press the keys anyway — NavPane focused) see fewer visible destinations than post-Tab operators at the same width.
+
+Persona observation: "A user in the hint state (keys disabled anyway) who sees `jump to ([Tab] to focus):  [b] backends  [n] networks …` might infer the missing destinations are conditionally hidden rather than just clipped."
+
+This was flagged in FB-124 spec §2.4 as an accepted tradeoff (trim-from-right handles it gracefully). Persona is flagging that "graceful" technically is still "confusing" at narrow widths.
+
+#### Designer call
+
+- **A (shorter hint at narrow widths):** render a shorter hint below ~70 cols — e.g., `jump to (Tab first):` instead of `jump to ([Tab] to focus):`. Saves 8+ chars; keys get more visible space. Implementation: width check inside `renderQuickJumpSection`.
+- **B (drop hint at narrow widths):** below a threshold (e.g., 60 cols), suppress the parenthetical entirely. Operators at narrow widths see plain `jump to:` + clipped keys. Loses the hint at narrow widths; acceptable if narrow-width is a rare mode.
+- **C (accept as-is, close):** document in the backlog as "known tradeoff, narrow-width mode is a minority case," close without fix.
+
+Persona suggested this is only worth fixing if narrow-terminal support is a priority for the TUI. Designer decides.
+
+#### Acceptance criteria (if fix chosen)
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
+
+1. **[Observable]** At narrow width (e.g., 65 cols), designer's chosen narrow-variant appears in `stripANSI(m.View())`.
+2. **[Observable]** At wide width (≥80 cols), existing FB-124 hint still appears.
+3. **[Input-changed]** Width transition: resize from 65 → 100 cols produces a View() delta; copy changes.
+4. **[Anti-regression]** FB-124 behavior at wide widths unchanged.
+5. **[Integration]** Build + test suite green.
+
+**Maps to:** FB-124 user-persona P3-3.
+
+---
+
+### FB-128 — S3 activity error hint missing action verb: `(press [r])` vs `([r] to retry)`
+
+**Status: ACCEPTED 2026-04-20** — Option B shipped bundled with FB-129 at `resourcetable.go:335-342`: transient-error body now renders `"activity unavailable ([r] to retry)"` (35 chars). 3 new FB-128 tests + TestFB102_AC1 cross-feature copy-update all PASS with `stripANSI(m.renderActivitySection(80))` assertion pattern: AC1 Observable new copy present; AC2 Observable old copy (`"(press [r])"` / `"press "`) absent; AC3 Anti-regression CRD-absent no-parenthetical preserved; AC4 Anti-regression FB-102 test updated to new copy; AC5 Integration `go install ./...` + suite `ok`. Axis: Observable × 2, Anti-regression × 2, Integration × 1 (Input-changed N/A — pure one-site copy swap with no state transition, AC1/AC2 pair present/absent as coverage for the swap). Submitter-produced axis-coverage table confirmed pre-review; all 4 test functions verified to exist with View()-equivalent rendered-output assertions. **Prior Status: PENDING ENGINEER 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-128-error-hint-retry-verb.md`. **Option B selected**: `activity unavailable ([r] to retry)` — drops "press" as redundant (bracket notation implies keypress by TUI convention); 35 visible chars total. Implement together with FB-129 — same 4-line block in `resourcetable.go:335-342`. **Prior Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-102 user-persona P3-3.
+
+**Priority: P3** — copy-refinement; FB-102 shipped `"activity unavailable (press [r])"` on transient-error surface. Persona evidence: the current copy requires prior knowledge that `[r]` means "refresh/retry" — established operators know this from the events mode status bar `[r] refresh`, but first-time operators on the welcome panel get no self-contained verb. Adding `to retry` (8 chars) keeps total body at ~40 visible chars — still well inside FB-082's Tier 2 (contentW ≥ 45) but closer to the Tier 3 boundary (contentW < 35), worth designer consideration alongside FB-129.
+
+#### User problem
+
+At `resourcetable.go:338-342`, on transient-error (`activityFetchFailed=true`, `activityCRDAbsent=false`):
+
+```go
+body = muted.Render("activity unavailable") +
+    " " +
+    muted.Render("(press ") + accentBold.Render("[r]") + muted.Render(")")
+```
+
+Renders: `activity unavailable (press [r])` — 32 visible chars.
+
+Persona observation: "The events mode status bar uses `[r] refresh` — the S3 error hint uses only `(press [r])`. For a first-time operator, the verb 'retry' makes the affordance self-contained." The parenthetical currently relies on the operator knowing `[r]` = refresh from elsewhere in the UI (events status bar, help overlay `[r] refresh`).
+
+#### Designer-call options
+
+| Option | Rendered body | Visible width | Trade-off |
+|--------|---------------|---------------|-----------|
+| A | `activity unavailable (press [r] to retry)` | 40 chars | Self-contained verb; adds 8 chars; still fits Tier 2 (≥45) comfortably; edges Tier 3 narrow-width gap (FB-129 territory). |
+| B | `activity unavailable ([r] to retry)` | 35 chars | Drops "press" (the bracketed notation already implies keypress by TUI convention); self-contained verb; same width as current +3. |
+| C | `activity unavailable — [r] retry` | 32 chars | Em-dash separator; loses parenthetical distinction from CRD-absent; may regress FB-102's visual contract. |
+| D | Keep current `(press [r])` | 32 chars | No change; trust operators to learn the meaning from other UI sites. |
+
+**Designer ask:**
+
+- Preference between A (full verb) vs B (compact verb) vs D (status quo)?
+- If A or B: coordinate with FB-129 (narrow-width guard) — at contentW < 40, the longer form wraps or clips. Decision: drop parenthetical at narrow width (FB-129 Option A/C) or keep verbless short form?
+- Preserve the distinction from CRD-absent (no parenthetical) — reject Option C unless CRD-absent surface is also revised.
+
+Output minimal spec in `docs/tui-ux-specs/fb-128-error-hint-retry-verb.md` (≤30 lines — this is a one-line copy change + ACs).
+
+#### Acceptance criteria (if fix chosen)
+
+Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** Transient-error state → `stripANSI(m.View())` contains designer-chosen copy (e.g., `"(press [r] to retry)"` for Option A).
+2. **[Anti-regression]** CRD-absent state → View() contains `"activity unavailable"` with NO parenthetical (FB-102 contract preserved).
+3. **[Anti-regression]** FB-102 tests updated to match new copy; FB-082 CRD-absent path unchanged.
+4. **[Integration]** Build + test suite green.
+
+**Maps to:** FB-102 user-persona P3-3.
+
+---
+
+### FB-129 — S3 error body has no width-guard for contentW < 35 (3-tier contract gap)
+
+**Status: ACCEPTED 2026-04-20** — Option A threshold 35 shipped bundled with FB-128 at `resourcetable.go:336`: `if m.activityCRDAbsent || contentW < 35` → plain `"activity unavailable"`; else full FB-128 form. 5 new FB-129 tests PASS with rendered-output assertions: AC1 Observable narrow-transient (contentW=34) no parenthetical; AC2 Observable wide-transient (contentW=35) full copy; AC3 Input-changed width-transition 34→35 changes View; AC4 Anti-regression CRD-absent at wide width unchanged; AC5 Anti-regression FB-082 data-row tier thresholds unaffected; AC6 Integration `go install ./...` + suite `ok`. Axis: Observable × 2, Input-changed × 1, Anti-regression × 2, Integration × 1. Submitter-produced axis-coverage table confirmed pre-review; all 5 test functions verified to exist with `stripANSI(m.renderActivitySection(contentW))` rendered-output assertions; width-transition AC3 uses explicit v1/v2 diff pattern per Input-changed convention. **Prior Status: PENDING ENGINEER 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-129-error-body-narrow-width-guard.md`. **Option A selected, threshold 35**: `if m.activityCRDAbsent || contentW < 35` → plain `"activity unavailable"`; else full form from FB-128. Threshold aligns with FB-082 Tier 3 floor — no new breakpoint. Implement together with FB-128 — same 4-line block. **Prior Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-102 user-persona P3-4.
+
+**Priority: P3** — narrow-width edge case; FB-082's three-tier truncation contract (`contentW >= 65`, `>= 45`, `< 45`) governs data-row column-drop but does not apply to the body when `activityFetchFailed=true`. The concatenated error body `"activity unavailable (press [r])"` (~32 visible chars) is rendered raw without width checks. At `contentW < 35`, terminal wrapping splits the phrase mid-word (typically `activity unavailable (press` \n `[r])`), regressing the single-line body contract FB-082 established.
+
+#### User problem
+
+At `resourcetable.go:335-342`:
+
+```go
+case m.activityFetchFailed:
+    if m.activityCRDAbsent {
+        body = muted.Render("activity unavailable")
+    } else {
+        body = muted.Render("activity unavailable") +
+            " " +
+            muted.Render("(press ") + accentBold.Render("[r]") + muted.Render(")")
+    }
+```
+
+No contentW parameter is consulted for either branch. At narrow widths (contentW < 35), the terminal wraps the transient-error body. CRD-absent (20 chars) survives contentW ≥ 20; transient-error (32 chars) needs contentW ≥ 32 to avoid wrap.
+
+Persona observation: "Low-probability edge case, but it's outside the existing width contract."
+
+The FB-082 contract was written assuming the body would be either the 20-char "activity unavailable" or single-row data lines (handled by column-drop). FB-102 introduced a 32-char error body variant that falls outside the contract.
+
+#### Designer-call options
+
+| Option | Behavior at contentW < 35 | Trade-off |
+|--------|---------------------------|-----------|
+| A | Drop the parenthetical entirely — render just `"activity unavailable"` | Loses the recovery affordance at narrow widths; matches CRD-absent surface (but CRD-absent is semantically different). |
+| B | Compact variant — render `"unavail. [r]"` or `"err · [r]"` | Preserves hint; abbreviations may feel cryptic. |
+| C | Render plain `"activity unavailable"` + put the retry hint on the status bar via `PostHint`/`postHint` | Clean body; adds status-bar coupling (collision risk with FB-079/FB-097). |
+| D | Close — trust terminal wrap at contentW < 35; narrow-mode is rare | No implementation; accepts minor visual regression in narrow mode. |
+
+**Designer ask:**
+
+- Coordinate with **FB-128**: if the verb is added (`"(press [r] to retry)"` = 40 chars), the narrow-width threshold where wrapping kicks in shifts from 32 to 40. Decision about the threshold should happen after FB-128.
+- If Option A chosen: symmetric with FB-102's CRD-absent rendering — CRD-absent retains the clean "activity unavailable" at all widths; narrow-width transient also uses it. Operator loses visual distinction from CRD-absent but gains single-line guarantee.
+- Prefer a threshold that aligns with FB-082's existing tiers (45, 35, or a new 40) to avoid cognitive overload from independent breakpoints.
+
+Output minimal spec in `docs/tui-ux-specs/fb-129-error-body-narrow-width-guard.md`.
+
+#### Acceptance criteria (if fix chosen)
+
+Axis tags: `[Observable]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** At contentW < threshold (designer-chosen), transient-error body fits on one line (no terminal wrap). `strings.Count(stripANSI(body), "\n") == 0`.
+2. **[Observable]** At contentW ≥ threshold, full `"activity unavailable (press [r]…)"` copy renders (current FB-102 / FB-128 behavior).
+3. **[Anti-regression]** CRD-absent at all widths still renders `"activity unavailable"` — no parenthetical change.
+4. **[Anti-regression]** FB-082 tier-contract for data rows unaffected.
+5. **[Integration]** Build + test suite green.
+
+**Maps to:** FB-102 user-persona P3-4.
+
+---
+
+### FB-130 — S3 spinner render gate misses empty-but-loaded activity rows
+
+**Status: PENDING ENGINEER** — engineer-direct 1-char change at `internal/tui/components/resourcetable.go:333`. Filed 2026-04-20 by product-experience from FB-103 user-persona P3-1.
+
+**Priority: P3** — narrow-site instance of FB-103's refresh-feedback thesis. Operators on a genuinely-empty project (activity fetch succeeded, returned 0 rows → `activityRows = []ActivityRow{}`) press `[r]` on the welcome panel and see no in-flight signal. FB-103's state gate at `model.go:1317-1320` correctly calls `SetActivityLoading(true)` because `ActivityRowCount()==0` returns 0 for empty slices, but the render gate at `resourcetable.go:333` is stricter — `m.activityLoading && m.activityRows == nil` — so the spinner doesn't fire for empty-but-non-nil rows. Teaser stays frozen at `"no recent activity"` for the entire fetch round-trip.
+
+#### User problem
+
+Same as FB-103 P2-1 and P3-2: press `[r]`, see no visual change. FB-103 covered three `rows == nil` scenarios — (a) never-loaded, (b) error-cleared via FB-082 `SetActivityFetchFailed`, (c) CRD-absent. FB-130 covers the fourth: (d) successfully-loaded-empty where `activityRows == []ActivityRow{}` (not nil). A project with zero recent activity — common on new projects — hits this case.
+
+#### Site
+
+`internal/tui/components/resourcetable.go:333`
+
+```go
+case m.activityLoading && m.activityRows == nil:
+```
+
+#### Fix (Option A — align render gate to state gate)
+
+**Before:**
+```go
+case m.activityLoading && m.activityRows == nil:
+    body = muted.Render("⟳ loading…")
+```
+
+**After:**
+```go
+case m.activityLoading && len(m.activityRows) == 0:
+    body = muted.Render("⟳ loading…")
+```
+
+`len(nil slice) == 0` in Go, so this widens the predicate to also fire for empty-but-non-nil rows without regressing the nil path. Aligns the render gate to FB-103's `ActivityRowCount() == 0` state gate (which returns `len(m.activityRows)`).
+
+#### Acceptance criteria
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable]** Empty-but-loaded rows + loading flag → spinner. Setup: `SetActivityRows([]ActivityRow{})` then `SetActivityLoading(true)`. `stripANSI(m.View())` contains `"loading…"`; does NOT contain `"no recent activity"`.
+2. **[Input-changed]** `[r]` press on genuinely-empty project: pre-press View contains `"no recent activity"`, post-press View (after `SetActivityLoading(true)` on empty-but-non-nil rows) contains `"loading…"`. `v1 != v2`.
+3. **[Anti-regression]** FB-103 AC1 (never-loaded `rows==nil` → spinner) still passes — `len(nil) == 0` so predicate still true.
+4. **[Anti-regression]** FB-103 AC3 (populated-rows silent-refetch, FB-076 preserved) still passes — `len(rows) > 0` means loading flag does NOT fire spinner.
+5. **[Anti-regression]** FB-103 AC7 (error-state → spinner, rows cleared to nil by FB-082) still passes — `len(nil) == 0`.
+6. **[Integration]** `go install ./...` exit 0; `go test ./internal/tui/...` all packages `ok`.
+
+**Axis summary:** Observable × 1, Input-changed × 1, Anti-regression × 3, Integration × 1.
+
+#### Non-goals
+
+- Not changing FB-103's state gate at `model.go:1317-1320`.
+- Not changing FB-076 silent-refetch convention (populated rows still do not flash spinner).
+- Not changing spinner copy or styling.
+
+**Maps to:** FB-102 chain → FB-103 user-persona P3-1.
 

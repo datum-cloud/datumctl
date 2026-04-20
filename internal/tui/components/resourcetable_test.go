@@ -2644,7 +2644,7 @@ func newActivityErrorModel() ResourceTableModel {
 }
 
 // AC1 [Observable] — transient error (activityFetchFailed=true, activityCRDAbsent=false):
-// View() contains "activity unavailable" AND "(press" AND "[r]".
+// View() contains "activity unavailable" AND "([r] to retry)".
 func TestFB102_AC1_Observable_TransientError_HintPresent(t *testing.T) {
 	t.Parallel()
 	m := newActivityErrorModel()
@@ -2655,16 +2655,13 @@ func TestFB102_AC1_Observable_TransientError_HintPresent(t *testing.T) {
 	if !strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC1 [Observable]: 'activity unavailable' absent in transient-error state:\n%s", got)
 	}
-	if !strings.Contains(got, "(press") {
-		t.Errorf("AC1 [Observable]: '(press' absent in transient-error state:\n%s", got)
-	}
-	if !strings.Contains(got, "[r]") {
-		t.Errorf("AC1 [Observable]: '[r]' absent in transient-error state:\n%s", got)
+	if !strings.Contains(got, "([r] to retry)") {
+		t.Errorf("AC1 [Observable]: '([r] to retry)' absent in transient-error state:\n%s", got)
 	}
 }
 
 // AC2 [Observable] — CRD-absent error (activityFetchFailed=true, activityCRDAbsent=true):
-// View() contains "activity unavailable" AND does NOT contain "(press" or "[r]".
+// View() contains "activity unavailable" AND does NOT contain "to retry" or "[r]".
 func TestFB102_AC2_Observable_CRDAbsent_NoHint(t *testing.T) {
 	t.Parallel()
 	m := newActivityErrorModel()
@@ -2675,8 +2672,8 @@ func TestFB102_AC2_Observable_CRDAbsent_NoHint(t *testing.T) {
 	if !strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC2 [Observable]: 'activity unavailable' absent in CRD-absent state:\n%s", got)
 	}
-	if strings.Contains(got, "(press") {
-		t.Errorf("AC2 [Observable]: '(press' present in CRD-absent state (should be absent):\n%s", got)
+	if strings.Contains(got, "to retry") {
+		t.Errorf("AC2 [Observable]: 'to retry' present in CRD-absent state (should be absent):\n%s", got)
 	}
 	if strings.Contains(got, "[r]") {
 		t.Errorf("AC2 [Observable]: '[r]' present in CRD-absent state (should be absent):\n%s", got)
@@ -2698,11 +2695,11 @@ func TestFB102_AC3_InputChanged_CRDAbsentToggleChangesView(t *testing.T) {
 	if v1 == v2 {
 		t.Error("AC3 [Input-changed]: View() identical after toggling activityCRDAbsent false→true")
 	}
-	if !strings.Contains(v1, "(press [r])") {
-		t.Errorf("AC3 [Input-changed]: v1 (crdAbsent=false) missing '(press [r])':\n%s", v1)
+	if !strings.Contains(v1, "([r] to retry)") {
+		t.Errorf("AC3 [Input-changed]: v1 (crdAbsent=false) missing '([r] to retry)':\n%s", v1)
 	}
-	if strings.Contains(v2, "(press [r])") {
-		t.Errorf("AC3 [Input-changed]: v2 (crdAbsent=true) still contains '(press [r])':\n%s", v2)
+	if strings.Contains(v2, "([r] to retry)") {
+		t.Errorf("AC3 [Input-changed]: v2 (crdAbsent=true) still contains '([r] to retry)':\n%s", v2)
 	}
 }
 
@@ -2716,8 +2713,8 @@ func TestFB102_AC4_AntiBehavior_NormalState_NoHint(t *testing.T) {
 	if strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC4 [Anti-behavior]: 'activity unavailable' present in normal state:\n%s", got)
 	}
-	if strings.Contains(got, "(press [r])") {
-		t.Errorf("AC4 [Anti-behavior]: '(press [r])' present in normal state:\n%s", got)
+	if strings.Contains(got, "([r] to retry)") {
+		t.Errorf("AC4 [Anti-behavior]: '([r] to retry)' present in normal state:\n%s", got)
 	}
 }
 
@@ -2729,15 +2726,15 @@ func TestFB102_AC5_AntiBehavior_SetActivityRows_ClearsHint(t *testing.T) {
 	m.SetActivityCRDAbsent(false)
 
 	before := stripANSI(m.View())
-	if !strings.Contains(before, "(press [r])") {
-		t.Fatal("precondition: '(press [r])' must be present before recovery")
+	if !strings.Contains(before, "([r] to retry)") {
+		t.Fatal("precondition: '([r] to retry)' must be present before recovery")
 	}
 
 	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
 
 	got := stripANSI(m.View())
-	if strings.Contains(got, "(press [r])") {
-		t.Errorf("AC5 [Anti-behavior]: '(press [r])' still present after SetActivityRows with data:\n%s", got)
+	if strings.Contains(got, "([r] to retry)") {
+		t.Errorf("AC5 [Anti-behavior]: '([r] to retry)' still present after SetActivityRows with data:\n%s", got)
 	}
 	if strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC5 [Anti-behavior]: 'activity unavailable' still present after SetActivityRows with data:\n%s", got)
@@ -2767,3 +2764,143 @@ func TestFB125_AC1_Observable_NewCopyPresent(t *testing.T) {
 }
 
 // ==================== End FB-125 ====================
+
+// ==================== FB-128: S3 activity error hint action verb ====================
+
+// AC1 [Observable] — transient error at normal width: "([r] to retry)" present.
+func TestFB128_AC1_Observable_NewCopyPresent(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "([r] to retry)") {
+		t.Errorf("AC1 [Observable]: '([r] to retry)' absent at contentW=80:\n%s", got)
+	}
+}
+
+// AC2 [Observable] — old copy absent.
+func TestFB128_AC2_Observable_OldCopyAbsent(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	got := stripANSI(m.renderActivitySection(80))
+	if strings.Contains(got, "(press [r])") {
+		t.Errorf("AC2 [Observable]: old copy '(press [r])' still present:\n%s", got)
+	}
+	if strings.Contains(got, "press ") {
+		t.Errorf("AC2 [Observable]: old 'press ' verb still present:\n%s", got)
+	}
+}
+
+// AC3 [Anti-regression] — CRD-absent has no parenthetical.
+func TestFB128_AC3_AntiRegression_CRDAbsent_NoParenthetical(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(true)
+
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC3 [Anti-regression]: 'activity unavailable' absent in CRD-absent state:\n%s", got)
+	}
+	if strings.Contains(got, "to retry") {
+		t.Errorf("AC3 [Anti-regression]: 'to retry' present in CRD-absent state:\n%s", got)
+	}
+	if strings.Contains(got, "press") {
+		t.Errorf("AC3 [Anti-regression]: 'press' present in CRD-absent state:\n%s", got)
+	}
+}
+
+// ==================== End FB-128 ====================
+
+// ==================== FB-129: S3 error body narrow-width guard ====================
+
+// AC1 [Observable] — narrow transient (contentW=34): parenthetical dropped.
+func TestFB129_AC1_Observable_NarrowTransient_NoParenthetical(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	got := stripANSI(m.renderActivitySection(34))
+	if !strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC1 [Observable]: 'activity unavailable' absent at contentW=34:\n%s", got)
+	}
+	if strings.Contains(got, "to retry") {
+		t.Errorf("AC1 [Observable]: 'to retry' present at contentW=34 (should be dropped):\n%s", got)
+	}
+}
+
+// AC2 [Observable] — wide transient (contentW=35): full copy renders.
+func TestFB129_AC2_Observable_WideTransient_FullCopy(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	got := stripANSI(m.renderActivitySection(35))
+	if !strings.Contains(got, "([r] to retry)") {
+		t.Errorf("AC2 [Observable]: '([r] to retry)' absent at contentW=35:\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — width transition 34→35 changes View() output.
+func TestFB129_AC3_InputChanged_WidthTransitionChangesView(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	v1 := stripANSI(m.renderActivitySection(34))
+	v2 := stripANSI(m.renderActivitySection(35))
+
+	if v1 == v2 {
+		t.Error("AC3 [Input-changed]: renderActivitySection output identical at contentW=34 and contentW=35")
+	}
+	if strings.Contains(v1, "to retry") {
+		t.Errorf("AC3 [Input-changed]: v1 (contentW=34) contains 'to retry' (should not):\n%s", v1)
+	}
+	if !strings.Contains(v2, "to retry") {
+		t.Errorf("AC3 [Input-changed]: v2 (contentW=35) missing 'to retry':\n%s", v2)
+	}
+}
+
+// AC4 [Anti-regression] — CRD-absent unchanged at wide width.
+func TestFB129_AC4_AntiRegression_CRDAbsent_WideWidth(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(true)
+
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC4 [Anti-regression]: 'activity unavailable' absent in CRD-absent wide state:\n%s", got)
+	}
+	if strings.Contains(got, "to retry") {
+		t.Errorf("AC4 [Anti-regression]: 'to retry' present in CRD-absent state:\n%s", got)
+	}
+}
+
+// AC5 [Anti-regression] — data rows at wide width: tier thresholds unaffected.
+func TestFB129_AC5_AntiRegression_DataRows_TierThresholdsUnaffected(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
+
+	// Tier 1 (contentW >= 65): all columns present.
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "alice@example.com") {
+		t.Errorf("AC5 Tier1: actor missing at contentW=80:\n%s", got)
+	}
+	// Tier 2 (45 ≤ contentW < 65): resource column dropped.
+	got2 := stripANSI(m.renderActivitySection(55))
+	if !strings.Contains(got2, "alice@example.com") {
+		t.Errorf("AC5 Tier2: actor missing at contentW=55:\n%s", got2)
+	}
+}
+
+// ==================== End FB-129 ====================
