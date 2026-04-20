@@ -13340,7 +13340,7 @@ func TestFB088_Model_AntiBehavior_4FromQuotaDashGuardPreservesLabel(t *testing.T
 
 // ==================== FB-079: Quota loading hint copy update ====================
 // Brief: loading hint changed from "Quota dashboard loading…" to
-//   "Quota dashboard loading… press [3] when ready" so operators know which
+//   "Quota dashboard loading… press [3] to cancel" so operators know which
 //   key to press and when. Both hint phases (loading + ready) now communicate
 //   the manual-confirm model introduced by FB-078.
 //
@@ -13359,7 +13359,7 @@ func TestFB088_Model_AntiBehavior_4FromQuotaDashGuardPreservesLabel(t *testing.T
 // |          |                   | AC1 vs AC2 already pair loading-phase vs ready-phase copy.   |
 
 // AC1 [Observable]: pressing '3' during quota load posts the new loading hint
-// copy containing the " press [3] when ready" suffix.
+// copy containing the " press [3] to cancel" suffix.
 func TestFB079_AC1_LoadingHint_ContainsPress3Suffix(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
@@ -13368,8 +13368,8 @@ func TestFB079_AC1_LoadingHint_ContainsPress3Suffix(t *testing.T) {
 	appM := result.(AppModel)
 
 	got := stripANSIModel(appM.View())
-	if !strings.Contains(got, "press [3] when ready") {
-		t.Errorf("AC1: 'press [3] when ready' missing from View() after '3' during loading:\n%s", got)
+	if !strings.Contains(got, "press [3] to cancel") {
+		t.Errorf("AC1: 'press [3] to cancel' missing from View() after '3' during loading:\n%s", got)
 	}
 	if !strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC1: 'Quota dashboard loading' missing from View():\n%s", got)
@@ -13403,7 +13403,7 @@ func TestFB079_AC2_ReadyHint_ContainsDashboardReadyAndPress3(t *testing.T) {
 }
 
 // AC3 [Anti-regression]: the old exact loading-hint copy (no continuation) is
-// absent. The new copy extends past "…" with " press [3] when ready", so the
+// absent. The new copy extends past "…" with " press [3] to cancel", so the
 // statusBar.Hint field must never equal the old truncated string.
 func TestFB079_AC3_OldLoadingCopy_Absent(t *testing.T) {
 	t.Parallel()
@@ -13414,10 +13414,10 @@ func TestFB079_AC3_OldLoadingCopy_Absent(t *testing.T) {
 
 	const oldCopy = "Quota dashboard loading\u2026" // "Quota dashboard loading…" — old exact string
 	if appM.statusBar.Hint == oldCopy {
-		t.Errorf("AC3: statusBar.Hint = %q — old copy without suffix still present; want new copy with 'press [3] when ready'", appM.statusBar.Hint)
+		t.Errorf("AC3: statusBar.Hint = %q — old copy without suffix still present; want new copy with 'press [3] to cancel'", appM.statusBar.Hint)
 	}
-	if !strings.Contains(appM.statusBar.Hint, "press [3] when ready") {
-		t.Errorf("AC3: statusBar.Hint = %q — new suffix 'press [3] when ready' absent", appM.statusBar.Hint)
+	if !strings.Contains(appM.statusBar.Hint, "press [3] to cancel") {
+		t.Errorf("AC3: statusBar.Hint = %q — new suffix 'press [3] to cancel' absent", appM.statusBar.Hint)
 	}
 }
 
@@ -14021,7 +14021,7 @@ func TestFB097_AC6_AntiRegression_FB078_LoadingHintNoClearCmd(t *testing.T) {
 	}
 }
 
-// AC7 [Anti-regression / FB-079] — loading hint copy unchanged: "Quota dashboard loading… press [3] when ready".
+// AC7 [Anti-regression / FB-079] — loading hint copy unchanged: "Quota dashboard loading… press [3] to cancel".
 func TestFB097_AC7_AntiRegression_FB079_LoadingCopyUnchanged(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
@@ -14033,8 +14033,8 @@ func TestFB097_AC7_AntiRegression_FB079_LoadingCopyUnchanged(t *testing.T) {
 	if !strings.Contains(norm, "Quota dashboard loading") {
 		t.Errorf("AC7 [Anti-regression FB-079]: loading hint = %q, want contains 'Quota dashboard loading'", norm)
 	}
-	if !strings.Contains(norm, "when ready") {
-		t.Errorf("AC7 [Anti-regression FB-079]: loading hint = %q, want contains 'when ready' (FB-079 copy unchanged)", norm)
+	if !strings.Contains(norm, "to cancel") {
+		t.Errorf("AC7 [Anti-regression FB-079]: loading hint = %q, want contains 'to cancel' (FB-115 copy)", norm)
 	}
 }
 
@@ -14100,5 +14100,130 @@ func TestFB097_BriefAC4_ConfirmClearsReadyPrompt(t *testing.T) {
 }
 
 // ==================== End FB-097 ====================
+
+// ==================== FB-115: Quota loading hint copy ====================
+
+// AC1 [Observable] — during pendingQuotaOpen=true, hint contains "to cancel" and NOT "when ready".
+func TestFB115_AC1_Observable_LoadingHintContainsToCancel(t *testing.T) {
+	t.Parallel()
+	m := newQuotaLoadingModel()
+
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM := r.(AppModel)
+
+	norm := statusBarNorm(appM)
+	if !strings.Contains(norm, "to cancel") {
+		t.Errorf("AC1 [Observable]: hint %q, want contains 'to cancel'", norm)
+	}
+	if strings.Contains(norm, "when ready") {
+		t.Errorf("AC1 [Observable]: hint %q, must NOT contain 'when ready'", norm)
+	}
+}
+
+// AC2 [Observable] — hint and strip aligned: hint has "to cancel", strip has "[3] cancel" simultaneously.
+func TestFB115_AC2_Observable_HintAndStripAligned(t *testing.T) {
+	t.Parallel()
+	m := newQuotaLoadingModel()
+
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM := r.(AppModel)
+
+	view := stripANSIModel(appM.View())
+	if !strings.Contains(view, "to cancel") {
+		t.Errorf("AC2 [Observable]: 'to cancel' absent from View() during loading:\n%s", view)
+	}
+	if !strings.Contains(view, "cancel") {
+		t.Errorf("AC2 [Observable]: 'cancel' (strip label) absent from View() during loading:\n%s", view)
+	}
+}
+
+// AC3 [Input-changed] — before first [3] press: no loading hint; after: hint contains full new copy.
+func TestFB115_AC3_InputChanged_BeforeVsAfterFirstPress(t *testing.T) {
+	t.Parallel()
+	m := newQuotaLoadingModel()
+
+	beforeNorm := statusBarNorm(m)
+	if strings.Contains(beforeNorm, "Quota dashboard loading") {
+		t.Errorf("AC3 [Input-changed]: loading hint present before [3] press: %q", beforeNorm)
+	}
+
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM := r.(AppModel)
+
+	afterNorm := statusBarNorm(appM)
+	if beforeNorm == afterNorm {
+		t.Error("AC3 [Input-changed]: statusBar unchanged after [3] press during loading")
+	}
+	if !strings.Contains(afterNorm, "Quota dashboard loading") {
+		t.Errorf("AC3 [Input-changed]: 'Quota dashboard loading' absent after [3] press: %q", afterNorm)
+	}
+	if !strings.Contains(afterNorm, "to cancel") {
+		t.Errorf("AC3 [Input-changed]: 'to cancel' absent after [3] press: %q", afterNorm)
+	}
+}
+
+// AC4 [Anti-regression] — FB-097 ready-prompt unchanged after BucketsLoadedMsg with pendingQuotaOpen=true.
+func TestFB115_AC4_AntiRegression_FB097_ReadyPromptUnchanged(t *testing.T) {
+	t.Parallel()
+	m := newQuotaLoadingModel()
+
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM := r.(AppModel)
+
+	r, _ = appM.Update(data.BucketsLoadedMsg{})
+	appM = r.(AppModel)
+
+	norm := statusBarNorm(appM)
+	if !strings.Contains(norm, "Quota dashboard ready") {
+		t.Errorf("AC4 [Anti-regression FB-097]: ready-prompt absent after BucketsLoadedMsg: %q", norm)
+	}
+	if !strings.Contains(norm, "press [3]") {
+		t.Errorf("AC4 [Anti-regression FB-097]: 'press [3]' absent from ready-prompt: %q", norm)
+	}
+}
+
+// AC5 [Anti-regression] — FB-080 cancel hint unchanged: second [3] press still posts "Quota dashboard cancelled".
+func TestFB115_AC5_AntiRegression_FB080_CancelHintUnchanged(t *testing.T) {
+	t.Parallel()
+	m := newQuotaLoadingModel()
+
+	// First press: start pending.
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM := r.(AppModel)
+	if !appM.pendingQuotaOpen {
+		t.Fatal("AC5 precondition: pendingQuotaOpen must be true after first [3]")
+	}
+
+	// Second press: cancel.
+	r, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM = r.(AppModel)
+
+	norm := statusBarNorm(appM)
+	if !strings.Contains(norm, "cancelled") {
+		t.Errorf("AC5 [Anti-regression FB-080]: cancel hint %q, want contains 'cancelled'", norm)
+	}
+}
+
+// AC6 [Anti-regression] — FB-079 anchors updated to new copy; existing tests pass with "to cancel".
+// This test pins the new anchor string directly to confirm the intentional update is in effect.
+func TestFB115_AC6_AntiRegression_FB079_AnchorUpdated(t *testing.T) {
+	t.Parallel()
+	m := newQuotaLoadingModel()
+
+	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	appM := r.(AppModel)
+
+	hint := appM.statusBar.Hint
+	const wantSuffix = "press [3] to cancel"
+	if !strings.Contains(hint, wantSuffix) {
+		t.Errorf("AC6 [Anti-regression FB-079]: hint %q, want contains %q (intentional FB-115 anchor update)", hint, wantSuffix)
+	}
+	const oldSuffix = "press [3] when ready"
+	if strings.Contains(hint, oldSuffix) {
+		t.Errorf("AC6 [Anti-regression FB-079]: hint %q still contains old copy %q — anchor not updated", hint, oldSuffix)
+	}
+}
+
+// ==================== End FB-115 ====================
 
 

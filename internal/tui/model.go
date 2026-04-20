@@ -1229,7 +1229,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 			// No HintClearCmd — hint clears on load completion or error (FB-047).
 			m.pendingQuotaOpen = true
 			m.table.SetPendingQuotaOpen(true) // FB-099: show cancel label in strip
-			m.statusBar.PostHint("Quota dashboard loading… press [3] when ready")
+			m.statusBar.PostHint("Quota dashboard loading… press [3] to cancel")
 		} else {
 			// FB-080: second press cancels the queued open.
 			m.pendingQuotaOpen = false
