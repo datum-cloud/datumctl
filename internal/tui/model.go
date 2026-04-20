@@ -2066,7 +2066,7 @@ func (m AppModel) buildDetailContent() string {
 		return strings.Join(lines, "\n")
 	}
 	// FB-005: inline error card when a describe fetch failed.
-	if m.loadState == data.LoadStateError && m.lastFailedFetchKind == "describe" {
+	if m.loadState == data.LoadStateError && m.lastFailedFetchKind == "describe" && !m.eventsMode {
 		innerW := max(1, m.detail.Width()-3)
 		sev := components.ErrorSeverityOf(m.loadErr, m.rc)
 		rt := m.describeRT.Name

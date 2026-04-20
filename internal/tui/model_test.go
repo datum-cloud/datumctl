@@ -14321,21 +14321,24 @@ func newDoubleFailureDetailModel() AppModel {
 	detail.SetResourceContext("projects", "my-project")
 
 	m := AppModel{
-		ctx:          context.Background(),
-		rc:           stubResourceClient{},
-		ac:           data.NewActivityClient(nil),
-		activePane:   DetailPane,
-		describeRT:   data.ResourceType{Kind: "Project", Name: "projects"},
-		describeRaw:  nil,
-		events:       nil,
-		eventsErr:    errors.New("events fetch failed"),
-		eventsLoading: false,
-		sidebar:      components.NewNavSidebarModel(22, 24),
-		table:        components.NewResourceTableModel(58, 24),
-		detail:       detail,
-		activity:     components.NewActivityViewModel(58, 24),
-		filterBar:    components.NewFilterBarModel(),
-		helpOverlay:  components.NewHelpOverlayModel(),
+		ctx:                 context.Background(),
+		rc:                  stubResourceClient{},
+		ac:                  data.NewActivityClient(nil),
+		activePane:          DetailPane,
+		describeRT:          data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:         nil,
+		events:              nil,
+		eventsErr:           errors.New("events fetch failed"),
+		eventsLoading:       false,
+		loadState:           data.LoadStateError,
+		lastFailedFetchKind: "describe",
+		loadErr:             errors.New("describe fetch failed"),
+		sidebar:             components.NewNavSidebarModel(22, 24),
+		table:               components.NewResourceTableModel(58, 24),
+		detail:              detail,
+		activity:            components.NewActivityViewModel(58, 24),
+		filterBar:           components.NewFilterBarModel(),
+		helpOverlay:         components.NewHelpOverlayModel(),
 	}
 	m.updatePaneFocus()
 	return m
@@ -14678,3 +14681,215 @@ func TestFB026_AC6_NarrowWidth_HintRowDropped(t *testing.T) {
 }
 
 // ==================== End FB-026 ====================
+
+// ==================== FB-118: Describe error card eventsMode guard ====================
+
+// TestFB118_AC1_Observable_EventsMode_DescribeFailed_EventsInFlight_ShowsSpinner
+// eventsMode=true + describe failed + eventsLoading=true → events spinner, not describe error card.
+func TestFB118_AC1_Observable_EventsMode_DescribeFailed_EventsInFlight_ShowsSpinner(t *testing.T) {
+	t.Parallel()
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+	m := AppModel{
+		ctx:                 context.Background(),
+		rc:                  stubResourceClient{},
+		ac:                  data.NewActivityClient(nil),
+		activePane:          DetailPane,
+		describeRT:          data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:         nil,
+		events:              nil,
+		eventsLoading:       true,
+		eventsMode:          true,
+		loadState:           data.LoadStateError,
+		lastFailedFetchKind: "describe",
+		loadErr:             errors.New("describe fetch failed"),
+		sidebar:             components.NewNavSidebarModel(22, 24),
+		table:               components.NewResourceTableModel(58, 24),
+		detail:              detail,
+		activity:            components.NewActivityViewModel(58, 24),
+		filterBar:           components.NewFilterBarModel(),
+		helpOverlay:         components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if !strings.Contains(view, "Loading events") {
+		t.Errorf("AC1 [Observable FB-118]: eventsMode=true + describe failed + eventsLoading=true: want 'Loading events' in output, got:\n%s", view)
+	}
+	if strings.Contains(view, "Could not describe") {
+		t.Errorf("AC1 [Observable FB-118]: eventsMode=true + describe failed: got describe error card; want events spinner:\n%s", view)
+	}
+}
+
+// TestFB118_AC2_Observable_EventsMode_DescribeFailed_EventsLoaded_ShowsTable
+// eventsMode=true + describe failed + events loaded → events table, not describe error card.
+func TestFB118_AC2_Observable_EventsMode_DescribeFailed_EventsLoaded_ShowsTable(t *testing.T) {
+	t.Parallel()
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+	m := AppModel{
+		ctx:                 context.Background(),
+		rc:                  stubResourceClient{},
+		ac:                  data.NewActivityClient(nil),
+		activePane:          DetailPane,
+		describeRT:          data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:         nil,
+		events:              []data.EventRow{{Reason: "SuccessfulCreate", Message: "created pod"}},
+		eventsLoading:       false,
+		eventsMode:          true,
+		loadState:           data.LoadStateError,
+		lastFailedFetchKind: "describe",
+		loadErr:             errors.New("describe fetch failed"),
+		sidebar:             components.NewNavSidebarModel(22, 24),
+		table:               components.NewResourceTableModel(58, 24),
+		detail:              detail,
+		activity:            components.NewActivityViewModel(58, 24),
+		filterBar:           components.NewFilterBarModel(),
+		helpOverlay:         components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if !strings.Contains(view, "SuccessfulCreate") {
+		t.Errorf("AC2 [Observable FB-118]: eventsMode=true + describe failed + events loaded: want 'SuccessfulCreate' in output, got:\n%s", view)
+	}
+	if strings.Contains(view, "Could not describe") {
+		t.Errorf("AC2 [Observable FB-118]: eventsMode=true + describe failed + events loaded: got describe error card; want events table:\n%s", view)
+	}
+}
+
+// TestFB118_AC3_Observable_EventsMode_BothFailed_ShowsEventsError
+// eventsMode=true + both fetches failed → events error shown, not describe error card.
+func TestFB118_AC3_Observable_EventsMode_BothFailed_ShowsEventsError(t *testing.T) {
+	t.Parallel()
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+	m := AppModel{
+		ctx:                 context.Background(),
+		rc:                  stubResourceClient{},
+		ac:                  data.NewActivityClient(nil),
+		activePane:          DetailPane,
+		describeRT:          data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:         nil,
+		events:              nil,
+		eventsLoading:       false,
+		eventsMode:          true,
+		eventsErr:           errors.New("events fetch failed"),
+		loadState:           data.LoadStateError,
+		lastFailedFetchKind: "describe",
+		loadErr:             errors.New("describe fetch failed"),
+		sidebar:             components.NewNavSidebarModel(22, 24),
+		table:               components.NewResourceTableModel(58, 24),
+		detail:              detail,
+		activity:            components.NewActivityViewModel(58, 24),
+		filterBar:           components.NewFilterBarModel(),
+		helpOverlay:         components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if strings.Contains(view, "Could not describe") {
+		t.Errorf("AC3 [Observable FB-118]: eventsMode=true + both failed: got describe error card; want events error surface:\n%s", view)
+	}
+	if !strings.Contains(view, "Could not fetch events") {
+		t.Errorf("AC3 [Observable FB-118]: eventsMode=true + both failed: expected events error 'Could not fetch events' in output, got:\n%s", view)
+	}
+}
+
+// TestFB118_AC4_AntiRegression_EventsModeFalse_DescribeFailed_ShowsDescribeCard
+// eventsMode=false + describe failed → describe error card still shown (guard must not suppress it).
+func TestFB118_AC4_AntiRegression_EventsModeFalse_DescribeFailed_ShowsDescribeCard(t *testing.T) {
+	t.Parallel()
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+	m := AppModel{
+		ctx:                 context.Background(),
+		rc:                  stubResourceClient{},
+		ac:                  data.NewActivityClient(nil),
+		activePane:          DetailPane,
+		describeRT:          data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:         nil,
+		events:              nil,
+		eventsLoading:       false,
+		eventsMode:          false,
+		loadState:           data.LoadStateError,
+		lastFailedFetchKind: "describe",
+		loadErr:             errors.New("describe fetch failed"),
+		sidebar:             components.NewNavSidebarModel(22, 24),
+		table:               components.NewResourceTableModel(58, 24),
+		detail:              detail,
+		activity:            components.NewActivityViewModel(58, 24),
+		filterBar:           components.NewFilterBarModel(),
+		helpOverlay:         components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if !strings.Contains(view, "Could not describe") {
+		t.Errorf("AC4 [Anti-regression FB-118]: eventsMode=false + describe failed: want 'Could not describe' (describe error card), got:\n%s", view)
+	}
+}
+
+// TestFB118_AC5_AntiRegression_DoubleFailureFixtureFields verifies the
+// newDoubleFailureDetailModel fixture reflects true double-failure state.
+func TestFB118_AC5_AntiRegression_DoubleFailureFixtureFields(t *testing.T) {
+	t.Parallel()
+	m := newDoubleFailureDetailModel()
+
+	if m.loadState != data.LoadStateError {
+		t.Errorf("AC5 [Anti-regression FB-118]: fixture loadState = %v, want LoadStateError", m.loadState)
+	}
+	if m.lastFailedFetchKind != "describe" {
+		t.Errorf("AC5 [Anti-regression FB-118]: fixture lastFailedFetchKind = %q, want \"describe\"", m.lastFailedFetchKind)
+	}
+	if m.loadErr == nil {
+		t.Errorf("AC5 [Anti-regression FB-118]: fixture loadErr = nil, want non-nil")
+	}
+}
+
+// TestFB118_AC6_AntiRegression_FB038PreCheckUnaffected verifies that the FB-038
+// pre-check (LoadStateIdle + eventsLoading) is unaffected by the guard addition.
+func TestFB118_AC6_AntiRegression_FB038PreCheckUnaffected(t *testing.T) {
+	t.Parallel()
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+	m := AppModel{
+		ctx:           context.Background(),
+		rc:            stubResourceClient{},
+		ac:            data.NewActivityClient(nil),
+		activePane:    DetailPane,
+		describeRT:    data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:   nil,
+		events:        nil,
+		eventsLoading: true,
+		eventsMode:    false,
+		loadState:     data.LoadStateIdle,
+		sidebar:       components.NewNavSidebarModel(22, 24),
+		table:         components.NewResourceTableModel(58, 24),
+		detail:        detail,
+		activity:      components.NewActivityViewModel(58, 24),
+		filterBar:     components.NewFilterBarModel(),
+		helpOverlay:   components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	m.detail.SetContent(m.buildDetailContent())
+	m.detail.SetMode(m.detailModeLabel())
+
+	view := stripANSIModel(m.View())
+	if !strings.Contains(view, "Loading") {
+		t.Errorf("AC6 [Anti-regression FB-118]: LoadStateIdle + eventsLoading=true: want muted 'Loading…' from FB-038 pre-check, got:\n%s", view)
+	}
+	if strings.Contains(view, "Failed to load") {
+		t.Errorf("AC6 [Anti-regression FB-118]: LoadStateIdle path: describe error card must not fire, got:\n%s", view)
+	}
+}
+
+// ==================== End FB-118 ====================
