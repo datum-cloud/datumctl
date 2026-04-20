@@ -1980,7 +1980,7 @@ Axis tags: `[Observable]`, `[Anti-regression]`.
 
 ### FB-060 — Failed quota refresh needs a signal on the quota surface itself
 
-**Status: PENDING UX-DESIGNER** — filed 2026-04-19 by product-experience from FB-043 user-persona P3-2.
+**Status: ACCEPTED 2026-04-20** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-060-failed-quota-refresh-signal.md` (option (a) inline title-bar annotation). Designer-routed + state-machine brief → test-engineer-first sequencing. Test-engineer delivered 4 AC-mapped tests at `internal/tui/components/quotadashboard_fb060_test.go`, compile clean pre-impl. Engineer implemented `refreshFailed` field + `SetRefreshFailed(bool)` setter + `titleBar()` refreshFailed branch with if-chain priority `refreshing` → `refreshFailed` → `fetchedAt` (FB-063/FB-059 collision-free), `SetBuckets()` side-effect clear on success, `model.go` BucketsErrorMsg handler sets failure only when `HasBuckets()` (refresh-only, not initial-load errors per §11 non-goal). Wide label `"  ✗ refresh failed"` styled `styles.Warning`, narrow label `" ✗"`, shared `>= 2` gap-guard with existing labels. `go install ./...` clean; `go test ./internal/tui/... -count=1` green (all 4 FB-060 tests PASS; AC1 and AC2 flipped from pre-impl FAIL to PASS; AC3/AC4 stay green). Filed 2026-04-19 by product-experience from FB-043 user-persona P3-2.
 **Priority: P3** — confusion between "refresh succeeded, data is still old" and "refresh failed, data is still old" — both render identically in the title bar.
 
 #### User problem

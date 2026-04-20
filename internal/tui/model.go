@@ -451,6 +451,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// off-pane errors don't leave quota.refreshing=true on return to QuotaDashboardPane.
 		m.quota.SetLoading(false)
 		m.quota.SetLoadErr(msg.Err)
+		// FB-060: signal refresh failure only when existing data is visible (not initial-load errors).
+		if m.quota.HasBuckets() {
+			m.quota.SetRefreshFailed(true)
+		}
 		// FB-047: clear pending open on error — no transition, error shown separately.
 		// FB-077: also clear quota loading state to prevent re-queue loop on next '3' press.
 		if m.pendingQuotaOpen {

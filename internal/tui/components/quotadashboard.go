@@ -40,6 +40,7 @@ type QuotaDashboardModel struct {
 	registrations      []data.ResourceRegistration // nil until fetch completes
 	fetchedAt          time.Time                   // FB-043: time of last successful bucket fetch
 	originLabel        string                      // FB-088: human-readable return destination for [3] hint
+	refreshFailed      bool                        // FB-060: true after a failed refresh, cleared by SetBuckets
 }
 
 func (m *QuotaDashboardModel) SetOriginLabel(label string) { m.originLabel = label }
@@ -309,6 +310,7 @@ func (m QuotaDashboardModel) titleBar() string {
 	var hint string
 	var freshPrefix string
 	var refreshingLabel string
+	var refreshFailedLabel string
 	if w < 80 {
 		if m.originLabel != "" {
 			backHint := accentBold.Render("[3]") + muted.Render(" back to "+m.originLabel+"  ")
@@ -318,6 +320,7 @@ func (m QuotaDashboardModel) titleBar() string {
 		}
 		freshPrefix = " · "
 		refreshingLabel = " ↻"
+		refreshFailedLabel = " ✗"
 	} else {
 		if m.originLabel != "" {
 			backHint := accentBold.Render("[3]") + muted.Render(" back to "+m.originLabel+"  ")
@@ -327,12 +330,21 @@ func (m QuotaDashboardModel) titleBar() string {
 		}
 		freshPrefix = "  updated "
 		refreshingLabel = "  ⟳ refreshing…"
+		refreshFailedLabel = "  ✗ refresh failed"
 	}
+
+	warning := lipgloss.NewStyle().Foreground(styles.Warning)
 
 	left := baseLeft
 	if m.refreshing {
 		refresh := muted.Render(refreshingLabel)
 		candidate := baseLeft + refresh
+		if w-lipgloss.Width(candidate)-lipgloss.Width(hint) >= 2 {
+			left = candidate
+		}
+	} else if m.refreshFailed {
+		fail := warning.Render(refreshFailedLabel)
+		candidate := baseLeft + fail
 		if w-lipgloss.Width(candidate)-lipgloss.Width(hint) >= 2 {
 			left = candidate
 		}
@@ -415,6 +427,7 @@ func (m *QuotaDashboardModel) SetLoadErr(err error) {
 func (m *QuotaDashboardModel) SetBuckets(buckets []data.AllowanceBucket) {
 	prevName := m.selectedBucketName()
 	m.buckets = buckets
+	m.refreshFailed = false // FB-060: success clears failure indicator
 	m.snapCursorToName(prevName)
 	m.refreshViewport()
 }
@@ -464,6 +477,11 @@ func (m *QuotaDashboardModel) SetRegistrations(regs []data.ResourceRegistration)
 
 func (m *QuotaDashboardModel) SetBucketFetchedAt(t time.Time) {
 	m.fetchedAt = t
+}
+
+// SetRefreshFailed marks or clears the failed-refresh indicator (FB-060).
+func (m *QuotaDashboardModel) SetRefreshFailed(failed bool) {
+	m.refreshFailed = failed
 }
 
 func (m QuotaDashboardModel) SpinnerFrame() string { return m.spinner.View() }
