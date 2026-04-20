@@ -5934,7 +5934,7 @@ This brief moves to PENDING UX-DESIGNER once condition scanning ships AND first-
 
 ### FB-143 — Welcome S2 transient platform-health error has no sub-line affordance
 
-**Status: ACCEPTED — PERSONA-EVAL-PENDING (2026-04-20)** — implementation at `internal/tui/components/resourcetable.go:279-283` adds a single muted sub-line `"Refresh to retry."` below `"Platform health temporarily unavailable"` on the transient (non-unauthorized) error branch. Same `contentW >= 40` narrow-suppression gate as FB-140 L274/L285 — codebase has one consistent narrow-width boundary across all three Platform health sub-line branches and the FB-106 placeholder action row. 3 FB-143 tests cover AC1/AC2 Observable (presence + narrow suppression via `BucketsErrorMsg{Unauthorized: false}`) and AC3 Input-changed (three-branch pairwise distinctness: unauthorized vs transient vs unconfigured). All Observable ACs use `stripANSIModel(appM.table.View())` View-level assertions. Anti-regression: 5 FB-140 tests + 3 FB-139 tests all green; `go install ./...` clean; full TUI suite `-count=1` green. **Original Status: PENDING ENGINEER** — spec complete at `docs/tui-ux-specs/fb-143-transient-platform-health-sub-line.md`. Option A (`"Refresh to retry."`) pinned. Routed 2026-04-20 by ux-designer.
+**Status: ACCEPTED — PERSONA-EVAL-COMPLETE (2026-04-20)** — persona eval 0 P1 / 0 P2 / 1 P3. Positive findings: three Platform health error branches now symmetric; three remedies cleanly distinct (unauthorized=project admin, transient=self-service refresh, unconfigured=platform admin); `"Platform health temporarily unavailable"` + `"Refresh to retry."` pair well ("temporarily" sets wait expectation; sub-line gives immediate action); `contentW >= 40` gate consistent with FB-140 + FB-106 (one narrow-width policy). P3-1 filed as FB-144 — "Refresh to retry." uses implicit keybind reference ("Refresh" verb maps to `[r]` for operator with muscle-memory; first-encounter operator must cross-glance status bar); persona suggests `"Press [r] to retry."` as explicit alternative. Implementation at `internal/tui/components/resourcetable.go:279-283` adds a single muted sub-line `"Refresh to retry."` below `"Platform health temporarily unavailable"` on the transient (non-unauthorized) error branch. Same `contentW >= 40` narrow-suppression gate as FB-140 L274/L285. 3 FB-143 tests cover AC1/AC2 Observable (presence + narrow suppression via `BucketsErrorMsg{Unauthorized: false}`) and AC3 Input-changed (three-branch pairwise distinctness: unauthorized vs transient vs unconfigured). All Observable ACs use `stripANSIModel(appM.table.View())` View-level assertions. Anti-regression: 5 FB-140 tests + 3 FB-139 tests all green; `go install ./...` clean; full TUI suite `-count=1` green. **Original Status: PENDING ENGINEER** — spec complete at `docs/tui-ux-specs/fb-143-transient-platform-health-sub-line.md`. Option A (`"Refresh to retry."`) pinned. Routed 2026-04-20 by ux-designer.
 **Priority: P3** — discoverability/asymmetry gap; persona surfaced after FB-140 ACCEPTED.
 
 #### User problem
@@ -5987,3 +5987,34 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration
 - Not changing the existing transient error primary copy (L279 first-line text unchanged).
 - Not auditing other "terminal state with no next-step" surfaces elsewhere in the TUI (separate audit brief if pattern recurs — same scope discipline as FB-140).
 - Not wiring a new auto-retry mechanism — `[r]` refresh is the existing operator gesture; sub-line just surfaces it.
+
+### FB-144 — FB-143 transient sub-line `"Refresh to retry."` uses implicit keybind, not explicit `[r]`
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-143 user-persona P3-1.
+
+**Priority: P3** — first-encounter operators must cross-glance the status bar to map "Refresh" → `[r]`. The two adjacent sub-lines at `resourcetable.go` L274 (unauthorized) and L285 (unconfigured) correctly use prose because they point to people outside the TUI. The transient branch at L279 is the only one whose remedy is an in-TUI keybind, but names the keybind only implicitly via the verb "Refresh." For an operator who already has `[r]` in muscle memory this reads cleanly; for a first encounter it teaches *what to do* but not *how*.
+
+#### User problem
+
+FB-143 ACCEPTED copy: `"Refresh to retry."` — the verb "Refresh" is the only signal linking the sub-line to the existing `[r]` keybind documented in the status bar (FB-136). Persona eval:
+
+> *"'Refresh to retry.' uses 'Refresh' as an implicit verb that maps to `[r]` for an operator who already has the keybind in muscle memory. For a first encounter, it tells them what to do but not how — they'd need to glance at the status bar to find `[r] refresh`."*
+
+Persona suggests `"Press [r] to retry."` — fully self-contained, names the keybind explicitly, still short (≤22 chars, well inside `contentW >= 40` gate).
+
+This is the only sub-line in the TUI whose remedy is in-TUI and keybind-mediated. The other two sub-lines from FB-140 point to people outside the TUI and therefore correctly do not name a keybind — they're semantically different. FB-144 is narrow: update one string literal.
+
+#### Designer-call
+
+- **Option A** — `"Press [r] to retry."` — persona's suggested form. Explicit keybind. Self-contained. Minimal change.
+- **Option B** — `"Press [r] to refresh."` — substitutes "refresh" for "retry" so the verb matches the status-bar label exactly (`[r] refresh`). Aligns vocabulary; loses the "retry" framing that ties to the error state.
+- **Option C** — Keep current form (`"Refresh to retry."`). Persona explicitly declined this as the only sub-line mapping to an in-TUI keybind without naming it. Kept only as rejected-option reference.
+- **Option D** — Adopt `[r]`-naming pattern across *all three* Platform health sub-line branches. Rejected ex ante — the other two sub-lines point to people, not keys; adding `[r]` would be semantically wrong for those branches.
+
+Prefer Option A unless Option B's vocabulary alignment with the status-bar label is worth losing "retry" framing. One-line literal change at `internal/tui/components/resourcetable.go:281` (sub-line argument to `muted.Render`).
+
+**Non-goals:**
+- Not touching the other two FB-140 sub-line branches (semantically different — their remedies are people, not keys).
+- Not changing the primary copy `"Platform health temporarily unavailable"` — FB-143 rationale still holds.
+- Not adding the `[r]` label anywhere else in the Platform health region (status bar + keybind strip already document it via FB-136).
+- Not changing the `contentW >= 40` gate (all Option A/B copies are shorter than current L281 string).
