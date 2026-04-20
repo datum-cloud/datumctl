@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	datumconfig "go.datum.net/datumctl/internal/datumconfig"
 	tuictx "go.datum.net/datumctl/internal/tui/context"
 	"go.datum.net/datumctl/internal/tui/data"
+	"go.datum.net/datumctl/internal/tui/styles"
 )
 
 // namedRows builds a slice of ResourceRow from plain name strings.
@@ -422,6 +424,58 @@ func TestFB144_NarrowSuppression(t *testing.T) {
 	}
 	if strings.Contains(got, "Refresh to retry.") {
 		t.Errorf("FB-144 AC4: old sub-line copy must also be absent at contentW<40, got: %q", got)
+	}
+}
+
+// TestFB145_TransientSubLine_RGlyphAccentBold verifies FB-145 AC1: the raw (non-stripped)
+// View contains the accent-bold ANSI sequence wrapping "[r]".
+func TestFB145_TransientSubLine_RGlyphAccentBold(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme-corp", "web", "proj-abc"))
+	m.SetBucketErr(errors.New("network error"), false)
+
+	accentBold := lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
+	want := accentBold.Render("[r]")
+
+	raw := m.View()
+	if !strings.Contains(raw, want) {
+		t.Errorf("FB-145 AC1: accent-bold '[r]' sequence absent from raw View();\nwant substring: %q\ngot (stripped): %q", want, stripANSI(raw))
+	}
+}
+
+// TestFB145_TransientSubLine_TextPreserved verifies FB-145 AC2: stripANSI(View())
+// still contains "Press [r] to retry." — text content unchanged from FB-144.
+func TestFB145_TransientSubLine_TextPreserved(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme-corp", "web", "proj-abc"))
+	m.SetBucketErr(errors.New("network error"), false)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "Press [r] to retry.") {
+		t.Errorf("FB-145 AC2: stripped View() must contain 'Press [r] to retry.', got: %q", got)
+	}
+}
+
+// TestFB145_TransientSubLine_SurroundingTextMuted verifies FB-145 AC3: "Press " and
+// " to retry." appear inside muted ANSI sequences (not accent-bold).
+func TestFB145_TransientSubLine_SurroundingTextMuted(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetTUIContext(testCtxWithProject("alice", "acme-corp", "web", "proj-abc"))
+	m.SetBucketErr(errors.New("network error"), false)
+
+	muted := lipgloss.NewStyle().Foreground(styles.Muted)
+	wantPress := muted.Render("Press ")
+	wantRetry := muted.Render(" to retry.")
+
+	raw := m.View()
+	if !strings.Contains(raw, wantPress) {
+		t.Errorf("FB-145 AC3: muted 'Press ' sequence absent from raw View(); want: %q", wantPress)
+	}
+	if !strings.Contains(raw, wantRetry) {
+		t.Errorf("FB-145 AC3: muted ' to retry.' sequence absent from raw View(); want: %q", wantRetry)
 	}
 }
 

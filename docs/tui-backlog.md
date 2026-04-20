@@ -6021,7 +6021,7 @@ Prefer Option A unless Option B's vocabulary alignment with the status-bar label
 
 ### FB-145 — FB-144 transient sub-line `[r]` glyph is muted, not accent-bold (scannability)
 
-**Status: PENDING ENGINEER** — render-expression split pinned inline in this brief (no separate spec file). Filed 2026-04-20 by product-experience from FB-144 user-persona P3-1.
+**Status: ACCEPTED** — implemented and accepted 2026-04-20 by product-experience. Render-expression split at `internal/tui/components/resourcetable.go:281`: `muted.Render("Press [r] to retry.")` → `muted.Render("Press ") + accent.Render("[r]") + muted.Render(" to retry.")`. Text content unchanged — only the `[r]` glyph's ANSI styling changes from muted to accent-bold. 3 new tests in `resourcetable_test.go` (FB-145 AC1–AC3: glyph styled, text preserved, surrounding text muted). FB-144 AC1–AC4 anti-regression (4 tests) green. `accent` style at L261 is `Foreground(styles.Accent).Bold(true)` — identical to `accentBold` in other sites.
 
 **Priority: P3** — FB-144 shipped the key-naming half of the affordance (`"Press [r] to retry."`). Persona eval confirmed the copy lands correctly, then flagged that the `[r]` glyph renders flat-muted — same color as the surrounding prose — while every other non-status-bar `[r]` affordance in the TUI (`resourcetable.go:359`, `detailview.go:359`, `model.go:2102`) renders `[r]` in accent-bold via the established `muted.Render(prose) + accentBold.Render("[r]") + muted.Render(prose)` pattern. FB-144's render site is the sole outlier; a scanning operator sees a muted sentence, not a key affordance.
 
