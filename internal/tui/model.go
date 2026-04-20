@@ -1040,8 +1040,9 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 		m.statusBar.BumpHintToken()
 	}
 
-	// FB-042: quick-jump keys — active only when welcome panel is visible.
-	if m.tableTypeName == "" || m.showDashboard {
+	// FB-042: quick-jump keys — active when welcome panel is visible and NavPane is not focused.
+	// FB-073: NavPane has no quick-jump semantics; gate prevents accidental fires during sidebar scroll.
+	if (m.tableTypeName == "" || m.showDashboard) && m.activePane != NavPane {
 		var matchSubstrs []string
 		switch msg.String() {
 		case "n":

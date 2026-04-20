@@ -9861,7 +9861,9 @@ func TestFB042_QuickJump_NKey_WithMatchingType_Navigates(t *testing.T) {
 	m.resourceTypes = []data.ResourceType{
 		{Name: "namespaces", Kind: "Namespace", Group: "core.miloapis.com"},
 	}
-	// tableTypeName="" → welcome panel active.
+	// tableTypeName="" → welcome panel active. FB-073: quick-jump fires from TablePane, not NavPane.
+	m.activePane = TablePane
+	m.updatePaneFocus()
 
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	appM := result.(AppModel)
@@ -9916,6 +9918,9 @@ func TestFB042_QuickJump_RoundTrip_ReturnsToWelcome(t *testing.T) {
 	m.resourceTypes = []data.ResourceType{
 		{Name: "namespaces", Kind: "Namespace", Group: "core.miloapis.com"},
 	}
+	// FB-073: quick-jump fires from TablePane.
+	m.activePane = TablePane
+	m.updatePaneFocus()
 
 	// Forward leg: 'n' quick-jump navigates to namespaces (loadState=Loading).
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
@@ -9959,6 +9964,9 @@ func newQuickJumpModel() AppModel {
 	m.resourceTypes = []data.ResourceType{
 		{Name: "backends", Kind: "Backend", Group: "networking.datum.net"},
 	}
+	// FB-073: quick-jump fires from TablePane, not NavPane.
+	m.activePane = TablePane
+	m.updatePaneFocus()
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	appM := result.(AppModel)
 	// Simulate load completion so view shows table, not spinner.
@@ -10094,6 +10102,82 @@ func TestFB072_AC4_QuickJump_ThenSidebarJ_ClearsFlag_TwoStepEsc(t *testing.T) {
 }
 
 // ==================== End FB-072 ====================
+
+// ==================== FB-073: Quick-jump NavPane gate ====================
+
+// newNavPaneWelcomeWithBackend builds a welcome-panel model with a "backends" resource
+// type registered and NavPane active — the state where accidental quick-jump fires occurred.
+func newNavPaneWelcomeWithBackend() AppModel {
+	m := newWelcomePanelAppModel(nil, nil)
+	m.resourceTypes = []data.ResourceType{
+		{Name: "backends", Kind: "Backend", Group: "networking.datum.net"},
+	}
+	return m
+}
+
+// AC1 [Anti-behavior] — pressing 'b' from NavPane while welcome panel visible does NOT fire quick-jump.
+func TestFB073_AC1_NavPane_QuickJump_NoFire(t *testing.T) {
+	t.Parallel()
+	m := newNavPaneWelcomeWithBackend()
+	if m.activePane != NavPane {
+		t.Fatalf("precondition: activePane=%v, want NavPane", m.activePane)
+	}
+
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	appM := result.(AppModel)
+
+	if appM.activePane != NavPane {
+		t.Errorf("AC1 [Anti-behavior]: activePane changed to %v after 'b' from NavPane, want NavPane", appM.activePane)
+	}
+	if appM.tableTypeName != "" {
+		t.Errorf("AC1 [Anti-behavior]: tableTypeName=%q after 'b' from NavPane, want '' (no-op)", appM.tableTypeName)
+	}
+	if cmd != nil {
+		t.Error("AC1 [Anti-behavior]: non-nil cmd after suppressed NavPane quick-jump, want nil")
+	}
+	view := stripANSIModel(appM.View())
+	if !strings.Contains(view, "Welcome") {
+		t.Errorf("AC1 [Anti-behavior]: 'Welcome' absent from View() after suppressed NavPane 'b' — welcome panel must remain:\n%s", view)
+	}
+}
+
+// AC2 [Observable] — after suppressed NavPane 'b', View() still renders welcome panel (no table).
+func TestFB073_AC2_NavPane_QuickJump_ViewUnchanged(t *testing.T) {
+	t.Parallel()
+	m := newNavPaneWelcomeWithBackend()
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	appM := result.(AppModel)
+
+	view := stripANSIModel(appM.View())
+	if !strings.Contains(view, "Welcome") {
+		t.Errorf("AC2 [Observable]: 'Welcome' absent after suppressed NavPane 'b' — welcome panel must remain:\n%s", view)
+	}
+}
+
+// AC3 [Anti-regression] — pressing 'b' from TablePane (welcome panel visible) DOES fire quick-jump.
+func TestFB073_AC3_TablePane_QuickJump_StillFires(t *testing.T) {
+	t.Parallel()
+	m := newNavPaneWelcomeWithBackend()
+	m.activePane = TablePane
+	m.updatePaneFocus()
+
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	appM := result.(AppModel)
+
+	if appM.tableTypeName != "backends" {
+		t.Errorf("AC3 [Anti-regression]: tableTypeName=%q after 'b' from TablePane, want 'backends'", appM.tableTypeName)
+	}
+	if cmd == nil {
+		t.Error("AC3 [Anti-regression]: nil cmd after TablePane quick-jump, want LoadResourcesCmd")
+	}
+	view := stripANSIModel(appM.View())
+	if strings.Contains(view, "Welcome") {
+		t.Errorf("AC3 [Anti-regression]: 'Welcome' still in View() after TablePane quick-jump — welcome panel must be gone once tableTypeName is set:\n%s", view)
+	}
+}
+
+// ==================== End FB-073 ====================
 
 // ==================== FB-047: '3' keypress queued while QuotaDashboard loads ====================
 
