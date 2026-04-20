@@ -6047,3 +6047,49 @@ Text content unchanged. Only the `[r]` glyph's styling changes. `accentBold` is 
 - Not changing any text content or the `contentW >= 40` gate — FB-144's copy stays as-shipped.
 - Not auditing every `[r]` rendering site repo-wide — the three non-status-bar sites outside L281 already use `accentBold`; this brief is scoped to the one outlier.
 - Not altering status-bar `[r] refresh` rendering (separate render path, separate precedent).
+
+### FB-146 — Narrow-mode back-hint `[3] back to <label>` still blows freshness gate
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-059 user-persona P3-1.
+
+**Priority: P3** — FB-059 restored freshness at direct-access split-pane widths (paneWidth ≈ 58), but the **navigated-from** quota path (resource table → `[2]` → quota dashboard) still drops freshness because the back-hint `[3] back to <label>` consumes more space than FB-059's spec §2.3 verification math accounted for. This workflow is arguably the more common split-pane access pattern.
+
+#### User problem
+
+Persona eval:
+
+> *"This fix directly addresses the P3 I filed on FB-043 — I can now see `· 5m ago` when working in a split pane at ~58 cols. But when a user navigates to the quota dashboard FROM the resource list (or any resource table), the title bar adds a back-hint: `[3] back to <label>`. For a typical 13-char label at paneWidth=58, the hint total is ~45 chars and the gap check drops freshness. The fix solves the problem for direct quota dashboard access but not for the navigated-from case, which is arguably the more common split-pane workflow: open resource table in one pane, navigate to quota, expect freshness context."*
+
+#### Math — verified against code
+
+Current narrow-mode render at `quotadashboard.go:313–315`:
+
+```go
+backHint := accentBold.Render("[3]") + muted.Render(" back to "+m.originLabel+"  ")
+hint = backHint + muted.Render("[↑/↓] [t] [s] [r]")
+```
+
+For `originLabel="resource list"` (13 visible chars) at `paneWidth=58`, no ctxLabel:
+
+| segment | chars |
+|---|---|
+| `[3]` | 3 |
+| ` back to resource list  ` | 24 |
+| `[↑/↓] [t] [s] [r]` | 18 |
+| **hint total** | **45** |
+
+Gap check: `58 − (baseLeft 11 + fresh 9) − 45 = −7 < 2` → freshness drops.
+
+#### Designer-call
+
+Three options — designer to pin one or propose a fourth:
+
+- **Option A — Compact arrow separator.** Replace `" back to "` with a compact arrow (`" ← "`) at narrow widths: `"[3] ← resource list  "`. Saves ~6 chars per label. New hint: 3+1+1+1+13+2 + 18 = 39 chars → gap at paneWidth=58 = −1 (still drops for 13-char label). Insufficient alone; would need to pair with label truncation.
+- **Option B — Drop `<label>` entirely at narrow widths.** `"[3] back"` (~8 chars) + 18 = 26. Gap = 58 − 20 − 26 = 12 ≥ 2 ✓. Saves the most space but loses origin context — operator knows which key to press but not what it returns to. Could be acceptable if origin is discoverable via another cue (status bar, breadcrumb).
+- **Option C — Acknowledge as known limitation.** Update FB-059 non-goals to document that navigated-from narrow-width access drops freshness. No code change. Honest option if designer judges the cost of condensing worse than the freshness drop.
+
+**Non-goals:**
+- Not re-opening FB-059 (ACCEPTED state stable).
+- Not changing wide-mode back-hint at `w >= 80` (unchanged).
+- Not changing the `>= 2` gate threshold.
+- Not redesigning the overall back-navigation pattern — this brief is scoped to the narrow-mode back-hint's character budget.
