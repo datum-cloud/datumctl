@@ -15671,3 +15671,104 @@ func TestFB130_AC2_InputChanged_EmptyNonNilRows_RPress_ShowsLoading(t *testing.T
 }
 
 // ==================== End FB-130 (model layer) ====================
+
+// ==================== FB-071: BucketsErrorMsg propagates to global status bar ====================
+//
+// Option A: set m.statusBar.Err in BucketsErrorMsg; clear on BucketsLoadedMsg.
+//
+// Axis-coverage:
+// AC  | Observable                                                  | Input-changed                                  | Anti-regression         | Integration
+// ----+-------------------------------------------------------------+------------------------------------------------+-------------------------+--------------
+// AC1 | TestFB071_AC1_Observable_StatusBarErrSet                    | -                                              | -                       | -
+// AC2 | TestFB071_AC2_InputChanged_LoadedMsgClearsStatusBarErr       | TestFB071_AC2_InputChanged_LoadedMsgClearsStatusBarErr | -              | -
+// AC3 | -                                                           | -                                              | TestFB071_AC3_AntiRegression_WelcomePanelS2Unchanged | -
+// AC4 | -                                                           | -                                              | -                       | (go install pass — manual)
+
+// AC1 [Observable]: BucketsErrorMsg on NavPane sets statusBar.Err and View() shows the error.
+func TestFB071_AC1_Observable_StatusBarErrSet(t *testing.T) {
+	t.Parallel()
+	m := newAllowanceBucketNavModel(nil)
+
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("bucket load failed"), Unauthorized: false})
+	appM := result.(AppModel)
+
+	if appM.statusBar.Err == nil {
+		t.Fatal("AC1: statusBar.Err == nil after BucketsErrorMsg, want non-nil")
+	}
+	if appM.statusBar.ErrSeverity != data.ErrorSeverityWarning {
+		t.Errorf("AC1: ErrSeverity = %v, want ErrorSeverityWarning", appM.statusBar.ErrSeverity)
+	}
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "bucket load failed") {
+		t.Errorf("AC1: View() does not contain error message after BucketsErrorMsg:\n%s", got)
+	}
+}
+
+// AC1b [Observable]: unauthorized BucketsErrorMsg sets ErrSeverity=ErrorSeverityError and renders '✕' glyph in View().
+func TestFB071_AC1b_Observable_UnauthorizedSetsErrorSeverity(t *testing.T) {
+	t.Parallel()
+	m := newAllowanceBucketNavModel(nil)
+
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("forbidden"), Unauthorized: true})
+	appM := result.(AppModel)
+
+	if appM.statusBar.Err == nil {
+		t.Fatal("AC1b: statusBar.Err == nil after unauthorized BucketsErrorMsg, want non-nil")
+	}
+	if appM.statusBar.ErrSeverity != data.ErrorSeverityError {
+		t.Errorf("AC1b: ErrSeverity = %v, want ErrorSeverityError", appM.statusBar.ErrSeverity)
+	}
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "✕") {
+		t.Errorf("AC1b: View() does not contain error glyph '✕' for ErrorSeverityError:\n%s", got)
+	}
+}
+
+// AC2 [Input-changed]: BucketsLoadedMsg after BucketsErrorMsg clears statusBar.Err; View() changes.
+func TestFB071_AC2_InputChanged_LoadedMsgClearsStatusBarErr(t *testing.T) {
+	t.Parallel()
+	m := newAllowanceBucketNavModel(nil)
+
+	// Set up: inject error first.
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("bucket load failed"), Unauthorized: false})
+	errM := result.(AppModel)
+	if errM.statusBar.Err == nil {
+		t.Fatal("AC2 precondition: statusBar.Err must be non-nil after BucketsErrorMsg")
+	}
+	v1 := stripANSIModel(errM.View())
+
+	// Recover: inject success.
+	result, _ = errM.Update(data.BucketsLoadedMsg{})
+	recoveredM := result.(AppModel)
+
+	if recoveredM.statusBar.Err != nil {
+		t.Errorf("AC2: statusBar.Err = %v after BucketsLoadedMsg, want nil", recoveredM.statusBar.Err)
+	}
+	v2 := stripANSIModel(recoveredM.View())
+	if strings.Contains(v2, "bucket load failed") {
+		t.Errorf("AC2 [Input-changed]: error message still present in View() after BucketsLoadedMsg:\n%s", v2)
+	}
+	if v1 == v2 {
+		t.Error("AC2 [Input-changed]: View() unchanged after recovery — error not cleared from rendered output")
+	}
+}
+
+// AC3 [Anti-regression]: Welcome panel S2 still shows bucket error via bucketErr (FB-042 path unchanged).
+func TestFB071_AC3_AntiRegression_WelcomePanelS2Unchanged(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(nil, nil)
+
+	result, _ := m.Update(data.BucketsErrorMsg{Err: errors.New("network timeout"), Unauthorized: false})
+	appM := result.(AppModel)
+
+	if appM.bucketErr == nil {
+		t.Fatal("AC3: bucketErr == nil after BucketsErrorMsg — FB-042 path broken")
+	}
+	// Status bar also carries the error now (FB-071), and S2 still renders it.
+	got := stripANSIModel(appM.View())
+	if !strings.Contains(got, "network timeout") {
+		t.Errorf("AC3: error not visible in View() after BucketsErrorMsg:\n%s", got)
+	}
+}
+
+// ==================== End FB-071 ====================

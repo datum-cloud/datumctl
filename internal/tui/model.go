@@ -401,6 +401,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bucketLoading = false
 		m.bucketErr = nil
 		m.bucketUnauthorized = false
+		// FB-071: clear status bar error set by BucketsErrorMsg on successful reload.
+		m.statusBar.Err = nil
+		m.statusBar.ErrSeverity = data.ErrorSeverityWarning
 		m.refreshing = false
 		m.tuiCtx.Refreshing = false
 		m.header.Ctx = m.tuiCtx
@@ -437,6 +440,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshing = false
 		m.tuiCtx.Refreshing = false
 		m.header.Ctx = m.tuiCtx
+		// FB-071: propagate to global status bar so operator sees the error regardless of active pane.
+		sev := data.ErrorSeverityWarning
+		if msg.Unauthorized {
+			sev = data.ErrorSeverityError
+		}
+		m.statusBar.Err = msg.Err
+		m.statusBar.ErrSeverity = sev
 		// FB-107: drop activePane gate — clear refreshing/loading unconditionally so
 		// off-pane errors don't leave quota.refreshing=true on return to QuotaDashboardPane.
 		m.quota.SetLoading(false)
