@@ -14310,3 +14310,110 @@ func TestFB085_AC3_LoadingTransition_FlipsLabel(t *testing.T) {
 }
 
 // ==================== End FB-085 ====================
+
+// ==================== FB-086: [E] unblocked in double-failure state ====================
+
+// newDoubleFailureDetailModel returns an AppModel in DetailPane with both
+// describe and events failed: describeRaw=nil, events=nil, eventsErr set,
+// eventsLoading=false.
+func newDoubleFailureDetailModel() AppModel {
+	detail := components.NewDetailViewModel(80, 24)
+	detail.SetResourceContext("projects", "my-project")
+
+	m := AppModel{
+		ctx:          context.Background(),
+		rc:           stubResourceClient{},
+		ac:           data.NewActivityClient(nil),
+		activePane:   DetailPane,
+		describeRT:   data.ResourceType{Kind: "Project", Name: "projects"},
+		describeRaw:  nil,
+		events:       nil,
+		eventsErr:    errors.New("events fetch failed"),
+		eventsLoading: false,
+		sidebar:      components.NewNavSidebarModel(22, 24),
+		table:        components.NewResourceTableModel(58, 24),
+		detail:       detail,
+		activity:     components.NewActivityViewModel(58, 24),
+		filterBar:    components.NewFilterBarModel(),
+		helpOverlay:  components.NewHelpOverlayModel(),
+	}
+	m.updatePaneFocus()
+	return m
+}
+
+// TestFB086_AC5_EKey_DoubleFailure_AdmitsAndRedispatches verifies that pressing
+// [E] in double-failure state sets eventsMode=true and eventsLoading=true (re-dispatch fired).
+func TestFB086_AC5_EKey_DoubleFailure_AdmitsAndRedispatches(t *testing.T) {
+	t.Parallel()
+	m := newDoubleFailureDetailModel()
+
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	appM := result.(AppModel)
+
+	if !appM.eventsMode {
+		t.Errorf("AC5 [Observable FB-086]: eventsMode = false after [E] in double-failure; want true")
+	}
+	if !appM.eventsLoading {
+		t.Errorf("AC5 [Observable FB-086]: eventsLoading = false after [E] in double-failure; want true (re-dispatch fired)")
+	}
+	if cmd == nil {
+		t.Errorf("AC5 [Observable FB-086]: cmd = nil after [E] in double-failure; want LoadEventsCmd dispatched")
+	}
+	view := stripANSIModel(appM.View())
+	if !strings.Contains(view, "Loading events") {
+		t.Errorf("AC5 [Observable FB-086]: View() missing \"Loading events\" after [E] in double-failure; want events-loading spinner visible.\nView:\n%s", view)
+	}
+}
+
+// TestFB086_AC6_EKey_SingleFailure_DescribePresent_StillAdmits verifies that
+// the pre-existing single-failure path (describeRaw != nil, no events attempted)
+// still admits [E] via the describeRaw != nil branch.
+func TestFB086_AC6_EKey_SingleFailure_DescribePresent_StillAdmits(t *testing.T) {
+	t.Parallel()
+	m := newDetailPaneModel()
+	// describeRaw present, no events attempted
+	raw := &unstructured.Unstructured{}
+	raw.SetName("my-project")
+	m.describeRaw = raw
+	m.events = nil
+	m.eventsErr = nil
+	m.eventsLoading = false
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	appM := result.(AppModel)
+
+	if !appM.eventsMode {
+		t.Errorf("AC6 [Anti-behavior FB-086]: eventsMode = false after [E] with describeRaw present; want true (pre-existing path)")
+	}
+	view := stripANSIModel(appM.View())
+	if !strings.Contains(view, "Loading events") {
+		t.Errorf("AC6 [Anti-behavior FB-086]: View() missing \"Loading events\" after [E] with describeRaw present; want events-loading spinner visible.\nView:\n%s", view)
+	}
+}
+
+// TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition verifies that
+// after double-failure → [E] → EventsLoadedMsg, the view contains event content
+// and does not contain the describe error block.
+func TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition(t *testing.T) {
+	t.Parallel()
+	m := newDoubleFailureDetailModel()
+
+	// Press [E] to enter events mode
+	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	appM := r1.(AppModel)
+
+	// Simulate events load succeeding
+	r2, _ := appM.Update(data.EventsLoadedMsg{
+		Events: []data.EventRow{
+			{Reason: "Scheduled", Message: "assigned to node"},
+		},
+	})
+	appM2 := r2.(AppModel)
+
+	view := stripANSIModel(appM2.View())
+	if !strings.Contains(view, "Scheduled") {
+		t.Errorf("AC7 [Input-changed FB-086]: View() missing event content after EventsLoadedMsg.\nView:\n%s", view)
+	}
+}
+
+// ==================== End FB-086 ====================

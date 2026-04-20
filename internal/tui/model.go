@@ -1161,7 +1161,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 		}
 		return m, nil
 	case "E": // AC#1 FB-019 — pane-local events toggle
-		if m.activePane == DetailPane && (m.describeRaw != nil || m.events != nil || m.eventsLoading) { // FB-024 D1: admit entry when events attempted
+		if m.activePane == DetailPane && (m.describeRaw != nil || m.events != nil || m.eventsLoading || m.eventsErr != nil) { // FB-024 D1: admit entry when events attempted; FB-086: also admit on double-failure
 			m.eventsMode = !m.eventsMode
 			if m.eventsMode {
 				m.yamlMode = false       // quad-state exclusivity // AC#23
