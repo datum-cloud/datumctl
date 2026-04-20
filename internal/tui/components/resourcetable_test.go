@@ -2904,3 +2904,106 @@ func TestFB129_AC5_AntiRegression_DataRows_TierThresholdsUnaffected(t *testing.T
 }
 
 // ==================== End FB-129 ====================
+
+// ==================== FB-130: S3 spinner gate fix (nil vs empty slice) ====================
+//
+// Bug: `case m.activityLoading && m.activityRows == nil` misses non-nil empty slices.
+// Fix: `case m.activityLoading && len(m.activityRows) == 0` covers both nil and empty.
+// Production sequence (FB-103): fetch returns 0 rows → SetActivityRows([]) → rows=[], loading=false
+// → operator presses [r] → SetActivityLoading(true) → loading=true, rows=[] → spinner must fire.
+
+// AC1 [Observable] — loading=true + rows=[] (non-nil empty): spinner fires.
+// Production state: prior fetch returned 0 rows; [r] re-armed loading.
+// SetActivityRows([]) first (clears loading, sets non-nil empty rows),
+// then SetActivityLoading(true) to simulate [r] re-arming.
+func TestFB130_AC1_Observable_EmptyNonNilRows_SpinnerFires(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetActivityRows([]data.ActivityRow{}) // fetch success: loading=false, rows=[] (non-nil)
+	m.SetActivityLoading(true)              // [r] re-arms: loading=true, rows=[] stays non-nil
+
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "loading") {
+		t.Errorf("AC1 [Observable]: spinner absent with loading=true rows=[] (non-nil):\n%s", got)
+	}
+	if strings.Contains(got, "no recent activity") {
+		t.Errorf("AC1 [Observable]: 'no recent activity' present when spinner should show:\n%s", got)
+	}
+}
+
+// AC2 [Input-changed] — SetActivityRows([]) → SetActivityLoading(true): View() changes.
+// v1 = after fetch returns (loading=false, rows=[]) → "no recent activity"
+// v2 = after [r] re-arms (loading=true, rows=[]) → "⟳ loading…"
+func TestFB130_AC2_InputChanged_EmptyRows_LoadingTransition(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetActivityRows([]data.ActivityRow{}) // fetch success: loading=false, rows=[]
+
+	v1 := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(v1, "no recent activity") {
+		t.Fatalf("AC2 precondition: 'no recent activity' absent in v1:\n%s", v1)
+	}
+
+	m.SetActivityLoading(true) // [r] re-arms: loading=true, rows=[] stays
+	v2 := stripANSI(m.renderActivitySection(80))
+
+	if v1 == v2 {
+		t.Error("AC2 [Input-changed]: renderActivitySection output unchanged after SetActivityLoading(true)")
+	}
+	if strings.Contains(v2, "no recent activity") {
+		t.Errorf("AC2 [Input-changed]: 'no recent activity' still present in v2 (should be spinner):\n%s", v2)
+	}
+	if !strings.Contains(v2, "loading") {
+		t.Errorf("AC2 [Input-changed]: 'loading' absent in v2:\n%s", v2)
+	}
+}
+
+// AC3 [Anti-regression FB-103 AC1 + FB-130] — pre-first-load (rows=nil): spinner preserved.
+// len(nil)==0, so the fix is backward-compatible with the nil case.
+func TestFB130_AC3_AntiRegression_NilRows_SpinnerPreserved(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetActivityLoading(true)
+	// activityRows nil by default — pre-first-load state
+
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "loading") {
+		t.Errorf("AC3 [Anti-regression]: spinner absent during pre-first-load (loading=true, rows=nil):\n%s", got)
+	}
+}
+
+// AC4 [Anti-regression FB-076] — populated rows + loading=true: spinner suppressed (silent re-fetch).
+func TestFB130_AC4_AntiRegression_PopulatedRows_SpinnerSuppressed(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(120, 30)
+	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
+	m.SetActivityLoading(true)
+
+	got := stripANSI(m.renderActivitySection(80))
+	if strings.Contains(got, "loading") {
+		t.Errorf("AC4 [Anti-regression]: spinner present when rows populated (should be silent re-fetch):\n%s", got)
+	}
+	if !strings.Contains(got, "alice@example.com") {
+		t.Errorf("AC4 [Anti-regression]: actor absent when rows populated:\n%s", got)
+	}
+}
+
+// AC5 [Anti-regression FB-103 AC7] — error-state + loading=true: spinner fires (error-cleared path).
+// SetActivityFetchFailed does not modify activityRows (stays nil); loading=true takes
+// priority over the failed case in the render switch (loading case is first).
+func TestFB130_AC5_AntiRegression_ErrorState_SpinnerFires(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(100, 30)
+	m.SetActivityFetchFailed(true) // error state: failed=true, rows=nil, loading=false
+	m.SetActivityLoading(true)     // [r] re-arms: loading=true takes priority in switch
+
+	got := stripANSI(m.renderActivitySection(80))
+	if !strings.Contains(got, "loading") {
+		t.Errorf("AC5 [Anti-regression]: spinner absent after [r] in error state:\n%s", got)
+	}
+	if strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC5 [Anti-regression]: error copy still present when spinner should show:\n%s", got)
+	}
+}
+
+// ==================== End FB-130 ====================

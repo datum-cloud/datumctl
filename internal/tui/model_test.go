@@ -15528,3 +15528,32 @@ func TestFB103_AC9_Observable_CRDAbsent_RPress_ShowsLoading(t *testing.T) {
 }
 
 // ==================== End FB-103 ====================
+
+// ==================== FB-130: S3 spinner render gate — empty-but-loaded rows (model layer) ====================
+
+// AC2 [Input-changed] — [r] on genuinely-empty (non-nil) rows: "no recent activity" → "⟳ loading…".
+// This exercises the bug-fix path at the AppModel layer: SetActivityRows([]) leaves a non-nil
+// empty slice; prior to fix len==0 check, activityLoading=true was set but spinner never rendered.
+func TestFB130_AC2_InputChanged_EmptyNonNilRows_RPress_ShowsLoading(t *testing.T) {
+	t.Parallel()
+	m := newFB103ProjectModel()
+	m.table.SetActivityRows([]data.ActivityRow{}) // prior fetch returned 0 rows — non-nil empty
+
+	v1 := stripANSIModel(m.View())
+	if !strings.Contains(v1, "no recent activity") {
+		t.Fatalf("AC2 precondition: 'no recent activity' absent before [r]:\n%s", v1)
+	}
+
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	appM := result.(AppModel)
+
+	v2 := stripANSIModel(appM.View())
+	if v1 == v2 {
+		t.Error("AC2 [Input-changed]: View() unchanged after [r] with empty non-nil rows")
+	}
+	if !strings.Contains(v2, "loading") {
+		t.Errorf("AC2 [Input-changed]: 'loading' absent from View() after [r] (bug-fix path):\n%s", v2)
+	}
+}
+
+// ==================== End FB-130 (model layer) ====================

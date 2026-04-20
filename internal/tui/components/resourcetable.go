@@ -330,7 +330,7 @@ func (m ResourceTableModel) renderActivitySection(contentW int) string {
 
 	var body string
 	switch {
-	case m.activityLoading && m.activityRows == nil:
+	case m.activityLoading && len(m.activityRows) == 0:
 		body = muted.Render("⟳ loading…")
 	case m.activityFetchFailed:
 		if m.activityCRDAbsent || contentW < 35 {
