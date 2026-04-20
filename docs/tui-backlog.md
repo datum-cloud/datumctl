@@ -341,7 +341,7 @@ Axis tags: `[Happy]`, `[Repeat-press]`, `[Input-changed]`, `[Anti-behavior]`, `[
 
 ### FB-023 — Sidebar resource grouping by service/product
 
-**Status: PENDING UX-DESIGNER** — routed 2026-04-20 by product-experience per team-lead direction after FB-151+FB-152 persona-complete. Brief carries three design options (1 recommended); ux-designer picks and extends ACs if Option 2/3 chosen.
+**Status: PENDING TEST-ENGINEER** — spec delivered 2026-04-20 by ux-designer at `docs/tui-ux-specs/fb-023-sidebar-grouping.md`. Option 1 selected (section headers in flat list; headers styled `styles.Muted` + Bold with 1-char indent, non-selectable, cursor skips). Curated group map at new `internal/tui/data/groups.go`: NETWORKING / IAM / COMPUTE / RESOURCE MGMT / CORE (CORE always last). Unknown groups fall back to uppercased raw. 23-AC brief skeleton stands without extension. Routed test-engineer-first for pre-impl coverage audit + anti-regression inventory.
 
 **Priority: P2** — scannability improvement. Today's ~12–15 resource types are tractable as a flat alphabetical list; the value of grouping grows as the type count grows. Ship after FB-005 and FB-020 (higher-impact workflow fixes).
 
