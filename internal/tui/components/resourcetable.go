@@ -89,7 +89,8 @@ type ResourceTableModel struct {
 	// FB-042: enhanced welcome dashboard inputs.
 	activityRows       []data.ActivityRow // nil = not yet loaded; empty = no activity
 	activityLoading    bool               // true while first fetch is in flight
-	activityFetchFailed bool              // FB-082: true when last fetch returned an error
+	activityFetchFailed  bool              // FB-082: true when last fetch returned an error
+	activityCRDAbsent    bool              // FB-102: true when error is CRD-absent (permanent)
 	pendingQuotaOpen   bool              // FB-099: substitutes [3] strip label to "cancel"
 	attentionItems     []AttentionItem    // pre-computed by model.go
 
@@ -332,7 +333,13 @@ func (m ResourceTableModel) renderActivitySection(contentW int) string {
 	case m.activityLoading && m.activityRows == nil:
 		body = muted.Render("⟳ loading…")
 	case m.activityFetchFailed:
-		body = muted.Render("activity unavailable")
+		if m.activityCRDAbsent {
+			body = muted.Render("activity unavailable")
+		} else {
+			body = muted.Render("activity unavailable") +
+				" " +
+				muted.Render("(press ") + accentBold.Render("[r]") + muted.Render(")")
+		}
 	case len(m.activityRows) == 0:
 		body = muted.Render("no recent activity")
 	default:
@@ -919,6 +926,7 @@ func (m *ResourceTableModel) SetForceDashboard(show bool) {
 
 func (m *ResourceTableModel) SetActivityRows(rows []data.ActivityRow) {
 	m.activityFetchFailed = false // FB-082: successful data arrival clears error state
+	m.activityCRDAbsent = false   // FB-102: clear CRD-absent flag on successful data
 	m.activityRows = rows
 	m.activityLoading = false
 }
@@ -930,6 +938,8 @@ func (m *ResourceTableModel) SetActivityLoading(b bool) {
 func (m *ResourceTableModel) SetActivityFetchFailed(failed bool) {
 	m.activityFetchFailed = failed
 }
+
+func (m *ResourceTableModel) SetActivityCRDAbsent(v bool) { m.activityCRDAbsent = v }
 
 // ActivityRowCount returns the number of activity rows currently held in the model.
 func (m ResourceTableModel) ActivityRowCount() int {

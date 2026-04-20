@@ -498,6 +498,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.SetActivityLoading(false)
 		if m.table.ActivityRowCount() == 0 {
 			m.table.SetActivityFetchFailed(true)
+			m.table.SetActivityCRDAbsent(isCRDAbsent) // FB-102: gate recovery hint on transient-only
 		}
 
 	case components.NeedNextActivityPageMsg:

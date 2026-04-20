@@ -2635,3 +2635,116 @@ func TestFB124_AC7_AntiRegression_NoRegistrations_S4Absent(t *testing.T) {
 }
 
 // ==================== End FB-124 (component layer) ====================
+
+// ==================== FB-102: Activity unavailable recovery affordance ====================
+
+// newActivityErrorModel returns a welcome model sized for S3 to render (contentH≥14).
+func newActivityErrorModel() ResourceTableModel {
+	return newWelcomeModel(100, 30)
+}
+
+// AC1 [Observable] — transient error (activityFetchFailed=true, activityCRDAbsent=false):
+// View() contains "activity unavailable" AND "(press" AND "[r]".
+func TestFB102_AC1_Observable_TransientError_HintPresent(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC1 [Observable]: 'activity unavailable' absent in transient-error state:\n%s", got)
+	}
+	if !strings.Contains(got, "(press") {
+		t.Errorf("AC1 [Observable]: '(press' absent in transient-error state:\n%s", got)
+	}
+	if !strings.Contains(got, "[r]") {
+		t.Errorf("AC1 [Observable]: '[r]' absent in transient-error state:\n%s", got)
+	}
+}
+
+// AC2 [Observable] — CRD-absent error (activityFetchFailed=true, activityCRDAbsent=true):
+// View() contains "activity unavailable" AND does NOT contain "(press" or "[r]".
+func TestFB102_AC2_Observable_CRDAbsent_NoHint(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(true)
+
+	got := stripANSI(m.View())
+	if !strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC2 [Observable]: 'activity unavailable' absent in CRD-absent state:\n%s", got)
+	}
+	if strings.Contains(got, "(press") {
+		t.Errorf("AC2 [Observable]: '(press' present in CRD-absent state (should be absent):\n%s", got)
+	}
+	if strings.Contains(got, "[r]") {
+		t.Errorf("AC2 [Observable]: '[r]' present in CRD-absent state (should be absent):\n%s", got)
+	}
+}
+
+// AC3 [Input-changed] — toggling activityCRDAbsent false→true changes View() content.
+func TestFB102_AC3_InputChanged_CRDAbsentToggleChangesView(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	m.SetActivityFetchFailed(true)
+
+	m.SetActivityCRDAbsent(false)
+	v1 := stripANSI(m.View())
+
+	m.SetActivityCRDAbsent(true)
+	v2 := stripANSI(m.View())
+
+	if v1 == v2 {
+		t.Error("AC3 [Input-changed]: View() identical after toggling activityCRDAbsent false→true")
+	}
+	if !strings.Contains(v1, "(press [r])") {
+		t.Errorf("AC3 [Input-changed]: v1 (crdAbsent=false) missing '(press [r])':\n%s", v1)
+	}
+	if strings.Contains(v2, "(press [r])") {
+		t.Errorf("AC3 [Input-changed]: v2 (crdAbsent=true) still contains '(press [r])':\n%s", v2)
+	}
+}
+
+// AC4 [Anti-behavior] — normal state (activityFetchFailed=false): no hint, no unavailable copy.
+func TestFB102_AC4_AntiBehavior_NormalState_NoHint(t *testing.T) {
+	t.Parallel()
+	m := newActivityErrorModel()
+	// default: activityFetchFailed=false, activityCRDAbsent=false
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC4 [Anti-behavior]: 'activity unavailable' present in normal state:\n%s", got)
+	}
+	if strings.Contains(got, "(press [r])") {
+		t.Errorf("AC4 [Anti-behavior]: '(press [r])' present in normal state:\n%s", got)
+	}
+}
+
+// AC5 [Anti-behavior] — SetActivityRows clears error state: hint gone, rows rendered.
+func TestFB102_AC5_AntiBehavior_SetActivityRows_ClearsHint(t *testing.T) {
+	t.Parallel()
+	m := newWelcomeModel(120, 30)
+	m.SetActivityFetchFailed(true)
+	m.SetActivityCRDAbsent(false)
+
+	before := stripANSI(m.View())
+	if !strings.Contains(before, "(press [r])") {
+		t.Fatal("precondition: '(press [r])' must be present before recovery")
+	}
+
+	m.SetActivityRows([]data.ActivityRow{testActivityRow()})
+
+	got := stripANSI(m.View())
+	if strings.Contains(got, "(press [r])") {
+		t.Errorf("AC5 [Anti-behavior]: '(press [r])' still present after SetActivityRows with data:\n%s", got)
+	}
+	if strings.Contains(got, "activity unavailable") {
+		t.Errorf("AC5 [Anti-behavior]: 'activity unavailable' still present after SetActivityRows with data:\n%s", got)
+	}
+	if !strings.Contains(got, "alice@example.com") {
+		t.Errorf("AC5 [Anti-behavior]: row actor 'alice@example.com' missing after SetActivityRows:\n%s", got)
+	}
+}
+
+// ==================== End FB-102 (component layer) ====================
