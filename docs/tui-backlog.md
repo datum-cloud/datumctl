@@ -6289,3 +6289,148 @@ Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`.
 - Not changing `detailModeLabel()` (FB-051 stays intact).
 - Not coordinating with FB-026 `[Shift+E]` vs `[E]` notation — unrelated.
 
+---
+
+### FB-151 — First-session vs returning-operator detection on welcome surface
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-105 deferred item per team-lead direction (welcome-surface iteration after FB-135 closes).
+
+**Priority: P2** — welcome surface reads identically to a first-time operator and a returning operator on their hundredth launch. First-timers get under-explained; returning operators get over-oriented. Two audiences, one copy.
+
+#### User problem
+
+Post-FB-105 the welcome panel has a single S1 orientation hint (`→ select a resource type from the sidebar, or use a quick-jump key below` at `renderHeaderBand()` ~line 641 of `internal/tui/components/resourcetable.go`) plus all-clear flavor line (~line 232) and the `jump to:` label (~line 473). The copy is tuned for a general audience: it orients but doesn't delight.
+
+Specific gaps:
+1. **First-timer gap.** A brand-new operator hitting `datumctl tui` for the first time sees the same orientation hint as someone who has used the tool for weeks. The copy doesn't say "welcome"; it doesn't flag that there's a help overlay (`?`); it doesn't acknowledge the unfamiliar territory.
+2. **Returning-operator gap.** Someone who has hit the welcome screen a hundred times still gets the orientation hint re-rendered. There's no "welcome back", no hint that their previous context is remembered, no shortcut treatment.
+3. **Recovery gap.** If an operator returns after an error sequence (e.g., last session ended with a bucket error), there's no acknowledgement that the last state is being restored or that health has come back.
+
+This is the "defer pending product decision" item from FB-105's spec §8 ("Not adding a first-session vs returning-operator detection path — no session state tracking in current model").
+
+#### Design questions for ux-designer (pick and justify)
+
+**Question 1 — What constitutes "first session"?**
+
+- **A.** File-based marker — create `~/.config/datumctl/first-run-seen` on successful welcome render; read it on subsequent launches. Persistent across machine reboots. Risks: file lifecycle bugs (roaming, containers, CI), hidden mutations.
+- **B.** Opaque counter — increment a `launchCount` in `~/.config/datumctl/config.yaml` (already present) on each successful Init. Threshold: `launchCount < 3` = "first few sessions"; else returning.
+- **C.** Runtime-only heuristic — no persistence. Use the current-process state (e.g., "has the operator navigated to a resource type yet in this session?") to distinguish a truly fresh welcome from a returning welcome within a session. Simpler but resets on every relaunch.
+- **D.** None of the above — defer "first-session" greeting; scope FB-151 purely to "returning-operator" personality on subsequent welcome encounters within a single process lifetime (after the first context switch, first navigation, etc.).
+
+**Question 2 — What copy differs between the two states?**
+
+Candidate surfaces to personalize:
+- S1 orientation hint — `renderHeaderBand()` ~line 641
+- S4 all-clear flavor — `welcomePanel()` `showS4` block ~line 232
+- Potentially a new greeting line above S1 (e.g., `welcome back` / `first time?` banner)
+
+Candidate copy tone: direct, confident, dry (matching FB-105 Datum voice). Avoid exclamation marks, emoji (unless explicitly requested), and superlatives.
+
+**Question 3 — How do we ship without breaking FB-105 / FB-042 / FB-083 test anchors?**
+
+- FB-105 AC1-AC4 already assert specific substrings in `stripANSI(table.View())` — `"select a resource type"`, `"all clear"`, `"jump to:"`. New copy variants must keep these substrings OR the spec updates those tests coordinated with test-engineer.
+- FB-042 anti-regression covers the section ordering S1–S6; any new greeting line must not displace or re-index sections.
+- FB-083 anti-regression covers attention-list rendering; personality copy must not overlap the attention-list substring assertions.
+
+#### Acceptance criteria (skeleton — ux-designer extends based on chosen approach)
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable — first-session render]** On a fresh install (however "fresh" is detected by the chosen approach), `stripANSI(m.View())` contains the designer-ratified first-session greeting or orientation copy. Test: construct AppModel with first-session signal set; assert greeting substring.
+2. **[Observable — returning-operator render]** On a returning-operator signal, `stripANSI(m.View())` contains the returning-operator greeting or does NOT contain the first-session variant. Test: construct AppModel with the opposite signal; assert.
+3. **[Input-changed — transition]** Transition from first-session to returning (state mutation or session marker update): the two render states must differ at the greeting substring. Test: state A with first-session signal, state B after transition, per-leg content-containment checks.
+4. **[Anti-regression — FB-105 ACs preserved]** Existing `TestFB105_*` tests green. If copy changes force substring updates, coordinate with test-engineer; document which FB-105 ACs updated.
+5. **[Anti-regression — FB-042 S1–S6 order preserved]** Section ordering intact; no new section inserted that displaces FB-042's S1–S6 indices.
+6. **[Anti-regression — FB-083 attention-list]** Attention-list substring assertions green.
+7. **[Integration]** `go install ./...` + `go test ./internal/tui/...` green.
+
+#### Non-goals
+
+- Not building a full "first-run walkthrough" overlay (scope for a distinct brief if product prioritizes it).
+- Not introducing analytics / telemetry tracking session counts.
+- Not persisting user preferences (`skip greeting`, `always show orientation`) — follow-up brief if needed.
+- Not changing existing S1–S6 section ordering from FB-042.
+- Not redesigning `Quick jump` → `jump to:` wording (FB-105 shipped that).
+- Not coordinating with FB-152 S2 platform-health personality — paired designer batch, but independent ACs. If designer wants to bundle the specs, flag it.
+
+**Dependencies:** FB-105 ACCEPTED + PERSONA-EVAL-COMPLETE. Coordinate paired routing with FB-152.
+
+---
+
+### FB-152 — S2 platform-health section personality copy
+
+**Status: PENDING UX-DESIGNER** — filed 2026-04-20 by product-experience from FB-105 deferred item per team-lead direction (welcome-surface iteration after FB-135 closes).
+
+**Priority: P2** — S2 "Platform health" section is flat-utilitarian. Healthy state shows bucket rows with no warmth; mixed/degraded state shows raw quota ratios. The section reads as an admin status board, not a welcome surface. FB-105 intentionally deferred S2 personality ("touches S2 which has complex quota render paths; defer to follow-up") — this brief picks up that work.
+
+#### User problem
+
+Post-FB-042/FB-043/FB-071/FB-140/FB-143 the S2 section has multiple render paths:
+
+| State | Current rendering |
+|---|---|
+| Loading | `⟳ loading…` spinner |
+| Healthy (buckets loaded, all in bounds) | Bucket rows (`dnszones 60% · 120/200`) |
+| Partial / degraded | Bucket rows + per-row warning/error glyphs |
+| BucketsErrorMsg transient | Section hidden or error banner per FB-071/FB-135 |
+| Unconfigured (no buckets) | FB-140 next-step affordance |
+| Transient platform-health error | FB-143 sub-line with `[r]` affordance (FB-144/FB-145) |
+
+None of these paths carry the direct-confident-dry Datum voice established by FB-105's S1 orientation + S4 all-clear lines. Operators looking at a healthy S2 see bucket data but no acknowledgement that "things are good"; operators looking at a mixed state see data but no framing.
+
+#### Design questions for ux-designer
+
+**Question 1 — Which S2 render paths get personality, and which stay data-only?**
+
+- **Healthy path** — strongest candidate. Copy like `quota looks healthy · <N> buckets in bounds` above the bucket rows. The S4 all-clear line is currently the only "things are good" signal; if S2 is healthy but S4 is blank (activity present but not concerning), the surface has no warm signal.
+- **Partial/degraded path** — riskier candidate. Copy could frame mixed state ("one bucket nearing limit") but overlaps with the bucket-row warning glyph system. Risks duplicating signal.
+- **Loading path** — probably stays spinner-only (too ephemeral for copy).
+- **Error path** — defer to FB-071 / FB-135 existing error-handling language; don't add "oops" framing.
+- **Unconfigured path** — FB-140 already owns the next-step affordance; don't overlap.
+- **Transient error path** — FB-143/144/145 already own `[r]` recovery copy; don't overlap.
+
+**Question 2 — What does "healthy" personality copy say?**
+
+Candidates (ux-designer ratifies):
+- `"quota looks healthy · N buckets in bounds"` — FB-105 persona-validated register ("looks" is honest, avoids "is"; `·` separator matches existing convention)
+- `"all quota in bounds"` — terse, parallels S4 "all clear" convention
+- `"everything's in shape"` — warmer; risks informality drift
+- `"your quota is healthy"` — possessive; risks feeling over-familiar
+
+Style notes: lowercase, no exclamation, `·` separator if combining clauses, fits inside the existing S2 width budget (must not push bucket rows off-screen at narrow widths).
+
+**Question 3 — Where in S2 does the line render?**
+
+- **Option A.** Replace the `Platform health` header when healthy. E.g., swap `Platform health` → `quota looks healthy · N buckets in bounds`. Downside: header/data distinction is lost; screen-readers lose section anchor.
+- **Option B.** Add a sub-line below the `Platform health` header, above the bucket rows. Extra vertical line — must verify S2 height budget accommodates it at smaller terminal heights.
+- **Option C.** Append inline to the header. E.g., `Platform health · healthy`. Minimal vertical impact; keeps header as the anchor.
+
+**Question 4 — How does this coexist with FB-043 freshness chrome + FB-059 threshold palette + FB-060 `✗ refresh failed` + FB-063 `⟳ refreshing…`?**
+
+FB-043/059/060/063 all write into the S2 title-bar left segment. FB-152 personality copy belongs in the content area (below/within the header, not the title-bar). Designer must explicitly disclaim "not touching the title-bar" in the spec to avoid collision with that state-machine work.
+
+#### Acceptance criteria (skeleton — ux-designer extends)
+
+Axis tags: `[Observable]`, `[Input-changed]`, `[Anti-regression]`, `[Integration]`.
+
+1. **[Observable — healthy state]** With buckets loaded and all in bounds, `stripANSI(m.View())` contains the designer-ratified personality copy. Test: construct AppModel with healthy bucket fixture; assert substring.
+2. **[Input-changed — healthy → degraded]** When a bucket transitions from in-bounds to threshold, the personality copy SHOULD update or suppress per designer choice. Test: two states with per-leg content-containment.
+3. **[Anti-regression — FB-042 S2 section preserved]** Bucket rows, header substring, section ordering S1–S6 unchanged. Test: existing FB-042 tests green.
+4. **[Anti-regression — FB-043/059/060/063 title-bar untouched]** Freshness chrome + refresh states render unchanged. Test: existing FB-043/059/060/063 tests green.
+5. **[Anti-regression — FB-071/FB-135 error paths preserved]** Bucket-error rendering unchanged. Test: existing FB-071 tests green; FB-135 tests green (after FB-135 ships).
+6. **[Anti-regression — FB-140 unconfigured-state preserved]** Unconfigured-state affordance unchanged. Test: FB-140 tests green (when FB-140 ships — currently PENDING UX-DESIGNER).
+7. **[Anti-regression — FB-143/144/145 transient error preserved]** Transient-error sub-line unchanged. Test: FB-143/144/145 tests green (after they ship).
+8. **[Integration]** `go install ./...` + `go test ./internal/tui/...` green.
+
+#### Non-goals
+
+- Not changing S2 title-bar chrome (FB-043 / FB-059 / FB-060 / FB-063 all own that surface).
+- Not changing FB-071 error co-location or FB-135 persistence behavior.
+- Not changing FB-140 unconfigured next-step affordance.
+- Not changing FB-143/144/145 transient-error sub-line copy.
+- Not changing bucket row rendering (percentages, kind labels, thresholds).
+- Not reordering S1–S6 sections from FB-042.
+- Not coordinating with FB-151 first-session detection — paired designer batch, but independent ACs.
+
+**Dependencies:** FB-105 ACCEPTED + PERSONA-EVAL-COMPLETE. Coordinate paired routing with FB-151. Upstream anti-regression targets (FB-140/143/144/145) are PENDING UX-DESIGNER; FB-152 must stay compatible with their designs without depending on them shipping first.
+
