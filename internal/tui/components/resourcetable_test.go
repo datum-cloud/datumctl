@@ -155,7 +155,9 @@ func TestResourceTableModel_SetRows_DoesNotPreserveCursorByName(t *testing.T) {
 
 // newWelcomeModel builds a ResourceTableModel in welcome-panel mode (typeName == "").
 func newWelcomeModel(tableWidth, tableHeight int) ResourceTableModel {
-	return NewResourceTableModel(tableWidth, tableHeight)
+	m := NewResourceTableModel(tableWidth, tableHeight)
+	m.SetBucketConfigured(true) // FB-074: all welcome-model fixtures represent the quota-configured path
+	return m
 }
 
 // testCtx builds a minimal TUIContext for landing-screen fixtures (no ActiveCtx).

@@ -774,6 +774,7 @@ func (m *AppModel) refreshLandingInputs() {
 	m.table.SetBuckets(m.buckets)
 	m.table.SetBucketLoading(m.bucketLoading)
 	m.table.SetBucketErr(m.bucketErr, m.bucketUnauthorized)
+	m.table.SetBucketConfigured(m.bc != nil) // FB-074: disambiguate unconfigured vs. zero-governed
 	m.table.SetRegistrations(m.registrations)
 	show, age := staleContextAgeDisplay(m.tuiCtx.Config, time.Now())
 	m.table.SetStaleCacheAge(show, age)

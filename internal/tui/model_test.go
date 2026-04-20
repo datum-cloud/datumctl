@@ -15924,3 +15924,68 @@ func TestFB135_AC4_Unauthorized_SeverityPreservedThroughClear(t *testing.T) {
 }
 
 // ==================== End FB-135/FB-137 ====================
+
+// ==================== FB-074: S2 "No governed resource types" when quota client is unconfigured ====================
+//
+// Fix: added bucketConfigured field + SetBucketConfigured(bool). When false, S2 renders
+// "Platform health unavailable (quota service not configured)" instead of the ambiguous
+// "No governed resource types" copy.
+//
+// Axis-coverage:
+// AC  | Observable                                           | Input-changed                              | Anti-regression                         | Integration
+// ----+------------------------------------------------------+--------------------------------------------+-----------------------------------------+-------------
+// AC1 | TestFB074_AC1_Observable_BcNil_UnconfiguredCopy      | TestFB074_AC12_InputChanged_BcNilVsZeroGov | -                                       | -
+// AC2 | TestFB074_AC2_Observable_BcNotNil_ZeroGovCopy        | TestFB074_AC12_InputChanged_BcNilVsZeroGov | -                                       | -
+// AC3 | -                                                    | -                                          | (FB-042 full-suite pass)                | -
+// AC4 | -                                                    | -                                          | -                                       | go install ✓
+
+// TestFB074_AC1_Observable_BcNil_UnconfiguredCopy: bc==nil → S2 renders unconfigured copy,
+// NOT "No governed resource types".
+func TestFB074_AC1_Observable_BcNil_UnconfiguredCopy(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(nil, nil)
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if strings.Contains(got, "No governed resource types") {
+		t.Errorf("AC1: S2 shows 'No governed resource types' when bc==nil, want unconfigured copy:\n%s", got)
+	}
+	if !strings.Contains(got, "quota service not configured") {
+		t.Errorf("AC1: S2 does not contain 'quota service not configured' when bc==nil:\n%s", got)
+	}
+}
+
+// TestFB074_AC2_Observable_BcNotNil_ZeroGovCopy: bc!=nil, zero governed types → S2 still renders
+// "No governed resource types in this project".
+func TestFB074_AC2_Observable_BcNotNil_ZeroGovCopy(t *testing.T) {
+	t.Parallel()
+	m := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	// bucketLoading=false, buckets=nil — simulates configured client with no fetch result yet.
+	m.refreshLandingInputs()
+
+	got := stripANSIModel(m.table.View())
+	if !strings.Contains(got, "No governed resource types") {
+		t.Errorf("AC2: S2 does not contain 'No governed resource types' when bc!=nil and zero governed:\n%s", got)
+	}
+	if strings.Contains(got, "quota service not configured") {
+		t.Errorf("AC2: S2 shows unconfigured copy when bc!=nil — should show zero-governed copy:\n%s", got)
+	}
+}
+
+// TestFB074_AC12_InputChanged_BcNilVsZeroGov: same surface, different bc state → different View().
+func TestFB074_AC12_InputChanged_BcNilVsZeroGov(t *testing.T) {
+	t.Parallel()
+	m1 := newWelcomePanelAppModel(nil, nil)
+	m1.refreshLandingInputs()
+	v1 := stripANSIModel(m1.table.View())
+
+	m2 := newWelcomePanelAppModel(&stubBucketClient{}, nil)
+	m2.refreshLandingInputs()
+	v2 := stripANSIModel(m2.table.View())
+
+	if v1 == v2 {
+		t.Error("AC1/AC2 [Input-changed]: bc==nil and bc!=nil produce identical View() — copy change not effective")
+	}
+}
+
+// ==================== End FB-074 ====================

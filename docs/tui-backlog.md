@@ -3436,7 +3436,7 @@ Axis tags: `[Observable]`, `[Anti-behavior]`, `[Anti-regression]`.
 
 ### FB-074 — Welcome S2 says "No governed resource types" when quota client is unconfigured (ambiguous signal)
 
-**Status: PENDING ENGINEER (engineer-direct fix)** — filed 2026-04-19 by product-experience from FB-042 user-persona P3-4.
+**Status: ACCEPTED 2026-04-20** — filed 2026-04-19 by product-experience from FB-042 user-persona P3-4.
 **Priority: P3** — signal-quality degradation; ambiguous between two distinct deployment states.
 
 #### User problem

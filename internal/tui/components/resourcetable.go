@@ -81,6 +81,7 @@ type ResourceTableModel struct {
 	bucketLoading      bool
 	bucketErr          error
 	bucketUnauthorized bool
+	bucketConfigured   bool // FB-074: true when a BucketClient is wired; false means quota service not configured
 	registrations      []data.ResourceRegistration
 	staleBanner        bool
 	staleAge           string
@@ -272,6 +273,11 @@ func (m ResourceTableModel) renderPlatformHealthSection(contentW int, textOnly, 
 			return leftHeader + "\n\n" + muted.Render("Platform health unavailable")
 		}
 		return leftHeader + "\n\n" + muted.Render("Platform health temporarily unavailable")
+	}
+
+	// FB-074: no bucket client wired — disambiguate from "configured but zero governed types".
+	if !m.bucketConfigured {
+		return leftHeader + "\n\n" + muted.Render("Platform health unavailable (quota service not configured)")
 	}
 
 	ak, an := m.activeConsumer()
@@ -905,6 +911,13 @@ func (m *ResourceTableModel) SetBucketLoading(loading bool) {
 func (m *ResourceTableModel) SetBucketErr(err error, unauthorized bool) {
 	m.bucketErr = err
 	m.bucketUnauthorized = unauthorized
+}
+
+// SetBucketConfigured marks whether a quota BucketClient is wired up.
+// When false, the platform-health section renders an "unconfigured" placeholder
+// instead of the misleading "No governed resource types" copy.
+func (m *ResourceTableModel) SetBucketConfigured(configured bool) {
+	m.bucketConfigured = configured
 }
 
 // SetRegistrations plumbs the registration snapshot for label resolution in
