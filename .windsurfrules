@@ -1,0 +1,46 @@
+# datumctl — Windsurf Rules
+
+## What this project is
+
+`datumctl` is the official CLI for **Datum Cloud**, a connectivity infrastructure platform. It is **NOT a Kubernetes CLI** — `k8s.io/kubectl` is an internal implementation detail. Users manage Datum Cloud resources with no Kubernetes knowledge required.
+
+**Module:** `go.datum.net/datumctl` | **Go:** 1.25+
+
+---
+
+## Rules for AI
+
+- **Never** use `kubectl` in examples — always `datumctl`
+- **Never** reference Kubernetes-native resource types (pods, deployments, services, nodes)
+- kubectl-only commands (`auth update-kubeconfig`, `auth whoami`, `auth can-i`) must say "kubectl users only" upfront
+- Primary login is `datumctl login` — not `auth login`
+- Use `UserError` from `internal/errors` for user-facing errors (no stack traces)
+- Prefer `--dry-run=server` and `datumctl diff` before destructive write operations
+- `activity` command is from `go.miloapis.com/activity` — override its help text in `root.go` after construction
+- `WrapResourceCommand` applies to `get`, `delete`, `edit`, `describe` only; `apply`, `create`, `diff` set `GroupID` inline
+- Use `templates.LongDesc()` for `Long` and `templates.Examples()` for `Example` on Cobra commands
+
+---
+
+## Adding/modifying commands
+
+**Custom commands** (login, auth subcommands, ctx, docs, mcp): edit `internal/cmd/<name>/`, register in `root.go`.
+
+**kubectl-wrapped commands**: override `Short`/`Long`/`Example` after the constructor in `root.go`:
+
+```go
+cmd := get.NewCmdGet("datumctl", factory, ioStreams)
+cmd.Short = "List or retrieve Datum Cloud resources"
+```
+
+---
+
+## Non-obvious packages
+
+```
+internal/errors/      UserError type
+internal/authutil/    OAuth2 PKCE, device flow, machine-account auth
+internal/client/      DatumCloudFactory — scope resolution + API clients
+internal/discovery/   Org/project context cache
+internal/picker/      Interactive TUI selector
+```
