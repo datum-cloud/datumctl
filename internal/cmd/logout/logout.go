@@ -26,6 +26,14 @@ func Command() *cobra.Command {
 Specify an email to log out sessions for that user.
 Use --all to log out all users.`,
 		Args: func(cmd *cobra.Command, args []string) error {
+			// Skip arg validation in ambient-token mode so the subsequent
+			// RunE guard is what users see. Cobra runs Args before RunE,
+			// so without this the user would get "specify an email or use
+			// --all" on a bare `datumctl logout` even though the command
+			// is disabled in embedded terminals.
+			if authutil.HasAmbientToken() {
+				return nil
+			}
 			allFlag, _ := cmd.Flags().GetBool("all")
 			if allFlag && len(args) > 0 {
 				return errors.New("cannot specify an email when using --all")
@@ -36,6 +44,9 @@ Use --all to log out all users.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := authutil.GuardAmbientMutation(); err != nil {
+				return err
+			}
 			if all {
 				return logoutAll()
 			}

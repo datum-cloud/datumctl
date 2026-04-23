@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/picker"
@@ -24,6 +25,9 @@ Use the format 'org/project' to select a project context, or just 'org' for an o
 }
 
 func runUse(_ *cobra.Command, args []string) error {
+	if err := authutil.GuardAmbientMutation(); err != nil {
+		return err
+	}
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
 		return err
