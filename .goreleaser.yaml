@@ -97,6 +97,7 @@ brews:
     owner: datum-cloud
     name: homebrew-tap
     branch: main
+    token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
 
 krews:
 - commit_author:
