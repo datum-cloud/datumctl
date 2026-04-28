@@ -30,9 +30,9 @@ var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"Please login first using: `datumctl auth login`",
 )
 
-// MachineAccountState holds fields needed to re-mint a JWT when the access token expires.
-// Only populated when CredentialType == "machine_account".
-type MachineAccountState struct {
+// ServiceAccountState holds fields needed to re-mint a JWT when the access token expires.
+// Only populated when CredentialType == "service_account".
+type ServiceAccountState struct {
 	ClientEmail  string `json:"client_email"`
 	ClientID     string `json:"client_id"`
 	PrivateKeyID string `json:"private_key_id"`
@@ -60,9 +60,9 @@ type StoredCredentials struct {
 	Subject          string        `json:"subject"`            // User's Subject ID (sub claim from JWT)
 	// CredentialType distinguishes how stored credentials should be refreshed.
 	// "" or "interactive" → standard oauth2 refresh token path.
-	// "machine_account"  → re-mint JWT and re-exchange on expiry.
+	// "service_account"  → re-mint JWT and re-exchange on expiry.
 	CredentialType string               `json:"credential_type,omitempty"`
-	MachineAccount *MachineAccountState `json:"machine_account,omitempty"`
+	ServiceAccount *ServiceAccountState `json:"service_account,omitempty"`
 }
 
 // GetActiveCredentials retrieves the StoredCredentials for the currently active user.
@@ -186,11 +186,11 @@ func GetTokenSourceForUser(ctx context.Context, userKey string) (oauth2.TokenSou
 }
 
 func tokenSourceFor(ctx context.Context, userKey string, creds *StoredCredentials) (oauth2.TokenSource, error) {
-	if creds.CredentialType == "machine_account" {
-		if creds.MachineAccount == nil {
-			return nil, fmt.Errorf("machine account credentials are missing from stored session")
+	if creds.CredentialType == "service_account" || creds.CredentialType == "datum_service_account" {
+		if creds.ServiceAccount == nil {
+			return nil, fmt.Errorf("service account credentials are missing from stored session")
 		}
-		return &machineAccountTokenSource{
+		return &serviceAccountTokenSource{
 			ctx:     ctx,
 			creds:   creds,
 			userKey: userKey,

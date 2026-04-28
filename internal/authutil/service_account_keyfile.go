@@ -9,20 +9,20 @@ import (
 	"path/filepath"
 )
 
-// machineAccountKeyDir returns the directory used to store machine account PEM key files.
+// serviceAccountKeyDir returns the directory used to store service account PEM key files.
 // It does not create the directory.
-func machineAccountKeyDir() (string, error) {
+func serviceAccountKeyDir() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to determine user config directory: %w", err)
 	}
-	return filepath.Join(configDir, "datumctl", "machine-accounts"), nil
+	return filepath.Join(configDir, "datumctl", "service-accounts"), nil
 }
 
-// MachineAccountKeyFilePath returns the on-disk path where the PEM key for
+// ServiceAccountKeyFilePath returns the on-disk path where the PEM key for
 // the given userKey is stored. It does not create the directory.
-func MachineAccountKeyFilePath(userKey string) (string, error) {
-	dir, err := machineAccountKeyDir()
+func ServiceAccountKeyFilePath(userKey string) (string, error) {
+	dir, err := serviceAccountKeyDir()
 	if err != nil {
 		return "", err
 	}
@@ -31,25 +31,25 @@ func MachineAccountKeyFilePath(userKey string) (string, error) {
 	return filepath.Join(dir, filename), nil
 }
 
-// WriteMachineAccountKeyFile atomically writes the PEM key to disk for the
+// WriteServiceAccountKeyFile atomically writes the PEM key to disk for the
 // given userKey and returns the absolute path. Creates the parent directory
 // with mode 0700 if needed. The file is written with mode 0600.
-func WriteMachineAccountKeyFile(userKey, pemKey string) (string, error) {
-	dir, err := machineAccountKeyDir()
+func WriteServiceAccountKeyFile(userKey, pemKey string) (string, error) {
+	dir, err := serviceAccountKeyDir()
 	if err != nil {
 		return "", err
 	}
 
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", fmt.Errorf("failed to create machine account key directory %s: %w", dir, err)
+		return "", fmt.Errorf("failed to create service account key directory %s: %w", dir, err)
 	}
 
 	// Tighten perms on the directory even when it already existed with looser ones.
 	if err := os.Chmod(dir, 0700); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("failed to set permissions on machine account key directory %s: %w", dir, err)
+		return "", fmt.Errorf("failed to set permissions on service account key directory %s: %w", dir, err)
 	}
 
-	destPath, err := MachineAccountKeyFilePath(userKey)
+	destPath, err := ServiceAccountKeyFilePath(userKey)
 	if err != nil {
 		return "", err
 	}
@@ -58,7 +58,7 @@ func WriteMachineAccountKeyFile(userKey, pemKey string) (string, error) {
 	// do not race on the same .tmp path and corrupt each other's writes.
 	tmpFile, err := os.CreateTemp(dir, filepath.Base(destPath)+".tmp.*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp file for machine account key in %s: %w", dir, err)
+		return "", fmt.Errorf("failed to create temp file for service account key in %s: %w", dir, err)
 	}
 	tmpName := tmpFile.Name()
 
@@ -80,7 +80,7 @@ func WriteMachineAccountKeyFile(userKey, pemKey string) (string, error) {
 
 	if _, writeErr = tmpFile.Write([]byte(pemKey)); writeErr != nil {
 		_ = tmpFile.Close()
-		writeErr = fmt.Errorf("failed to write machine account key to %s: %w", tmpName, writeErr)
+		writeErr = fmt.Errorf("failed to write service account key to %s: %w", tmpName, writeErr)
 		return "", writeErr
 	}
 
@@ -90,31 +90,31 @@ func WriteMachineAccountKeyFile(userKey, pemKey string) (string, error) {
 	}
 
 	if writeErr = os.Rename(tmpName, destPath); writeErr != nil {
-		writeErr = fmt.Errorf("failed to move machine account key to %s: %w", destPath, writeErr)
+		writeErr = fmt.Errorf("failed to move service account key to %s: %w", destPath, writeErr)
 		return "", writeErr
 	}
 
 	return destPath, nil
 }
 
-// ReadMachineAccountKeyFile reads a PEM key from the given path.
-func ReadMachineAccountKeyFile(path string) (string, error) {
+// ReadServiceAccountKeyFile reads a PEM key from the given path.
+func ReadServiceAccountKeyFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read machine account key file %s: %w", path, err)
+		return "", fmt.Errorf("failed to read service account key file %s: %w", path, err)
 	}
 	return string(data), nil
 }
 
-// RemoveMachineAccountKeyFile deletes the PEM key file for the given userKey.
+// RemoveServiceAccountKeyFile deletes the PEM key file for the given userKey.
 // Returns nil if the file does not exist.
-func RemoveMachineAccountKeyFile(userKey string) error {
-	path, err := MachineAccountKeyFilePath(userKey)
+func RemoveServiceAccountKeyFile(userKey string) error {
+	path, err := ServiceAccountKeyFilePath(userKey)
 	if err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove machine account key file %s: %w", path, err)
+		return fmt.Errorf("failed to remove service account key file %s: %w", path, err)
 	}
 	return nil
 }

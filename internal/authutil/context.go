@@ -64,7 +64,7 @@ func GetUserKeyForSession(sessionName string) (string, error) {
 // subsequent commands "just work." Returns the new session, or an error if no
 // usable keyring credentials are present.
 //
-// Works for both interactive and machine-account credentials, since both
+// Works for both interactive and service-account credentials, since both
 // populate the same StoredCredentials fields that Session consumes.
 func bootstrapSessionFromKeyring(cfg *datumconfig.ConfigV1Beta1) (*datumconfig.Session, error) {
 	if cfg == nil {
