@@ -24,9 +24,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// MachineAccountCredentials is the on-disk JSON format downloaded from the Datum Cloud portal.
-type MachineAccountCredentials struct {
-	Type         string `json:"type"`           // "datum_machine_account"
+// ServiceAccountCredentials is the on-disk JSON format downloaded from the Datum Cloud portal.
+type ServiceAccountCredentials struct {
+	Type         string `json:"type"`           // "datum_service_account"
 	APIEndpoint  string `json:"api_endpoint"`   // "https://api.datum.net"
 	TokenURI     string `json:"token_uri"`      // "https://auth.datum.net/oauth/v2/token"
 	Scope        string `json:"scope"`          // OAuth2 scope string, e.g. "openid profile email urn:zitadel:..."
@@ -172,10 +172,10 @@ func ExchangeJWT(ctx context.Context, tokenURI, signedJWT, scope string) (*oauth
 	return token, nil
 }
 
-// machineAccountTokenSource implements oauth2.TokenSource for machine account sessions.
+// serviceAccountTokenSource implements oauth2.TokenSource for service account sessions.
 // It re-mints a JWT and re-exchanges it whenever the stored access token has expired,
-// since machine account sessions have no refresh token.
-type machineAccountTokenSource struct {
+// since service account sessions have no refresh token.
+type serviceAccountTokenSource struct {
 	ctx     context.Context
 	creds   *StoredCredentials
 	userKey string
@@ -185,7 +185,7 @@ type machineAccountTokenSource struct {
 // Token implements oauth2.TokenSource. If the cached token is still valid it is
 // returned immediately. Otherwise a new JWT is minted, exchanged for an access
 // token, and the updated credentials are persisted to the keyring.
-func (m *machineAccountTokenSource) Token() (*oauth2.Token, error) {
+func (m *serviceAccountTokenSource) Token() (*oauth2.Token, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -193,41 +193,41 @@ func (m *machineAccountTokenSource) Token() (*oauth2.Token, error) {
 		return m.creds.Token, nil
 	}
 
-	ma := m.creds.MachineAccount
+	sa := m.creds.ServiceAccount
 
 	// Resolve the PEM key. New sessions store the key on disk (PrivateKeyPath)
 	// to stay within the macOS Keychain per-item size limit; older sessions
 	// (Linux, pre-fix) may still have the key inline in PrivateKey.
-	pemKey := ma.PrivateKey
-	if pemKey == "" && ma.PrivateKeyPath != "" {
+	pemKey := sa.PrivateKey
+	if pemKey == "" && sa.PrivateKeyPath != "" {
 		var readErr error
-		pemKey, readErr = ReadMachineAccountKeyFile(ma.PrivateKeyPath)
+		pemKey, readErr = ReadServiceAccountKeyFile(sa.PrivateKeyPath)
 		if readErr != nil {
 			return nil, customerrors.WrapUserErrorWithHint(
-				"failed to read machine account private key from "+ma.PrivateKeyPath,
-				"re-run 'datumctl auth login --credentials <file>'; you may need to download a new machine account credentials file from the Datum portal if the original is no longer available",
+				"failed to read service account private key from "+sa.PrivateKeyPath,
+				"re-run 'datumctl auth login --credentials <file>'; you may need to download a new service account credentials file from the Datum portal if the original is no longer available",
 				readErr,
 			)
 		}
 	}
 	if pemKey == "" {
 		return nil, customerrors.WrapUserErrorWithHint(
-			"machine account session is missing its private key",
-			"re-run 'datumctl auth login --credentials <file>'; you may need to download a new machine account credentials file from the Datum portal if the original is no longer available",
+			"service account session is missing its private key",
+			"re-run 'datumctl auth login --credentials <file>'; you may need to download a new service account credentials file from the Datum portal if the original is no longer available",
 			nil,
 		)
 	}
 
-	signedJWT, err := MintJWT(ma.ClientID, ma.PrivateKeyID, pemKey, ma.TokenURI)
+	signedJWT, err := MintJWT(sa.ClientID, sa.PrivateKeyID, pemKey, sa.TokenURI)
 	if err != nil {
 		return nil, customerrors.WrapUserErrorWithHint(
-			"Failed to mint JWT for machine account authentication.",
+			"Failed to mint JWT for service account authentication.",
 			"Please re-authenticate using: `datumctl auth login --credentials <file>`",
 			err,
 		)
 	}
 
-	token, err := ExchangeJWT(m.ctx, ma.TokenURI, signedJWT, ma.Scope)
+	token, err := ExchangeJWT(m.ctx, sa.TokenURI, signedJWT, sa.Scope)
 	if err != nil {
 		return nil, customerrors.WrapUserErrorWithHint(
 			"Failed to exchange JWT for access token.",
@@ -241,11 +241,11 @@ func (m *machineAccountTokenSource) Token() (*oauth2.Token, error) {
 	credsJSON, err := json.Marshal(m.creds)
 	if err != nil {
 		// Return token even if persistence fails — the caller can still proceed.
-		return token, fmt.Errorf("failed to marshal updated machine account credentials: %w", err)
+		return token, fmt.Errorf("failed to marshal updated service account credentials: %w", err)
 	}
 
 	if err := keyring.Set(ServiceName, m.userKey, string(credsJSON)); err != nil {
-		return token, fmt.Errorf("failed to persist refreshed machine account token to keyring: %w", err)
+		return token, fmt.Errorf("failed to persist refreshed service account token to keyring: %w", err)
 	}
 
 	return token, nil

@@ -36,7 +36,7 @@ By default, opens your browser for OAuth2 PKCE authentication. Use
 --no-browser in headless environments (SSH, CI, containers) to authenticate
 via a device-code flow that does not need a browser on this machine.
 
-Use --credentials to authenticate as a machine account (non-interactive).`,
+Use --credentials to authenticate as a service account (non-interactive).`,
 		Example: `  # Log in (opens browser, then picks a context)
   datumctl login
 
@@ -46,7 +46,7 @@ Use --credentials to authenticate as a machine account (non-interactive).`,
   # Log in to a staging environment
   datumctl login --hostname auth.staging.env.datum.net
 
-  # Log in with a machine account credentials file
+  # Log in with a service account credentials file
   datumctl login --credentials ./my-key.json --hostname auth.staging.env.datum.net`,
 		RunE: runLogin,
 	}
@@ -55,7 +55,7 @@ Use --credentials to authenticate as a machine account (non-interactive).`,
 	cmd.Flags().StringVar(&apiHostnameFlag, "api-hostname", "", "Hostname of the Datum Cloud API server (derived from auth hostname if omitted)")
 	cmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Use the device authorization flow instead of opening a browser")
-	cmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a machine account credentials JSON file")
+	cmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a service account credentials JSON file")
 	cmd.Flags().BoolVar(&debugCredentials, "debug", false, "Print JWT claims and token request details (credentials flow only)")
 
 	return cmd
@@ -68,7 +68,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 	var authHostname string
 
 	if credentialsFile != "" {
-		r, err := authutil.RunMachineAccountLogin(ctx, credentialsFile, hostname, apiHostnameFlag, debugCredentials)
+		r, err := authutil.RunServiceAccountLogin(ctx, credentialsFile, hostname, apiHostnameFlag, debugCredentials)
 		if err != nil {
 			return err
 		}

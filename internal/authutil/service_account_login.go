@@ -13,25 +13,25 @@ import (
 	"go.datum.net/datumctl/internal/keyring"
 )
 
-const defaultMachineAccountScope = "openid profile email offline_access"
+const defaultServiceAccountScope = "openid profile email offline_access"
 
-// RunMachineAccountLogin reads a machine account credentials file, discovers
+// RunServiceAccountLogin reads a service account credentials file, discovers
 // the token endpoint via OIDC, mints a JWT, exchanges it for an access token,
 // and stores the resulting session in the keyring. Returns a LoginResult so the
 // caller can build a v1beta1 Session.
-func RunMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiHostname string, debug bool) (*LoginResult, error) {
+func RunServiceAccountLogin(ctx context.Context, credentialsPath, hostname, apiHostname string, debug bool) (*LoginResult, error) {
 	data, err := os.ReadFile(credentialsPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read credentials file %q: %w", credentialsPath, err)
 	}
 
-	var creds MachineAccountCredentials
+	var creds ServiceAccountCredentials
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("failed to parse credentials file %q: %w", credentialsPath, err)
 	}
 
-	if creds.Type != "datum_machine_account" {
-		return nil, fmt.Errorf("unsupported credentials type %q: expected \"datum_machine_account\"", creds.Type)
+	if creds.Type != "datum_service_account" {
+		return nil, fmt.Errorf("unsupported credentials type %q: expected \"datum_service_account\"", creds.Type)
 	}
 
 	var missing []string
@@ -57,7 +57,7 @@ func RunMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 
 	scope := creds.Scope
 	if scope == "" {
-		scope = defaultMachineAccountScope
+		scope = defaultServiceAccountScope
 	}
 
 	finalAPIHostname := apiHostname
@@ -100,9 +100,9 @@ func RunMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 		userKey = creds.ClientID
 	}
 
-	keyFilePath, err := WriteMachineAccountKeyFile(userKey, creds.PrivateKey)
+	keyFilePath, err := WriteServiceAccountKeyFile(userKey, creds.PrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write machine account private key to disk: %w", err)
+		return nil, fmt.Errorf("failed to write service account private key to disk: %w", err)
 	}
 
 	stored := StoredCredentials{
@@ -114,8 +114,8 @@ func RunMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 		UserName:         displayName,
 		UserEmail:        creds.ClientEmail,
 		Subject:          creds.ClientID,
-		CredentialType:   "machine_account",
-		MachineAccount: &MachineAccountState{
+		CredentialType:   "service_account",
+		ServiceAccount: &ServiceAccountState{
 			ClientEmail:    creds.ClientEmail,
 			ClientID:       creds.ClientID,
 			PrivateKeyID:   creds.PrivateKeyID,
@@ -131,8 +131,8 @@ func RunMachineAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 	}
 
 	if err := keyring.Set(ServiceName, userKey, string(credsJSON)); err != nil {
-		if cleanupErr := RemoveMachineAccountKeyFile(userKey); cleanupErr != nil {
-			fmt.Printf("Warning: failed to remove machine account key file after keyring error for %s: %v\n", userKey, cleanupErr)
+		if cleanupErr := RemoveServiceAccountKeyFile(userKey); cleanupErr != nil {
+			fmt.Printf("Warning: failed to remove service account key file after keyring error for %s: %v\n", userKey, cleanupErr)
 		}
 		return nil, fmt.Errorf("failed to store credentials in keyring for %s: %w", userKey, err)
 	}
