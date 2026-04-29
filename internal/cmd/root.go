@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/client"
@@ -12,6 +13,7 @@ import (
 	"go.datum.net/datumctl/internal/cmd/login"
 	"go.datum.net/datumctl/internal/cmd/logout"
 	"go.datum.net/datumctl/internal/cmd/whoami"
+	customerrors "go.datum.net/datumctl/internal/errors"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -59,9 +61,23 @@ Get started:
   datumctl get organizations
   datumctl get dnszones`,
 		Run: runLanding,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			format, _ := cmd.Flags().GetString("error-format")
+			switch format {
+			case customerrors.FormatHuman, customerrors.FormatJSON, customerrors.FormatYAML:
+				return nil
+			default:
+				return customerrors.NewUserErrorWithHint(
+					fmt.Sprintf("invalid value %q for --error-format", format),
+					"Allowed values: human, json, yaml.",
+				)
+			}
+		},
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
+	rootCmd.PersistentFlags().String("error-format", customerrors.FormatHuman,
+		"Error output format on failure. One of: human, json, yaml.")
 	ioStreams := genericclioptions.IOStreams{
 		In:     rootCmd.InOrStdin(),
 		Out:    rootCmd.OutOrStdout(),
