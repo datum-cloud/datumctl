@@ -130,8 +130,8 @@ func PaneInnerSize(width, height int) (innerW, innerH int) {
 // so the highlight spans the full row width.
 func SurfaceFill(s string, width, height int) string {
 	surfaceOpen := lipgloss.NewStyle().Background(Surface).Render("")
-	surfaceOpen = strings.TrimSuffix(surfaceOpen, "\x1b[0m")
-	const reset = "\x1b[0m"
+	surfaceOpen = strings.TrimSuffix(surfaceOpen, "\x1b[m")
+	const reset = "\x1b[m"
 
 	var lines []string
 	if s == "" {
