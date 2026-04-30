@@ -51,9 +51,9 @@ You're not signed in yet. Pick the login style that fits your situation:
     any environment where a browser can't be launched locally.
 
   datumctl login --credentials ./key.json
-    Authenticates as a machine account for CI/CD and automation.
+    Authenticates as a service account for CI/CD and automation.
     Non-interactive — no browser, no prompts.
-    Requires: a machine account created in the Datum Cloud portal and
+    Requires: a service account created in the Datum Cloud portal and
     its credentials JSON file downloaded from there. Human accounts
     cannot use this path.
 
@@ -75,8 +75,15 @@ func printLoggedInLanding(out io.Writer, cfg *datumconfig.ConfigV1Beta1, session
 
 	ctxEntry := cfg.CurrentContextEntry()
 	if ctxEntry != nil {
-		displayRef := cfg.DisplayRef(ctxEntry)
-		fmt.Fprintf(out, "  Context        %s\n", displayRef)
+		var ctxLine string
+		if ctxEntry.ProjectID != "" {
+			projName := cfg.ProjectDisplayName(ctxEntry.ProjectID)
+			ctxLine = fmt.Sprintf("%q project (%s)", projName, ctxEntry.Ref())
+		} else {
+			orgName := cfg.OrgDisplayName(ctxEntry.OrganizationID)
+			ctxLine = fmt.Sprintf("%q org (%s)", orgName, ctxEntry.OrganizationID)
+		}
+		fmt.Fprintf(out, "  Context        %s\n", ctxLine)
 	} else {
 		fmt.Fprintln(out, "  Context        (none — run 'datumctl ctx use' to pick one)")
 	}
