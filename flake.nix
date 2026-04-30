@@ -32,7 +32,7 @@
       in
       {
         packages = {
-          default = pkgs.buildGoModule {
+          default = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "datumctl";
             inherit version;
 
@@ -61,7 +61,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            go_1_25
+            go_1_26
             gopls
             gotools
             go-task
