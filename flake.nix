@@ -32,7 +32,7 @@
       in
       {
         packages = {
-          default = pkgs.buildGoModule {
+          default = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
             pname = "datumctl";
             inherit version;
 
