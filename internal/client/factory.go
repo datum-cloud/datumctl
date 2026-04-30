@@ -21,10 +21,22 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/clientcmd/api"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/kubectl/pkg/cmd/util"
 )
+
+// errorClientConfig implements clientcmd.ClientConfig for cases where building
+// the REST config fails (e.g. user not logged in). Returning this instead of
+// panicking allows shell completion to degrade gracefully.
+type errorClientConfig struct{ err error }
+
+func (e *errorClientConfig) RawConfig() (clientcmdapi.Config, error) {
+	return clientcmdapi.Config{}, e.err
+}
+func (e *errorClientConfig) ClientConfig() (*rest.Config, error) { return nil, e.err }
+func (e *errorClientConfig) Namespace() (string, bool, error)    { return "default", false, nil }
+func (e *errorClientConfig) ConfigAccess() clientcmd.ConfigAccess { return nil }
 
 type DatumCloudFactory struct {
 	util.Factory
@@ -130,24 +142,24 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	restConfig, err := c.ToRESTConfig()
 	if err != nil {
-		panic(err)
+		return &errorClientConfig{err: err}
 	}
-	kubeConfig := &api.Config{
-		Clusters: map[string]*api.Cluster{
+	kubeConfig := &clientcmdapi.Config{
+		Clusters: map[string]*clientcmdapi.Cluster{
 			"inmemory": {
 				Server:                   restConfig.Host,
 				CertificateAuthorityData: restConfig.CAData,
 				InsecureSkipTLSVerify:    restConfig.Insecure,
 			},
 		},
-		AuthInfos: map[string]*api.AuthInfo{
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
 			"inmemory": {
 				Token:                 restConfig.BearerToken,
 				ClientCertificateData: restConfig.CertData,
 				ClientKeyData:         restConfig.KeyData,
 			},
 		},
-		Contexts: map[string]*api.Context{
+		Contexts: map[string]*clientcmdapi.Context{
 			"inmemory": {
 				Cluster:   "inmemory",
 				AuthInfo:  "inmemory",
@@ -313,7 +325,10 @@ func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
 	baseConfigFlags = baseConfigFlags.WithWrapConfigFn(func(*rest.Config) *rest.Config {
 		config, err := NewRestConfig(ctx)
 		if err != nil {
-			panic(err)
+			// Return a broken config so the error surfaces at request time
+			// (e.g. "please run datumctl auth login") rather than crashing
+			// the process — which is especially important during shell completion.
+			return &rest.Config{Host: "http://localhost:0"}
 		}
 		return config
 	})

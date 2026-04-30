@@ -17,15 +17,16 @@ import (
 	"k8s.io/kubectl/pkg/cmd/explain"
 	"k8s.io/kubectl/pkg/cmd/get"
 	"k8s.io/kubectl/pkg/cmd/version"
+	utilcomp "k8s.io/kubectl/pkg/util/completion"
 
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
+	"go.datum.net/datumctl/internal/cmd/console"
 	"go.datum.net/datumctl/internal/cmd/create"
 	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
 	"go.datum.net/datumctl/internal/cmd/docs"
 	"go.datum.net/datumctl/internal/cmd/login"
 	"go.datum.net/datumctl/internal/cmd/logout"
-	"go.datum.net/datumctl/internal/cmd/console"
 	"go.datum.net/datumctl/internal/cmd/whoami"
 	customerrors "go.datum.net/datumctl/internal/errors"
 )
@@ -219,6 +220,8 @@ and 'datumctl describe'.`
 		"output-watch-events", "raw", "server-print", "show-managed-fields",
 		"subresource", "template",
 	)
+	// kubectl sets this in cmd.go rather than NewCmdGet, so we must set it here.
+	getCmd.ValidArgsFunction = utilcomp.ResourceTypeAndNameCompletionFunc(factory)
 	rootCmd.AddCommand(WrapResourceCommand(getCmd))
 
 	deleteCmd := delcmd.NewCmdDelete(factory, ioStreams)
