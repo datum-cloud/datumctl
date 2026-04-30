@@ -2,13 +2,9 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
-	"go.datum.net/datumctl/internal/client"
-	"go.datum.net/datumctl/internal/cmd/auth"
-	"go.datum.net/datumctl/internal/cmd/create"
-	"go.datum.net/datumctl/internal/cmd/docs"
-	"go.datum.net/datumctl/internal/cmd/mcp"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -22,6 +18,17 @@ import (
 	"k8s.io/kubectl/pkg/cmd/get"
 	"k8s.io/kubectl/pkg/cmd/version"
 	utilcomp "k8s.io/kubectl/pkg/util/completion"
+
+	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/cmd/auth"
+	"go.datum.net/datumctl/internal/cmd/console"
+	"go.datum.net/datumctl/internal/cmd/create"
+	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
+	"go.datum.net/datumctl/internal/cmd/docs"
+	"go.datum.net/datumctl/internal/cmd/login"
+	"go.datum.net/datumctl/internal/cmd/logout"
+	"go.datum.net/datumctl/internal/cmd/whoami"
+	customerrors "go.datum.net/datumctl/internal/errors"
 )
 
 // hideFlags hides the named flags from a command's flag set. Flags that do not
@@ -53,12 +60,27 @@ projects, organizations, networking, compute, and more — directly from the
 terminal. No knowledge of Kubernetes or kubectl required.
 
 Get started:
-  datumctl auth login
+  datumctl login
   datumctl get organizations
-  datumctl get projects --organization <org-id>`,
+  datumctl get dnszones`,
+		Run: runLanding,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			format, _ := cmd.Flags().GetString("error-format")
+			switch format {
+			case customerrors.FormatHuman, customerrors.FormatJSON, customerrors.FormatYAML:
+				return nil
+			default:
+				return customerrors.NewUserErrorWithHint(
+					fmt.Sprintf("invalid value %q for --error-format", format),
+					"Allowed values: human, json, yaml.",
+				)
+			}
+		},
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
+	rootCmd.PersistentFlags().String("error-format", customerrors.FormatHuman,
+		"Error output format on failure. One of: human, json, yaml.")
 	ioStreams := genericclioptions.IOStreams{
 		In:     rootCmd.InOrStdin(),
 		Out:    rootCmd.OutOrStdout(),
@@ -90,8 +112,29 @@ Get started:
 	)
 
 	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
+	rootCmd.AddGroup(&cobra.Group{ID: "context", Title: "Context"})
 	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})
 	rootCmd.AddGroup(&cobra.Group{ID: "resource", Title: "Resource Management"})
+
+	// Top-level auth entry points. Promoted out of the 'auth' subgroup so that
+	// new users find 'datumctl login' at the root of the CLI, while experienced
+	// users can still reach 'datumctl auth login' for advanced options
+	// (service-account, device flow).
+	loginCmd := login.Command()
+	loginCmd.GroupID = "auth"
+	rootCmd.AddCommand(loginCmd)
+
+	logoutCmd := logout.Command()
+	logoutCmd.GroupID = "auth"
+	rootCmd.AddCommand(logoutCmd)
+
+	whoamiCmd := whoami.Command()
+	whoamiCmd.GroupID = "auth"
+	rootCmd.AddCommand(whoamiCmd)
+
+	ctxCmd := datumctx.Command()
+	ctxCmd.GroupID = "context"
+	rootCmd.AddCommand(ctxCmd)
 
 	authCommand := auth.Command()
 	whoami := kubeauth.NewCmdWhoAmI(factory, ioStreams)
@@ -433,8 +476,6 @@ the server.`
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
 
-	rootCmd.AddCommand(mcp.Command())
-
 	activityCmd := activity.NewActivityCommand(activity.ActivityCommandOptions{
 		Factory:   factory,
 		IOStreams: ioStreams,
@@ -510,6 +551,10 @@ Specify the resource type and name to view its history.`
 	docsCmd := docs.Command(rootCmd)
 	docsCmd.GroupID = "other"
 	rootCmd.AddCommand(docsCmd)
+
+	consoleCmd := console.Command(factory)
+	consoleCmd.GroupID = "other"
+	rootCmd.AddCommand(consoleCmd)
 
 	return rootCmd
 }

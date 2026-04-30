@@ -6,8 +6,12 @@
 package errors
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+
+	"sigs.k8s.io/yaml"
 )
 
 // UserError represents an error with a user-friendly message.
@@ -24,6 +28,14 @@ type UserError struct {
 
 	// Hint provides actionable guidance to help users resolve the issue.
 	Hint string
+
+	// Code is an optional machine-readable identifier (e.g., "AUTH_EXPIRED")
+	// for AI agents and other programmatic consumers to branch on.
+	Code string
+
+	// Retryable indicates whether the failed operation can be safely retried
+	// without further user action.
+	Retryable bool
 }
 
 // Error implements the error interface and returns the user-friendly message.
@@ -82,4 +94,81 @@ func WrapUserError(message string, err error) *UserError {
 // for debugging.
 func WrapUserErrorWithHint(message, hint string, err error) *UserError {
 	return &UserError{Message: message, Hint: hint, Err: err}
+}
+
+// Output formats supported by Format.
+const (
+	FormatHuman = "human"
+	FormatJSON  = "json"
+	FormatYAML  = "yaml"
+)
+
+// envelope is the structured payload emitted in json/yaml mode.
+type envelope struct {
+	Error envelopeError `json:"error"`
+}
+
+type envelopeError struct {
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message"`
+	Hint      string `json:"hint,omitempty"`
+	Retryable bool   `json:"retryable"`
+	Details   string `json:"details,omitempty"`
+}
+
+// Format writes err to w in the requested output format.
+//
+// For "human" (or any unknown value), output mirrors the legacy
+// "error: <message>\n<hint>" form, with the wrapped technical error appended
+// when verbosity is at least 4. For "json" and "yaml", a structured envelope
+// is emitted using the UserError fields when available, falling back to
+// err.Error() for non-UserError values.
+func Format(w io.Writer, err error, format string, verbosity int) {
+	if err == nil {
+		return
+	}
+
+	userErr, isUser := IsUserError(err)
+
+	switch format {
+	case FormatJSON, FormatYAML:
+		env := envelope{Error: envelopeError{Message: err.Error()}}
+		if isUser {
+			env.Error.Code = userErr.Code
+			env.Error.Message = userErr.Message
+			env.Error.Hint = userErr.Hint
+			env.Error.Retryable = userErr.Retryable
+			if userErr.Err != nil {
+				env.Error.Details = userErr.Err.Error()
+			}
+		}
+
+		var (
+			data []byte
+			marshalErr error
+		)
+		if format == FormatJSON {
+			data, marshalErr = json.Marshal(env)
+		} else {
+			data, marshalErr = yaml.Marshal(env)
+		}
+		if marshalErr != nil {
+			fmt.Fprintf(w, "error: %s\n", err.Error())
+			return
+		}
+		w.Write(data)
+		if format == FormatJSON {
+			fmt.Fprintln(w)
+		}
+
+	default:
+		if isUser {
+			fmt.Fprintf(w, "error: %s\n", userErr.Error())
+			if verbosity >= 4 && userErr.Err != nil {
+				fmt.Fprintf(w, "\nDetails:\n%v\n", userErr.Err)
+			}
+			return
+		}
+		fmt.Fprintf(w, "error: %s\n", err.Error())
+	}
 }
