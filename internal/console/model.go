@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"go.datum.net/datumctl/internal/client"
@@ -2304,7 +2304,7 @@ func (m AppModel) recalcLayout() AppModel {
 	return m
 }
 
-func (m AppModel) View() string {
+func (m AppModel) View() tea.View {
 	header := m.header.View()
 
 	var mainContent string
@@ -2364,24 +2364,30 @@ func (m AppModel) View() string {
 	}
 	base := strings.Join(painted, "\n")
 
+	var content string
 	switch m.overlay {
 	case CtxSwitcherOverlay:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+		content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
 			m.ctxOverlay.View(),
-			lipgloss.WithWhitespaceBackground(styles.OverlayBackdrop),
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
 		)
 	case HelpOverlayID:
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+		content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
 			m.helpOverlay.View(),
-			lipgloss.WithWhitespaceBackground(styles.OverlayBackdrop),
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
 		)
 	case DeleteConfirmationOverlay:
-		return m.deleteConfirmation.View(m.width, m.height)
+		content = m.deleteConfirmation.View(m.width, m.height)
+	default:
+		// Paint any slack area outside the composed layout with the Surface color
+		// so the console reads as dark mode regardless of the terminal background.
+		content = lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, base,
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.Surface)),
+		)
 	}
 
-	// Paint any slack area outside the composed layout with the Surface color
-	// so the console reads as dark mode regardless of the terminal background.
-	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, base,
-		lipgloss.WithWhitespaceBackground(styles.Surface),
-	)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }

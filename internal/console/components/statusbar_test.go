@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 var ansiEscapeStatusBar = regexp.MustCompile(`\x1b\[[0-9;]*m`)

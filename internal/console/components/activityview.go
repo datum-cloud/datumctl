@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
 )
@@ -43,7 +43,9 @@ func NewActivityViewModel(width, height int) ActivityViewModel {
 	return m
 }
 
-func (m ActivityViewModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m ActivityViewModel) Init() tea.Cmd {
+	return func() tea.Msg { return m.spinner.Tick() }
+}
 
 func (m ActivityViewModel) Update(msg tea.Msg) (ActivityViewModel, tea.Cmd) {
 	var cmd tea.Cmd
@@ -54,9 +56,9 @@ func (m ActivityViewModel) Update(msg tea.Msg) (ActivityViewModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			prevOffset := m.vp.YOffset
+			prevOffset := m.vp.YOffset()
 			m.vp, cmd = m.vp.Update(msg)
-			if m.nextContinue != "" && !m.loadingMore && m.vp.YOffset > prevOffset {
+			if m.nextContinue != "" && !m.loadingMore && m.vp.YOffset() > prevOffset {
 				if m.sentinelVisible() {
 					return m, tea.Batch(cmd, func() tea.Msg { return NeedNextActivityPageMsg{} })
 				}
@@ -97,8 +99,8 @@ func (m *ActivityViewModel) SetSize(w, h int) {
 		// chrome: titleBar + titleRule + columnHeader + footerRule + scrollFooter = 5 lines
 		vpH = max(h-5, 1)
 	}
-	m.vp.Width = w
-	m.vp.Height = vpH
+	m.vp.SetWidth(w)
+	m.vp.SetHeight(vpH)
 }
 
 func (m *ActivityViewModel) SetFocused(focused bool) { m.focused = focused }
@@ -162,7 +164,7 @@ func (m ActivityViewModel) NextContinue() string { return m.nextContinue }
 // the sentinel line (last line of content).
 func (m ActivityViewModel) sentinelVisible() bool {
 	totalLines := strings.Count(m.vp.View(), "\n") + 1
-	return m.vp.YOffset+m.vp.Height >= totalLines
+	return m.vp.YOffset()+m.vp.Height() >= totalLines
 }
 
 func (m *ActivityViewModel) refreshContent() {
@@ -188,7 +190,7 @@ func (m ActivityViewModel) buildContent() string {
 			Detail:   detail,
 			Actions:  actionsForSeverity(sev, "back to describe"),
 			Severity: sev,
-			Width:    m.vp.Width,
+			Width:    m.vp.Width(),
 		})
 	case len(m.rows) == 0:
 		muted := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted)

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"image/color"
+
+	"charm.land/lipgloss/v2"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"go.datum.net/datumctl/internal/console/data"
@@ -217,7 +219,7 @@ func errorGlyph(sev data.ErrorSeverity) string {
 	return "⚠"
 }
 
-func errorColor(sev data.ErrorSeverity) lipgloss.TerminalColor {
+func errorColor(sev data.ErrorSeverity) color.Color {
 	if sev == data.ErrorSeverityError {
 		return styles.Error
 	}

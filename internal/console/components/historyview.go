@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
 )
@@ -43,7 +43,9 @@ func NewHistoryViewModel(width, height int) HistoryViewModel {
 	return m
 }
 
-func (m HistoryViewModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m HistoryViewModel) Init() tea.Cmd {
+	return func() tea.Msg { return m.spinner.Tick() }
+}
 
 func (m HistoryViewModel) Update(msg tea.Msg) (HistoryViewModel, tea.Cmd) {
 	var cmd tea.Cmd
@@ -239,8 +241,8 @@ func (m *HistoryViewModel) rebuildViewport() {
 		}
 	}
 	vpH := max(m.height-chrome, 1)
-	m.vp.Width = m.width
-	m.vp.Height = vpH
+	m.vp.SetWidth(m.width)
+	m.vp.SetHeight(vpH)
 }
 
 func (m *HistoryViewModel) refreshContent() {
@@ -267,7 +269,7 @@ func (m HistoryViewModel) buildContent() string {
 			Detail:   detail,
 			Actions:  actionsForSeverity(sev, "back to describe"),
 			Severity: sev,
-			Width:    m.vp.Width,
+			Width:    m.vp.Width(),
 		})
 	case len(m.rows) == 0:
 		muted := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted)

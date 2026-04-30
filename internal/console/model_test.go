@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/console/components"
 	tuictx "go.datum.net/datumctl/internal/console/context"
@@ -25,6 +24,27 @@ var ansiEscapeModel = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func stripANSIModel(s string) string {
 	return ansiEscapeModel.ReplaceAllString(s, "")
+}
+
+// keyMsg builds a tea.KeyPressMsg for the given key string.
+func keyMsg(s string) tea.Msg {
+	switch s {
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc", "escape":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		return tea.KeyPressMsg{Code: tea.KeyDown}
+	}
+	runes := []rune(s)
+	if len(runes) == 1 {
+		return tea.KeyPressMsg{Code: runes[0], Text: s}
+	}
+	return tea.KeyPressMsg{Text: s}
 }
 
 // collectMsgs executes a cmd and all nested tea.BatchMsg sub-cmds, returning
@@ -189,7 +209,7 @@ func TestAppModel_DKey_TransitionsToDetailWithLoading(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -259,7 +279,7 @@ func TestAppModel_ManualR_SetsBothFlags(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !appM.refreshing {
@@ -285,7 +305,7 @@ func TestAppModel_ResourcesLoadedMsg_PreservesCursorByName(t *testing.T) {
 		{Name: "gamma-pod", Cells: []string{"gamma-pod"}},
 	})
 	for i := 0; i < 2; i++ {
-		res, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		res, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 		m = res.(AppModel)
 	}
 
@@ -324,7 +344,7 @@ func TestAppModel_EnterOnSidebar_DoesNotSetPreserveCursor(t *testing.T) {
 	m.activePane = NavPane
 	m.updatePaneFocus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.preserveCursor {
@@ -507,7 +527,7 @@ func TestAppModel_RKey_TablePane_SetsRefreshing(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !appM.refreshing {
@@ -534,7 +554,7 @@ func TestAppModel_RKey_NavPane_DoesNotSetRefreshing(t *testing.T) {
 	m.activePane = NavPane
 	m.updatePaneFocus()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if appM.refreshing {
@@ -562,7 +582,7 @@ func TestAppModel_RKey_NoTypeLoaded_IsNoop(t *testing.T) {
 	m := newTablePaneModel()
 	m.tableTypeName = "" // simulate welcome panel — no type selected yet
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if appM.refreshing {
@@ -582,7 +602,7 @@ func TestAppModel_RKey_DetailPane_SetsRefreshingPreservesDetail(t *testing.T) {
 	m.activePane = DetailPane
 	m.detail.SetResourceContext("pods", "my-pod")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !appM.refreshing {
@@ -607,14 +627,14 @@ func TestAppModel_RKey_Coalesce_NopWhenAlreadyRefreshing(t *testing.T) {
 	m := newTablePaneModel()
 
 	// First r — starts refresh.
-	result1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result1, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result1.(AppModel)
 	if !appM.refreshing {
 		t.Fatal("expected refreshing=true after first r")
 	}
 
 	// Second r — coalesced, must be a no-op.
-	result2, cmd2 := appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result2, cmd2 := appM.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM2 := result2.(AppModel)
 	if !appM2.refreshing {
 		t.Error("m.refreshing = false after second r, want true (still in flight)")
@@ -751,7 +771,7 @@ func TestAppModel_EnterOnAllowanceBuckets_GoesToQuotaDashboardPane(t *testing.T)
 	bc := &stubBucketClient{}
 	m := newAllowanceBucketNavModel(bc)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -791,7 +811,7 @@ func TestAppModel_EnterOnNonAllowanceBuckets_GoesToTablePane(t *testing.T) {
 	m.activePane = NavPane
 	m.updatePaneFocus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -839,7 +859,7 @@ func TestAppModel_TKey_TogglesToTableFromDashboard(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -861,7 +881,7 @@ func TestAppModel_TKey_DashboardToTable_ShowsAllowanceBucketRows(t *testing.T) {
 	})
 	m.table.SetTypeContext("allowancebuckets", true)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -884,7 +904,7 @@ func TestAppModel_TKey_TogglesToDashboardFromTable(t *testing.T) {
 	m.tableTypeName = "allowancebuckets"
 	m.bc = &stubBucketClient{}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -898,7 +918,7 @@ func TestAppModel_TKey_NonAllowanceBuckets_IsNoop(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel() // tableTypeName = "pods"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -914,7 +934,7 @@ func TestAppModel_RKey_QuotaDashboardPane_InvalidatesCacheAndRefreshes(t *testin
 	bc := &stubBucketClient{}
 	m := newQuotaDashboardPaneModel(bc)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !appM.refreshing {
@@ -955,7 +975,7 @@ func TestAppModel_RKey_QuotaDashboardPane_CoalesceWhileRefreshing(t *testing.T) 
 	m := newQuotaDashboardPaneModel(bc)
 	m.refreshing = true // already refreshing
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd != nil {
 		t.Errorf("cmd = non-nil, want nil for coalesced r in QuotaDashboardPane")
 	}
@@ -967,7 +987,7 @@ func TestAppModel_EscFromQuotaDashboardPane_GoesToNavPane(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -982,7 +1002,7 @@ func TestAppModel_EnterOnDashboard_GoesToDetailPane(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -1003,14 +1023,14 @@ func TestAppModel_EscFromDetailReturnsToQuotaDashboard(t *testing.T) {
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
 	// Enter → DetailPane with detailReturnPane = QuotaDashboardPane
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = result.(AppModel)
 	if m.activePane != DetailPane {
 		t.Fatalf("expected DetailPane after Enter, got %v", m.activePane)
 	}
 
 	// Esc → should return to QuotaDashboardPane
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -1077,7 +1097,7 @@ func TestFB108_AC1_RKey_QuotaDashboardPane_SetsRefreshing(t *testing.T) {
 	bc := &stubBucketClient{}
 	m := newQuotaDashboardPaneModel(bc)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !appM.quota.IsRefreshing() {
@@ -1117,12 +1137,13 @@ func TestAppModel_BuildDetailContent_MatchingBuckets_AppendsQuotaBlock(t *testin
 	if got == "describe output here" {
 		t.Error("buildDetailContent: quota block not appended — content unchanged")
 	}
-	if !containsStr(got, "[3] quota dashboard") {
-		t.Errorf("buildDetailContent: want '[3] quota dashboard' separator in %q", got)
+	gotPlain := stripANSIModel(got)
+	if !containsStr(gotPlain, "[3] quota dashboard") {
+		t.Errorf("buildDetailContent: want '[3] quota dashboard' separator in %q", gotPlain)
 	}
 	// ResolveDescription with nil registrations falls back to the short name (last "/" segment).
-	if !containsStr(got, "cpus") {
-		t.Errorf("buildDetailContent: want resource short name 'cpus' in %q", got)
+	if !containsStr(gotPlain, "cpus") {
+		t.Errorf("buildDetailContent: want resource short name 'cpus' in %q", gotPlain)
 	}
 }
 
@@ -1163,13 +1184,12 @@ func TestAppModel_BucketsLoadedMsg_InDetailPane_UpdatesDetailContent(t *testing.
 	appM := result.(AppModel)
 
 	got := appM.buildDetailContent()
-	if !containsStr(got, "[3] quota dashboard") {
+	if !containsStr(stripANSIModel(got), "[3] quota dashboard") {
 		t.Errorf("after BucketsLoadedMsg in DetailPane: want '[3] quota dashboard' in rebuilt content, got %q", got)
 	}
 }
 
-// containsStr is a plain-text substring helper (no ANSI stripping needed here
-// because buildDetailContent operates on raw strings, not styled output).
+// containsStr is a plain-text substring helper.
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		func() bool {
@@ -1236,7 +1256,7 @@ func TestAppModel_AKey_FromDetailPane_TransitionsToActivityPane(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityPane {
@@ -1259,7 +1279,7 @@ func TestAppModel_AKey_FromDetailPane_SetsActivityContext(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.activityKind != "Project" {
@@ -1280,7 +1300,7 @@ func TestAppModel_AKey_FromDetailPane_WhileLoading_IsNoop(t *testing.T) {
 	m := newDetailPaneModel()
 	m.detail.SetLoading(true)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -1307,7 +1327,7 @@ func TestAppModel_AKey_FromDetailPane_PreservesRows_WhenSameResource(t *testing.
 		{Origin: "audit", Summary: "existing"},
 	}, "tok1") // HasRows() == true, NextContinue != ""
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityPane {
@@ -1329,7 +1349,7 @@ func TestAppModel_GKey_ActivityPane_DoesNotTriggerPagination(t *testing.T) {
 	t.Parallel()
 	m := newActivityPaneModel() // has rows + non-empty continue token
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'G', Text: "G"})
 	_ = result
 
 	msgs := collectMsgs(cmd)
@@ -1358,7 +1378,7 @@ func TestAppModel_AKey_FromDetailPane_ResetsRows_WhenDifferentResource(t *testin
 	// Now detail pane is showing resource Y (different name).
 	m.detail.SetResourceContext("projects", "resource-y")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityPane {
@@ -1376,7 +1396,7 @@ func TestAppModel_AKey_FromActivityPane_TogglesBackToDetailPane(t *testing.T) {
 	t.Parallel()
 	m := newActivityPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -1393,7 +1413,7 @@ func TestAppModel_EscFromActivityPane_ReturnsToDetailPane(t *testing.T) {
 	t.Parallel()
 	m := newActivityPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -1506,7 +1526,7 @@ func TestAppModel_RKey_ActivityPane_ResetsAndDispatches(t *testing.T) {
 	t.Parallel()
 	m := newActivityPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if cmd == nil {
@@ -1524,7 +1544,7 @@ func TestAppModel_RKey_ActivityPane_NilAC_IsNoop(t *testing.T) {
 	m := newActivityPaneModel()
 	m.ac = nil
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd != nil {
 		t.Errorf("cmd = non-nil, want nil when ac is nil")
 	}
@@ -1537,7 +1557,7 @@ func TestAppModel_RKey_ActivityPane_EmptyKind_IsNoop(t *testing.T) {
 	m := newActivityPaneModel()
 	m.activityKind = ""
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd != nil {
 		t.Errorf("cmd = non-nil, want nil when activityKind is empty")
 	}
@@ -1549,9 +1569,9 @@ func TestAppModel_EnterAndD_InActivityPane_AreNoops(t *testing.T) {
 	t.Parallel()
 	m := newActivityPaneModel()
 
-	for _, key := range []tea.KeyMsg{
-		{Type: tea.KeyEnter},
-		{Type: tea.KeyRunes, Runes: []rune("d")},
+	for _, key := range []tea.KeyPressMsg{
+		{Code: tea.KeyEnter},
+		{Code: 'd', Text: "d"},
 	} {
 		result, cmd := m.Update(key)
 		appM := result.(AppModel)
@@ -1692,7 +1712,7 @@ func TestAppModel_Enter_NavPane_GovernedType_NoBucketCache_DispatchesBoth(t *tes
 	m := newNavPaneModelWithBC(bc)
 	// buckets nil (cache empty) — default state
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -1730,7 +1750,7 @@ func TestAppModel_Enter_NavPane_GovernedType_BucketsAlreadyCached_DispatchesReso
 		{Name: "b1", ResourceType: "resourcemanager.miloapis.com/projects", Allocated: 5, Limit: 100},
 	}
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want LoadResourcesCmd")
 	}
@@ -1749,7 +1769,7 @@ func TestAppModel_Enter_NavPane_NilBC_DispatchesResourcesOnly(t *testing.T) {
 	m := newNavPaneModelWithBC(nil)
 	m.bc = nil
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want LoadResourcesCmd")
 	}
@@ -1769,7 +1789,7 @@ func TestAppModel_RKey_TablePane_GovernedType_InvalidatesAndDispatchesBoth(t *te
 	bc := &stubBucketClient{}
 	m := newGovernedTablePaneModel(bc)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !bc.invalidated {
@@ -1809,7 +1829,7 @@ func TestAppModel_RKey_TablePane_UngovernedType_DoesNotInvalidate(t *testing.T) 
 	m.bc = bc
 	// banner has no buckets — un-governed type
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if bc.invalidated {
 		t.Error("InvalidateBucketCache called for un-governed type, want no-op")
@@ -2332,7 +2352,7 @@ func TestAppModel_Enter_AllowanceBuckets_WithRRC_DispatchesRegistrations(t *test
 	}
 	m := newAllowanceBucketNavModelWithRRC(bc, rrc)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want batch with LoadResourceRegistrationsCmd")
 	}
@@ -2357,7 +2377,7 @@ func TestAppModel_Enter_AllowanceBuckets_NilRRC_DoesNotDispatchRegistrations(t *
 	m := newAllowanceBucketNavModel(bc)
 	// m.rrc is nil by default in test helpers
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want batch with at least LoadBucketsCmd")
 	}
@@ -2379,7 +2399,7 @@ func TestAppModel_RKey_TablePane_DoesNotDispatchRegistrations(t *testing.T) {
 	m := newGovernedTablePaneModel(bc)
 	m.rrc = rrc
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want batch from r key")
 	}
@@ -2487,7 +2507,7 @@ func TestAppModel_ContextSwitched_ThenEnterGovernedPane_RefetchesRegistrations(t
 	_ = contextSwitchDispatched // dispatch is via cmd, not msg; registrationsLoading=true is the observable
 
 	// Step 2: Enter while registrations are still loading — must NOT dispatch a second load.
-	_, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd2 := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	for _, msg := range collectMsgs(cmd2) {
 		if _, ok := msg.(data.ResourceRegistrationsLoadedMsg); ok {
 			t.Error("step 2: Enter while registrationsLoading=true dispatched LoadResourceRegistrationsCmd — want no duplicate")
@@ -2505,7 +2525,7 @@ func TestAppModel_SlashKey_NavPane_PostsHint_NoFilterBar(t *testing.T) {
 	m.activePane = NavPane
 	m.updatePaneFocus()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	if appM.filterBar.Focused() {
@@ -2531,7 +2551,7 @@ func TestAppModel_SlashKey_TablePane_NoType_PostsHint(t *testing.T) {
 	m := newTablePaneModel()
 	m.tableTypeName = "" // no type loaded
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	if appM.filterBar.Focused() {
@@ -2551,7 +2571,7 @@ func TestAppModel_SlashKey_TablePane_WithType_OpensFilterBar(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel() // tableTypeName = "pods"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	if !appM.filterBar.Focused() {
@@ -2570,9 +2590,9 @@ func TestAppModel_SlashKey_TablePane_WithType_OpensFilterBar(t *testing.T) {
 func TestAppModel_SlashKey_QuotaDashboardPane_SilentNoOp(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
-	viewBefore := stripANSIModel(m.View())
+	viewBefore := stripANSIModel(m.View().Content)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	if appM.filterBar.Focused() {
@@ -2584,7 +2604,7 @@ func TestAppModel_SlashKey_QuotaDashboardPane_SilentNoOp(t *testing.T) {
 	if cmd != nil {
 		t.Error("cmd != nil after / in QuotaDashboardPane, want nil (no hint clear scheduled)")
 	}
-	viewAfter := stripANSIModel(appM.View())
+	viewAfter := stripANSIModel(appM.View().Content)
 	if viewBefore != viewAfter {
 		t.Error("View() changed after / in QuotaDashboardPane, want identical (silent no-op)")
 	}
@@ -2616,7 +2636,7 @@ func TestAppModel_Filter_ZeroResults_EscClearsFilterAndRestoresRows(t *testing.T
 	}
 
 	// Press Esc — routes to handleFilterKey which clears filter and blurs bar.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	// FilterBar must be blurred.
@@ -2651,7 +2671,7 @@ func TestAppModel_HintClearMsg_MatchingToken_ClearsHint(t *testing.T) {
 	m.updatePaneFocus()
 
 	// Post a hint to get a valid token.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = result.(AppModel)
 	if m.statusBar.Hint == "" {
 		t.Fatal("precondition: hint not posted")
@@ -2676,7 +2696,7 @@ func TestAppModel_HintClearMsg_StaleToken_DoesNotClearHint(t *testing.T) {
 	m.updatePaneFocus()
 
 	// Post a hint.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = result.(AppModel)
 	if m.statusBar.Hint == "" {
 		t.Fatal("precondition: hint not posted")
@@ -2700,7 +2720,7 @@ func TestAppModel_ContextSwitchedMsg_ClearsHint(t *testing.T) {
 	m.updatePaneFocus()
 
 	// Post a hint first.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = result.(AppModel)
 	if m.statusBar.Hint == "" {
 		t.Fatal("precondition: hint not posted")
@@ -2724,7 +2744,7 @@ func TestAppModel_EarlyClear_AnyKeypress_ClearsHint(t *testing.T) {
 	m.updatePaneFocus()
 
 	// Post a hint.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = result.(AppModel)
 	if m.statusBar.Hint == "" {
 		t.Fatal("precondition: hint not posted")
@@ -2732,7 +2752,7 @@ func TestAppModel_EarlyClear_AnyKeypress_ClearsHint(t *testing.T) {
 	tokenAfterHint := m.statusBar.HintToken()
 
 	// Any keypress (j = cursor move) clears hint and bumps token.
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	result, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	appM := result.(AppModel)
 
 	if appM.statusBar.Hint != "" {
@@ -2838,7 +2858,7 @@ func TestAppModel_HKey_DetailPane_FirstPress_TransitionsToHistoryAndDispatchesCm
 	t.Parallel()
 	m := newDetailPaneModelWithHC()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != HistoryPane {
@@ -2863,7 +2883,7 @@ func TestAppModel_HKey_DetailPane_RepeatPress_CacheHit_NoCmd(t *testing.T) {
 	m.historyName = "my-pod"
 	m.history.SetRows(rows, false)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != HistoryPane {
@@ -2885,7 +2905,7 @@ func TestAppModel_HKey_DetailPane_InputChanged_NewResource_DispatchesCmd(t *test
 	m.history.SetRows(testFB007Rows(), false)
 
 	// detail now describes "my-pod" (set in newDetailPaneModelWithHC).
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != HistoryPane {
@@ -2904,7 +2924,7 @@ func TestAppModel_HKey_DetailPane_WhileDescribeLoading_Inert(t *testing.T) {
 	m := newDetailPaneModelWithHC()
 	m.detail.SetLoading(true) // simulate in-flight describe
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -2923,7 +2943,7 @@ func TestAppModel_HKey_HistoryPane_FirstPress_TogglesBackToDetailPane(t *testing
 	t.Parallel()
 	m := newHistoryPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -2941,14 +2961,14 @@ func TestAppModel_HKey_HistoryPane_RepeatPress_RoundTrip(t *testing.T) {
 	m := newHistoryPaneModel()
 
 	// First H: HistoryPane → DetailPane.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	m1 := r1.(AppModel)
 	if m1.activePane != DetailPane {
 		t.Fatalf("precondition failed: first H should go to DetailPane, got %v", m1.activePane)
 	}
 
 	// Second H: DetailPane → HistoryPane (cache hit, no cmd).
-	r2, cmd2 := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	r2, cmd2 := m1.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	m2 := r2.(AppModel)
 
 	if m2.activePane != HistoryPane {
@@ -2973,11 +2993,11 @@ func TestAppModel_HKey_HistoryPane_FilterOn_ClearedOnExit(t *testing.T) {
 	}
 
 	// H from HistoryPane → DetailPane (ResetFilter called).
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	m1 := r1.(AppModel)
 
 	// H from DetailPane → HistoryPane (re-enter; filter should be off).
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	m2 := r2.(AppModel)
 
 	viewAfter := stripANSIModel(m2.history.View())
@@ -2995,7 +3015,7 @@ func TestAppModel_Enter_HistoryPane_FirstPress_OpensDiffPane(t *testing.T) {
 	m := newHistoryPaneModel()
 	// Default cursor = newest (rev 3, manifest index 2).
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != DiffPane {
@@ -3014,7 +3034,7 @@ func TestAppModel_Enter_DiffPane_Inert(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(1) // rev 2
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != DiffPane {
@@ -3032,7 +3052,7 @@ func TestAppModel_Enter_HistoryPane_DifferentCursor_DifferentDiff(t *testing.T) 
 	m := newHistoryPaneModel()
 
 	// Enter at cursor=0 (rev 3, newest).
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM1 := r1.(AppModel)
 	diffView1 := stripANSIModel(appM1.diff.View())
 
@@ -3040,7 +3060,7 @@ func TestAppModel_Enter_HistoryPane_DifferentCursor_DifferentDiff(t *testing.T) 
 	m2 := newHistoryPaneModel()
 	m2.history.CursorDown() // cursor → rev 2 (manifest index 1)
 
-	r2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	r2, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM2 := r2.(AppModel)
 	diffView2 := stripANSIModel(appM2.diff.View())
 
@@ -3060,7 +3080,7 @@ func TestAppModel_Enter_HistoryPane_Rev1_ShowsCreationView(t *testing.T) {
 	m := newHistoryPaneModel()
 	m.history.CursorBottom() // → rev 1 (oldest)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != DiffPane {
@@ -3084,7 +3104,7 @@ func TestAppModel_BracketLeft_DiffPane_FirstPress_StepsToOlderRev(t *testing.T) 
 	t.Parallel()
 	m := newDiffPaneModel(2) // rev 3 (index 2)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
 	appM := result.(AppModel)
 
 	if appM.selectedRevIdx != 1 {
@@ -3102,9 +3122,9 @@ func TestAppModel_BracketLeft_DiffPane_RepeatPress_StepsTwice(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(2) // rev 3
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
 	m1 := r1.(AppModel) // rev 2
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '[', Text: "["})
 	appM := r2.(AppModel) // rev 1
 
 	if appM.selectedRevIdx != 0 {
@@ -3118,7 +3138,7 @@ func TestAppModel_BracketLeft_DiffPane_Rev1_Inert(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(0) // rev 1
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '[', Text: "["})
 	appM := result.(AppModel)
 
 	if appM.selectedRevIdx != 0 {
@@ -3141,7 +3161,7 @@ func TestAppModel_BracketRight_DiffPane_FirstPress_StepsToNewerRev(t *testing.T)
 	t.Parallel()
 	m := newDiffPaneModel(0) // rev 1
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
 	appM := result.(AppModel)
 
 	if appM.selectedRevIdx != 1 {
@@ -3158,9 +3178,9 @@ func TestAppModel_BracketRight_DiffPane_RepeatPress_StepsTwice(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(0) // rev 1
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
 	m1 := r1.(AppModel) // rev 2
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
 	appM := r2.(AppModel) // rev 3
 
 	if appM.selectedRevIdx != 2 {
@@ -3174,7 +3194,7 @@ func TestAppModel_BracketRight_DiffPane_RevN_Inert(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(2) // rev 3 (last)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: ']', Text: "]"})
 	appM := result.(AppModel)
 
 	if appM.selectedRevIdx != 2 {
@@ -3192,7 +3212,7 @@ func TestAppModel_CKey_HistoryPane_FirstPress_EnablesFilter(t *testing.T) {
 	t.Parallel()
 	m := newHistoryPaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	appM := result.(AppModel)
 
 	// Observable: filter banner appears in history view.
@@ -3208,11 +3228,11 @@ func TestAppModel_CKey_HistoryPane_RepeatPress_RestoresAllRows(t *testing.T) {
 	m := newHistoryPaneModel()
 
 	// First c: filter on.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	m1 := r1.(AppModel)
 
 	// Second c: filter off.
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	appM := r2.(AppModel)
 
 	histView := stripANSIModel(appM.history.View())
@@ -3244,7 +3264,7 @@ func TestAppModel_CKey_HistoryPane_ZeroHumanRows_EmptyListNoCrash(t *testing.T) 
 	m.updatePaneFocus()
 
 	// c filter: all rows are system → empty human list.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	appM := result.(AppModel)
 
 	histView := stripANSIModel(appM.history.View())
@@ -3288,7 +3308,7 @@ func TestAppModel_Esc_DiffPane_ReturnsToHistoryPane(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(1)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != HistoryPane {
@@ -3303,7 +3323,7 @@ func TestAppModel_Esc_HistoryPane_ReturnsToDetailPane_ClearsFilter(t *testing.T)
 	m := newHistoryPaneModel()
 	m.history.ToggleHumanFilter()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -3324,14 +3344,14 @@ func TestAppModel_Esc_HistoryPane_FilterClearedAfterRoundTrip(t *testing.T) {
 	m.history.ToggleHumanFilter()
 
 	// Esc → DetailPane.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m1 := r1.(AppModel)
 	if m1.activePane != DetailPane {
 		t.Fatalf("expected DetailPane after Esc, got %v", m1.activePane)
 	}
 
 	// H → HistoryPane (re-enter).
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := r2.(AppModel)
 
 	histView := stripANSIModel(appM.history.View())
@@ -3351,7 +3371,7 @@ func TestAppModel_Esc_DetailPane_HistoryStateUntouched(t *testing.T) {
 	m.tableTypeName = "pods"
 	m.table = components.NewResourceTableModel(58, 20)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -3371,7 +3391,7 @@ func TestAppModel_RKey_HistoryPane_FirstPress_SetsRefreshingAndDispatchesCmd(t *
 	t.Parallel()
 	m := newHistoryPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if !appM.refreshing {
@@ -3393,7 +3413,7 @@ func TestAppModel_RKey_DiffPane_TransitionsToHistoryPane_AndRefreshes(t *testing
 	t.Parallel()
 	m := newDiffPaneModel(1)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if appM.activePane != HistoryPane {
@@ -3471,7 +3491,7 @@ func TestAppModel_HKey_NavPane_Inert(t *testing.T) {
 	m.updatePaneFocus()
 
 	for i := 0; i < 2; i++ {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 		appM := result.(AppModel)
 		if appM.activePane != NavPane {
 			t.Errorf("press %d: activePane = %v, want NavPane (H inert)", i+1, appM.activePane)
@@ -3488,7 +3508,7 @@ func TestAppModel_HKey_TablePane_Inert(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -3504,7 +3524,7 @@ func TestAppModel_HKey_QuotaDashboardPane_Inert(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -3528,7 +3548,7 @@ func TestAppModel_SlashKey_HistoryPane_Silent_FilterBarNotFocused(t *testing.T) 
 	m := newHistoryPaneModel()
 
 	for i := 0; i < 2; i++ {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 		appM := result.(AppModel)
 
 		if appM.filterBar.Focused() {
@@ -3546,7 +3566,7 @@ func TestAppModel_SlashKey_DiffPane_Silent_FilterBarNotFocused(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(1)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	if appM.filterBar.Focused() {
@@ -3570,7 +3590,7 @@ func TestAppModel_SlashKey_HistoryPane_CFilterActive_CFilterUnchanged(t *testing
 	}
 
 	// Press /: should be inert.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	viewAfter := stripANSIModel(appM.history.View())
@@ -3610,7 +3630,7 @@ func TestAppModel_HKey_DiffPane_TransitionsToDetailPane(t *testing.T) {
 	m.yamlMode = true
 	m.detail.SetMode("yaml")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -3633,7 +3653,7 @@ func TestAppModel_CKey_DiffPane_Inert(t *testing.T) {
 	t.Parallel()
 	m := newDiffPaneModel(1)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -3717,7 +3737,7 @@ func newDetailPaneModelWithRaw() AppModel {
 // (after one y press on a model with describeRaw set).
 func newDetailPaneModelWithYaml() AppModel {
 	m := newDetailPaneModelWithRaw()
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	return result.(AppModel)
 }
 
@@ -3742,12 +3762,12 @@ func TestAppModel_YKey_DetailPane_ScrollReset_OnToggle(t *testing.T) {
 
 	// Scroll describe viewport down 10 lines.
 	for i := 0; i < 10; i++ {
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		r, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = r.(AppModel)
 	}
 
 	// Toggle to yaml mode — scroll must reset to top.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = r1.(AppModel)
 
 	yamlView := stripANSIModel(m.detail.View())
@@ -3757,12 +3777,12 @@ func TestAppModel_YKey_DetailPane_ScrollReset_OnToggle(t *testing.T) {
 
 	// Scroll yaml viewport down 10 lines.
 	for i := 0; i < 10; i++ {
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		r, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = r.(AppModel)
 	}
 
 	// Toggle back to describe — scroll must reset to top again.
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = r2.(AppModel)
 
 	descView := stripANSIModel(m.detail.View())
@@ -3779,7 +3799,7 @@ func TestAppModel_YKey_DetailPane_FirstPress_TogglesYamlMode(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModelWithRaw()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	appM := result.(AppModel)
 
 	if !appM.yamlMode {
@@ -3797,7 +3817,7 @@ func TestAppModel_YKey_DetailPane_FirstPress_ContentChanges(t *testing.T) {
 	m := newDetailPaneModelWithRaw()
 	before := m.detail.View()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	appM := result.(AppModel)
 
 	after := appM.detail.View()
@@ -3818,9 +3838,9 @@ func TestAppModel_YKey_DetailPane_RepeatPress_TogglesBackToDescribe(t *testing.T
 	t.Parallel()
 	m := newDetailPaneModelWithRaw()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}) // → yaml
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"}) // → yaml
 	m = r1.(AppModel)
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}) // → describe
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"}) // → describe
 	appM := r2.(AppModel)
 
 	if appM.yamlMode {
@@ -3840,7 +3860,7 @@ func TestAppModel_YKey_DetailPane_NilRaw_IsNoOp(t *testing.T) {
 	m := newDetailPaneModelWithHC()
 	// describeRaw is nil in the base fixture.
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	appM := result.(AppModel)
 
 	if appM.yamlMode {
@@ -3872,7 +3892,7 @@ func TestAppModel_YKey_NonDetailPane_IsNoOp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := tt.m()
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+			result, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 			appM := result.(AppModel)
 			if appM.yamlMode {
 				t.Errorf("%s: yamlMode = true after y press, want no-op", tt.name)
@@ -3951,7 +3971,7 @@ func TestAppModel_Esc_DetailPane_YamlMode_Resets(t *testing.T) {
 	m.detailReturnPane = TablePane
 	m.tableTypeName = "pods"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.yamlMode {
@@ -3972,7 +3992,7 @@ func TestAppModel_HKey_HistoryPane_ResetsYamlMode(t *testing.T) {
 	m.yamlMode = true
 	m.detail.SetMode("yaml")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 	appM := result.(AppModel)
 
 	if appM.yamlMode {
@@ -3994,7 +4014,7 @@ func TestAppModel_DKey_TablePane_ResetsYamlMode(t *testing.T) {
 	m.describeRaw = testRawObject()
 	m.detail.SetMode("yaml")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	appM := result.(AppModel)
 
 	if appM.yamlMode {
@@ -4016,7 +4036,7 @@ func TestAppModel_Enter_TablePane_ResetsYamlMode(t *testing.T) {
 	m.describeRaw = testRawObject()
 	m.detail.SetMode("yaml")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
@@ -4046,7 +4066,7 @@ func TestAppModel_YKey_DetailPane_TitleBarSuffix(t *testing.T) {
 	}
 
 	// describe mode (second y press): title bar must contain "describe", not "yaml".
-	r2, _ := yamlM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	r2, _ := yamlM.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	descM := r2.(AppModel)
 	descView := stripANSIModel(descM.detail.View())
 	if !strings.Contains(descView, "describe") {
@@ -4109,7 +4129,7 @@ func TestAppModel_YKey_DetailPane_ContentParity_AnnotationVisible(t *testing.T) 
 	}
 
 	// Switch to yaml mode.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	appM := result.(AppModel)
 	yamlView := stripANSIModel(appM.detail.View())
 	if !strings.Contains(yamlView, "yaml-only-sentinel") {
@@ -4135,7 +4155,7 @@ func TestAppModel_YKey_DetailPane_MarshalError_ShowsWarning(t *testing.T) {
 	}
 
 	// Press y — yaml mode, marshal fails.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	appM := r1.(AppModel)
 
 	view := appM.detail.View()
@@ -4144,7 +4164,7 @@ func TestAppModel_YKey_DetailPane_MarshalError_ShowsWarning(t *testing.T) {
 	}
 
 	// y again toggles back to describe mode — must not crash.
-	r2, _ := appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	r2, _ := appM.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	appM2 := r2.(AppModel)
 
 	if appM2.yamlMode {
@@ -4167,7 +4187,7 @@ func TestAppModel_YKey_DetailPane_Lifecycle_EscAndReEnter(t *testing.T) {
 	m.describeRaw = testRawObject()
 
 	// Step 1: open detail from table.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	m = r1.(AppModel)
 	if m.activePane != DetailPane {
 		t.Fatalf("step 1: activePane = %v, want DetailPane", m.activePane)
@@ -4181,14 +4201,14 @@ func TestAppModel_YKey_DetailPane_Lifecycle_EscAndReEnter(t *testing.T) {
 	}
 
 	// Step 3: press y → yaml mode.
-	r3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	r3, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	m = r3.(AppModel)
 	if !m.yamlMode {
 		t.Fatal("step 3: yamlMode = false after y, want true")
 	}
 
 	// Step 4: Esc from DetailPane → back to TablePane, yaml state cleared.
-	r4, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = r4.(AppModel)
 	if m.activePane != TablePane {
 		t.Fatalf("step 4: activePane = %v after Esc, want TablePane", m.activePane)
@@ -4201,7 +4221,7 @@ func TestAppModel_YKey_DetailPane_Lifecycle_EscAndReEnter(t *testing.T) {
 	}
 
 	// Step 5: re-enter detail for same row (d again).
-	r5, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	r5, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	m = r5.(AppModel)
 	if m.activePane != DetailPane {
 		t.Fatalf("step 5: activePane = %v, want DetailPane", m.activePane)
@@ -4364,7 +4384,7 @@ func TestAppModel_YKey_NavPane_NoOp(t *testing.T) {
 				t.Fatal("precondition: must start in NavPane")
 			}
 
-			result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			result, cmd := m.Update(keyMsg(key))
 			appM := result.(AppModel)
 
 			if cmd != nil {
@@ -4458,7 +4478,7 @@ func TestAppModel_WelcomePanel_Integration(t *testing.T) {
 	if !m1.bucketLoading {
 		t.Error("AC#22 step 1: bucketLoading must be true after ContextSwitchedMsg (bc wired)")
 	}
-	view1 := stripANSIModel(m1.View())
+	view1 := stripANSIModel(m1.View().Content)
 	if !strings.Contains(view1, "beta-corp") {
 		t.Errorf("AC#22 step 1: want 'beta-corp' in View(), got: %q", view1)
 	}
@@ -4473,7 +4493,7 @@ func TestAppModel_WelcomePanel_Integration(t *testing.T) {
 	result2, _ := m1.Update(data.BucketsLoadedMsg{Buckets: buckets})
 	m2 := result2.(AppModel)
 
-	view2 := stripANSIModel(m2.View())
+	view2 := stripANSIModel(m2.View().Content)
 	if !strings.Contains(view2, "Platform health") {
 		t.Errorf("AC#22 step 2: want 'Platform health' in View() after BucketsLoadedMsg, got: %q", view2)
 	}
@@ -4734,7 +4754,7 @@ func TestAppModel_WelcomePanel_YMBKeys_Inert(t *testing.T) {
 				t.Fatalf("precondition: tableTypeName must be empty, got %q", m.tableTypeName)
 			}
 
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			result, _ := m.Update(keyMsg(key))
 			appM := result.(AppModel)
 
 			if appM.activePane != TablePane {
@@ -4818,7 +4838,7 @@ func TestAppModel_NavPane_JKey_WelcomePanel_HoveredTypeUpdates(t *testing.T) {
 	}
 
 	// Press 'j' to move to Deployment.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	appM := result.(AppModel)
 
 	got := stripANSIModel(appM.table.View())
@@ -4893,7 +4913,7 @@ func TestAppModel_LazyPath_RegistrationsErrorThenEnter_RefetchesRegistrations(t 
 
 	// Step 3: Enter on allowancebuckets — lazy-path guard fires because
 	// registrations==nil && !registrationsLoading.
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("step 3: cmd = nil after Enter, want batch containing LoadResourceRegistrationsCmd")
 	}
@@ -4938,7 +4958,7 @@ func TestAppModel_4Key_TransitionsToActivityDashboardPane(t *testing.T) {
 	t.Parallel()
 	m := newActivityDashboardPaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityDashboardPane {
@@ -4959,7 +4979,7 @@ func TestAppModel_4Key_Repeat_IsIdempotent(t *testing.T) {
 		{Summary: "created resource"},
 	})
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityDashboardPane {
@@ -4978,7 +4998,7 @@ func TestAppModel_4Key_OrgScope_NoFetchDispatched(t *testing.T) {
 	m := newActivityDashboardPaneModel()
 	m.tuiCtx.ActiveCtx = nil // org scope — no project
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityDashboardPane {
@@ -4999,7 +5019,7 @@ func TestAppModel_Esc_ActivityDashboardPane_RestoresOriginPane(t *testing.T) {
 	m.activePane = ActivityDashboardPane
 	m.updatePaneFocus()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -5060,7 +5080,7 @@ func TestAppModel_4Key_CRDAbsentSession_NoRefetch(t *testing.T) {
 	m := newActivityDashboardPaneModel()
 	m.activityCRDAbsentThisSession = true
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 
 	if cmd != nil {
 		t.Error("AC#7 one-shot: cmd != nil when activityCRDAbsentThisSession=true, want nil (no re-fetch)")
@@ -5098,7 +5118,7 @@ func TestAppModel_RKey_ActivityDashboard_CRDAbsent_IsNoOp(t *testing.T) {
 	m.activityDashboard.SetLoadErr(data.ErrActivityCRDAbsent, false, true)
 	m.updatePaneFocus()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if cmd != nil {
 		t.Error("AC#15: r in ActivityDashboardPane with CRD absent dispatched cmd, want nil")
@@ -5114,7 +5134,7 @@ func TestAppModel_RKey_ActivityDashboard_OrgScope_IsNoOp(t *testing.T) {
 	m.activePane = ActivityDashboardPane
 	m.updatePaneFocus()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if cmd != nil {
 		t.Error("AC#15: r in ActivityDashboardPane with orgScope dispatched cmd, want nil")
@@ -5130,7 +5150,7 @@ func TestAppModel_RKey_ActivityDashboard_ProjectScoped_Dispatches(t *testing.T) 
 	m.activePane = ActivityDashboardPane
 	m.updatePaneFocus()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if cmd == nil {
 		t.Error("AC#15 input-changed: r in project-scoped ActivityDashboard dispatched nil, want LoadRecentProjectActivityCmd")
@@ -5147,13 +5167,13 @@ func TestAppModel_RKey_ActivityDashboard_RepeatDispatches(t *testing.T) {
 	m.updatePaneFocus()
 
 	// First press.
-	result1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd1 == nil {
 		t.Fatal("AC#15 repeat: first r dispatched nil, want LoadRecentProjectActivityCmd")
 	}
 
 	// Second immediate press — ForceRefreshProject already invalidated; must dispatch again.
-	_, cmd2 := result1.(AppModel).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd2 := result1.(AppModel).Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd2 == nil {
 		t.Error("AC#15 repeat: second r dispatched nil, want LoadRecentProjectActivityCmd (ForceRefreshProject bypasses TTL)")
 	}
@@ -5171,7 +5191,7 @@ func TestAppModel_4Key_HelpOverlayActive_NoPaneTransition(t *testing.T) {
 	m.statusBar.Mode = components.ModeOverlay
 	before := m.activePane
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != before {
@@ -5193,7 +5213,7 @@ func TestAppModel_4Key_FilterBarFocused_NoPaneTransition(t *testing.T) {
 	m.statusBar.Mode = components.ModeFilter
 	before := m.activePane
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != before {
@@ -5260,7 +5280,7 @@ func TestAppModel_XKey_TablePane_OpensDeleteDialog(t *testing.T) {
 	t.Parallel()
 	m := newDeleteTablePaneModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	appM := result.(AppModel)
 	_ = appM // overlay set by msg handler, not directly by x key
 
@@ -5285,7 +5305,7 @@ func TestAppModel_XKey_TablePane_NoSelection_IsNoOp(t *testing.T) {
 	m := newDeleteTablePaneModel()
 	m.table.SetRows([]data.ResourceRow{}) // empty table → no selection
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 
 	if cmd != nil {
 		t.Error("AC#1 anti-behavior: x with no row selected dispatched cmd, want nil")
@@ -5318,7 +5338,7 @@ func TestAppModel_YKey_Prompt_DispatchesDeleteCmd(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	appM := result.(AppModel)
 
 	if appM.deleteConfirmation.State() != components.DeleteStateInFlight {
@@ -5335,11 +5355,11 @@ func TestAppModel_YKey_InFlight_IsNoOp(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 	// Transition to InFlight.
-	result1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	result1, _ := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	m = result1.(AppModel)
 
 	// Second Y — should be captive no-op.
-	_, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	_, cmd2 := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	if cmd2 != nil {
 		t.Error("AC#3 repeat: Y in InFlight dispatched cmd, want nil (captive state)")
 	}
@@ -5353,7 +5373,7 @@ func TestAppModel_NKey_Prompt_DismissesDialog(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -5369,10 +5389,10 @@ func TestAppModel_NKey_Prompt_DismissesDialog(t *testing.T) {
 func TestAppModel_NKey_InFlight_IsCaptive(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
-	result1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	result1, _ := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	m = result1.(AppModel) // now InFlight
 
-	result2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
+	result2, _ := m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	appM := result2.(AppModel)
 
 	if appM.overlay != DeleteConfirmationOverlay {
@@ -5386,7 +5406,7 @@ func TestAppModel_EscKey_Prompt_DismissesDialog(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -5401,11 +5421,11 @@ func TestAppModel_EscKey_InFlight_DismissesDialogButDeleteContinues(t *testing.T
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 	// Transition to InFlight.
-	result1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	result1, _ := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	m = result1.(AppModel)
 
 	// Esc dismisses.
-	result2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result2.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -5422,10 +5442,10 @@ func TestAppModel_LateArrival_Success_AfterDismiss_InvalidatesCache(t *testing.T
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 	// Open and confirm → InFlight.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	m = r1.(AppModel)
 	// Dismiss via Esc.
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = r2.(AppModel)
 	if m.overlay != NoOverlay {
 		t.Fatal("precondition: dialog not dismissed")
@@ -5560,7 +5580,7 @@ func TestAppModel_DeleteFailedMsg_LateArrival_Discarded(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
 	// Dismiss via N.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	m = r1.(AppModel)
 	if m.overlay != NoOverlay {
 		t.Fatal("precondition: dialog not dismissed")
@@ -5589,7 +5609,7 @@ func TestAppModel_RKey_ConflictState_RefreshesTableAndDismisses(t *testing.T) {
 	r1, _ := m.Update(data.DeleteResourceFailedMsg{Target: target, Err: errStubConflict, Conflict: true})
 	m = r1.(AppModel)
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -5610,7 +5630,7 @@ func TestAppModel_RKey_ConflictVsTransient_AreDistinct(t *testing.T) {
 	tgt := mC.deleteConfirmation.Target()
 	r1, _ := mC.Update(data.DeleteResourceFailedMsg{Target: tgt, Err: errStubConflict, Conflict: true})
 	mC = r1.(AppModel)
-	rC, _ := mC.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	rC, _ := mC.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appC := rC.(AppModel)
 	if appC.overlay != NoOverlay {
 		t.Errorf("AC#7: r in Conflict did not dismiss, overlay = %v", appC.overlay)
@@ -5622,7 +5642,7 @@ func TestAppModel_RKey_ConflictVsTransient_AreDistinct(t *testing.T) {
 	tgt2 := mT.deleteConfirmation.Target()
 	r2, _ := mT.Update(data.DeleteResourceFailedMsg{Target: tgt2, Err: transientErr})
 	mT = r2.(AppModel)
-	rT, _ := mT.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	rT, _ := mT.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appT := rT.(AppModel)
 	if appT.overlay != DeleteConfirmationOverlay {
 		t.Errorf("AC#8: r in TransientError dismissed dialog, want overlay=DeleteConfirmationOverlay (retrying)")
@@ -5643,7 +5663,7 @@ func TestAppModel_XKey_WhileDialogOpen_IsNoOp(t *testing.T) {
 		t.Fatal("precondition: dialog must be open")
 	}
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	appM := result.(AppModel)
 
 	if appM.overlay != DeleteConfirmationOverlay {
@@ -5918,7 +5938,7 @@ func TestDeleteConfirmation_Prompt_DetailInvocation(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneWithDeleteTarget()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 
 	if cmd == nil {
 		t.Fatal("AC#2: cmd = nil after x in DetailPane with resource loaded, want OpenDeleteConfirmationCmd")
@@ -5956,7 +5976,7 @@ func TestDeleteConfirmation_Prompt_DetailInvocation_NoResourceLoaded(t *testing.
 	}
 	m.updatePaneFocus()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if cmd != nil {
 		t.Error("AC#2 anti-behavior: x in DetailPane with no resource dispatched cmd, want nil")
 	}
@@ -5974,7 +5994,7 @@ func TestAppModel_UnreservedKey_Prompt_DismissesDialog(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil) // Prompt state
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -5991,7 +6011,7 @@ func TestDeleteConfirmation_AnyKeyDismisses(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil) // Prompt state
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -6007,10 +6027,10 @@ func TestDeleteConfirmation_AnyKeyDismisses(t *testing.T) {
 func TestDeleteConfirmation_AnyKeyInFlight_IsCaptive(t *testing.T) {
 	t.Parallel()
 	m := newDeleteDialogModel(nil)
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	m = r1.(AppModel) // now InFlight
 
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	appM := r2.(AppModel)
 
 	if appM.overlay != DeleteConfirmationOverlay {
@@ -6059,7 +6079,7 @@ func TestAppModel_XKey_NoopSurfaces(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			m := makeModel(tc.pane)
-			result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+			result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 			appM := result.(AppModel)
 
 			if appM.overlay == DeleteConfirmationOverlay {
@@ -6082,7 +6102,7 @@ func TestAppModel_XKey_HelpOverlayPrecedence(t *testing.T) {
 	m.overlay = HelpOverlayID
 	m.statusBar.Mode = components.ModeOverlay
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	appM := result.(AppModel)
 
 	if appM.overlay == DeleteConfirmationOverlay {
@@ -6106,7 +6126,7 @@ func TestAppModel_XKey_FilterBarFocused(t *testing.T) {
 	_ = m.filterBar.Focus()
 	m.statusBar.Mode = components.ModeFilter
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	appM := result.(AppModel)
 
 	if appM.overlay == DeleteConfirmationOverlay {
@@ -6130,7 +6150,7 @@ func TestAppModel_XKey_OverlayFilterPrecedence(t *testing.T) {
 		m.overlay = HelpOverlayID
 		m.statusBar.Mode = components.ModeOverlay
 
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 		appM := result.(AppModel)
 		if appM.overlay == DeleteConfirmationOverlay {
 			t.Error("S10: x with HelpOverlay opened delete dialog")
@@ -6146,7 +6166,7 @@ func TestAppModel_XKey_OverlayFilterPrecedence(t *testing.T) {
 		_ = m.filterBar.Focus()
 		m.statusBar.Mode = components.ModeFilter
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 		appM := result.(AppModel)
 		if appM.overlay == DeleteConfirmationOverlay {
 			t.Error("S10: x with FilterBar focused opened delete dialog")
@@ -6168,7 +6188,7 @@ func TestHelpOverlay_XEntry_PaneGated(t *testing.T) {
 		t.Parallel()
 		m := newDeleteTablePaneModel()
 		// Open the help overlay.
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#17: expected HelpOverlayID after ?, got %v", appM.overlay)
@@ -6185,7 +6205,7 @@ func TestHelpOverlay_XEntry_PaneGated(t *testing.T) {
 	t.Run("DetailPane_shows_x_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newDetailPaneWithDeleteTarget()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#17: expected HelpOverlayID after ?, got %v", appM.overlay)
@@ -6201,12 +6221,12 @@ func TestHelpOverlay_XEntry_PaneGated(t *testing.T) {
 		// Transition to ActivityDashboardPane via "4", then open help with "?".
 		// ShowDeleteHint must be false on non-delete-capable panes per AC#17 / D2.
 		m := newActivityDashboardPaneModel()
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 		m = r1.(AppModel)
 		if m.activePane != ActivityDashboardPane {
 			t.Fatalf("AC#17 setup: activePane = %v, want ActivityDashboardPane", m.activePane)
 		}
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#17: expected HelpOverlayID after ?, got %v", appM.overlay)
@@ -6227,7 +6247,7 @@ func TestAppModel_DeleteLifecycle(t *testing.T) {
 	m := newDeleteTablePaneModel()
 
 	// Step 1: x opens dialog.
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	m = r1.(AppModel)
 	if cmd1 == nil {
 		t.Fatal("AC#15 step 1: x dispatched nil, want OpenDeleteConfirmationCmd")
@@ -6239,7 +6259,7 @@ func TestAppModel_DeleteLifecycle(t *testing.T) {
 	}
 
 	// Step 2: Y transitions to InFlight and dispatches DeleteResourceCmd.
-	r3, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	r3, cmd2 := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 	m = r3.(AppModel)
 	if m.deleteConfirmation.State() != components.DeleteStateInFlight {
 		t.Errorf("AC#15 step 2: state = %v, want DeleteStateInFlight", m.deleteConfirmation.State())
@@ -6329,7 +6349,7 @@ func TestAppModel_CKey_EntersConditions_NonEmpty(t *testing.T) {
 		t.Fatal("setup: conditionsMode already true")
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	appM := result.(AppModel)
 
 	if !appM.conditionsMode {
@@ -6349,13 +6369,13 @@ func TestAppModel_CKey_TogglesBackToDescribe(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModelWithConditionsRaw()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	m = r1.(AppModel)
 	if !m.conditionsMode {
 		t.Fatal("AC#3 setup: first C did not enter conditions mode")
 	}
 
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	appM := r2.(AppModel)
 
 	if appM.conditionsMode {
@@ -6373,13 +6393,13 @@ func TestAppModel_ConditionsMode_ResetsOnEsc(t *testing.T) {
 	m.detailReturnPane = TablePane
 	m.tableTypeName = "pods"
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	m = r1.(AppModel)
 	if !m.conditionsMode {
 		t.Fatal("AC#4 setup: C did not enter conditions mode")
 	}
 
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r2.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -6428,7 +6448,7 @@ func TestAppModel_CKey_PaneGating(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := tt.m()
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+			result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 			appM := result.(AppModel)
 			if appM.conditionsMode {
 				t.Errorf("AC#6 %s: conditionsMode = true after C press, want no-op", tt.name)
@@ -6445,7 +6465,7 @@ func TestAppModel_CKey_NoopPreFetch(t *testing.T) {
 		t.Fatal("setup: describeRaw should be nil in newDetailPaneModelWithHC")
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	appM := result.(AppModel)
 
 	if appM.conditionsMode {
@@ -6460,7 +6480,7 @@ func TestAppModel_CKey_FilterBarFocused(t *testing.T) {
 	_ = m.filterBar.Focus()
 	m.statusBar.Mode = components.ModeFilter
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	appM := result.(AppModel)
 
 	if appM.conditionsMode {
@@ -6481,7 +6501,7 @@ func TestAppModel_CKey_OverlayPrecedence(t *testing.T) {
 		m.overlay = CtxSwitcherOverlay
 		m.statusBar.Mode = components.ModeOverlay
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		appM := result.(AppModel)
 		if appM.conditionsMode {
 			t.Error("AC#9 CtxSwitcherOverlay: conditionsMode = true; overlay must consume C")
@@ -6494,7 +6514,7 @@ func TestAppModel_CKey_OverlayPrecedence(t *testing.T) {
 		m.overlay = HelpOverlayID
 		m.statusBar.Mode = components.ModeOverlay
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		appM := result.(AppModel)
 		// The key assertion: C must not enter conditions mode while overlay is active.
 		if appM.conditionsMode {
@@ -6512,7 +6532,7 @@ func TestAppModel_CKey_OverlayPrecedence(t *testing.T) {
 			t.Fatal("setup: dialog not open")
 		}
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		appM := result.(AppModel)
 		if appM.overlay == DeleteConfirmationOverlay {
 			t.Error("AC#9 DeleteConfirmationOverlay: C did not dismiss delete dialog")
@@ -6528,7 +6548,7 @@ func TestAppModel_LowercaseC_RemainsCtxSwitcher_OnDetailPane(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModelWithConditionsRaw()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	appM := result.(AppModel)
 
 	if appM.overlay != CtxSwitcherOverlay {
@@ -6547,12 +6567,12 @@ func TestAppModel_DetailPane_TriStateToggle(t *testing.T) {
 	t.Run("Yaml_to_Conditions_direct", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 		m = r1.(AppModel)
 		if !m.yamlMode {
 			t.Fatal("setup: y did not enter yaml mode")
 		}
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		appM := r2.(AppModel)
 		if appM.yamlMode {
 			t.Error("AC#20: yamlMode still true after C from yaml, want false (tri-state)")
@@ -6565,12 +6585,12 @@ func TestAppModel_DetailPane_TriStateToggle(t *testing.T) {
 	t.Run("Conditions_to_Yaml_direct", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		m = r1.(AppModel)
 		if !m.conditionsMode {
 			t.Fatal("setup: C did not enter conditions mode")
 		}
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 		appM := r2.(AppModel)
 		if appM.conditionsMode {
 			t.Error("AC#20: conditionsMode still true after y from conditions, want false (tri-state)")
@@ -6584,7 +6604,7 @@ func TestAppModel_DetailPane_TriStateToggle(t *testing.T) {
 		t.Parallel()
 		m := base
 		for i, key := range []string{"C", "y", "C", "y", "C"} {
-			r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			r, _ := m.Update(keyMsg(key))
 			m = r.(AppModel)
 			if m.yamlMode && m.conditionsMode {
 				t.Errorf("AC#20 step %d (key=%q): both yamlMode and conditionsMode true — invariant broken", i, key)
@@ -6601,14 +6621,14 @@ func TestAppModel_DetailPane_ConditionsRoundTrip(t *testing.T) {
 	m.tableTypeName = "pods"
 
 	// Step 1: Enter conditions mode.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	m = r1.(AppModel)
 	if !m.conditionsMode {
 		t.Fatal("AC#21 step 1: C did not enter conditions mode")
 	}
 
 	// Step 2: Esc → TablePane; conditionsMode must reset (AC#4 reset site).
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = r2.(AppModel)
 	if m.conditionsMode {
 		t.Error("AC#21 step 2: conditionsMode = true after Esc, want false")
@@ -6629,7 +6649,7 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 	t.Run("DetailPane_shows_C_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newDetailPaneModelWithConditionsRaw()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#22 setup: expected HelpOverlayID, got %v", appM.overlay)
@@ -6646,7 +6666,7 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 	t.Run("TablePane_omits_C_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newTablePaneModel()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#22 TablePane setup: expected HelpOverlayID, got %v", appM.overlay)
@@ -6660,7 +6680,7 @@ func TestHelpOverlay_ConditionsHint_PaneGated(t *testing.T) {
 	t.Run("NavPane_omits_C_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newNavPaneModelWithBC(nil)
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#22 NavPane setup: expected HelpOverlayID, got %v", appM.overlay)
@@ -6681,7 +6701,7 @@ func TestAppModel_DeleteDialog_PreservesConditionsMode(t *testing.T) {
 	m.detail.SetMode("conditions")
 
 	// Step 1: x opens delete dialog; conditionsMode must remain true.
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	m = r1.(AppModel)
 	if cmd1 != nil {
 		r2, _ := m.Update(cmd1())
@@ -6695,7 +6715,7 @@ func TestAppModel_DeleteDialog_PreservesConditionsMode(t *testing.T) {
 	}
 
 	// Step 2: N dismisses dialog; conditionsMode must still be true.
-	r3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
+	r3, _ := m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	appM := r3.(AppModel)
 	if appM.overlay != NoOverlay {
 		t.Errorf("S14 step 2: overlay = %v after N, want NoOverlay", appM.overlay)
@@ -6736,7 +6756,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")},
+			fire: tea.KeyPressMsg{Code: 'H', Text: "H"},
 		},
 		{
 			// Site line 1071: H from DiffPane → DetailPane.
@@ -6746,7 +6766,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")},
+			fire: tea.KeyPressMsg{Code: 'H', Text: "H"},
 		},
 		{
 			// Site line 1111: Esc from HistoryPane → DetailPane.
@@ -6756,7 +6776,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEsc},
+			fire: tea.KeyPressMsg{Code: tea.KeyEscape},
 		},
 		{
 			// Site line 1123: Esc from DetailPane → TablePane.
@@ -6768,7 +6788,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.tableTypeName = "pods"
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEsc},
+			fire: tea.KeyPressMsg{Code: tea.KeyEscape},
 		},
 		{
 			// Site line 1222: Enter from TablePane → DetailPane.
@@ -6778,7 +6798,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEnter},
+			fire: tea.KeyPressMsg{Code: tea.KeyEnter},
 		},
 		{
 			// Site line 1254: Enter from QuotaDashboardPane → DetailPane.
@@ -6788,7 +6808,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEnter},
+			fire: tea.KeyPressMsg{Code: tea.KeyEnter},
 		},
 		{
 			// Site line 1276: a from DetailPane → ActivityPane.
@@ -6798,7 +6818,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")},
+			fire: tea.KeyPressMsg{Code: 'a', Text: "a"},
 		},
 		{
 			// Site line 1352: d from TablePane → DetailPane.
@@ -6808,7 +6828,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")},
+			fire: tea.KeyPressMsg{Code: 'd', Text: "d"},
 		},
 	}
 
@@ -6851,7 +6871,7 @@ func TestAppModel_EKey_EntersEvents_NonEmpty(t *testing.T) {
 		t.Fatal("setup: eventsMode already true")
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if !appM.eventsMode {
@@ -6871,13 +6891,13 @@ func TestAppModel_EKey_TogglesBackToDescribe(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModelWithEventsRaw()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r1.(AppModel)
 	if !m.eventsMode {
 		t.Fatal("AC#3 setup: first E did not enter events mode")
 	}
 
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := r2.(AppModel)
 
 	if appM.eventsMode {
@@ -6907,7 +6927,7 @@ func TestAppModel_EKey_PaneGating(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := tt.m()
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+			result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 			appM := result.(AppModel)
 			if appM.eventsMode {
 				t.Errorf("AC#7 %s: eventsMode = true after E press, want no-op", tt.name)
@@ -6924,7 +6944,7 @@ func TestAppModel_EKey_NoopPreFetch(t *testing.T) {
 		t.Fatal("setup: describeRaw should be nil in newDetailPaneModelWithHC")
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if appM.eventsMode {
@@ -6939,7 +6959,7 @@ func TestAppModel_EKey_FilterBarFocused(t *testing.T) {
 	_ = m.filterBar.Focus()
 	m.statusBar.Mode = components.ModeFilter
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if appM.eventsMode {
@@ -6960,7 +6980,7 @@ func TestAppModel_EKey_OverlayPrecedence(t *testing.T) {
 		m.overlay = CtxSwitcherOverlay
 		m.statusBar.Mode = components.ModeOverlay
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := result.(AppModel)
 		if appM.eventsMode {
 			t.Error("AC#10 CtxSwitcherOverlay: eventsMode = true; overlay must consume E")
@@ -6973,7 +6993,7 @@ func TestAppModel_EKey_OverlayPrecedence(t *testing.T) {
 		m.overlay = HelpOverlayID
 		m.statusBar.Mode = components.ModeOverlay
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := result.(AppModel)
 		if appM.eventsMode {
 			t.Error("AC#10 HelpOverlayID: eventsMode = true; handleOverlayKey must intercept E before handleNormalKey")
@@ -6987,7 +7007,7 @@ func TestAppModel_EKey_OverlayPrecedence(t *testing.T) {
 			t.Fatal("setup: dialog not open")
 		}
 
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := result.(AppModel)
 		// E dismisses the delete dialog (unrecognised confirm key → dismiss).
 		if appM.eventsMode {
@@ -7002,7 +7022,7 @@ func TestAppModel_LowercaseE_NotHandled_OnDetailPane(t *testing.T) {
 	m := newDetailPaneModelWithEventsRaw()
 
 	// First press.
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	appM := r1.(AppModel)
 
 	if appM.eventsMode {
@@ -7011,7 +7031,7 @@ func TestAppModel_LowercaseE_NotHandled_OnDetailPane(t *testing.T) {
 	_ = cmd1 // may or may not dispatch; what matters is eventsMode.
 
 	// Repeat press.
-	r2, cmd2 := appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	r2, cmd2 := appM.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	appM2 := r2.(AppModel)
 	if appM2.eventsMode {
 		t.Error("AC#11 repeat press: lowercase e set eventsMode = true, want false")
@@ -7028,7 +7048,7 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 	t.Run("describe_to_events", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := r.(AppModel)
 		if !appM.eventsMode {
 			t.Error("describe→E: eventsMode=false, want true")
@@ -7044,9 +7064,9 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 	t.Run("events_to_describe", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = r1.(AppModel)
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := r2.(AppModel)
 		if appM.eventsMode {
 			t.Error("events→E: eventsMode=true, want false (toggled back to describe)")
@@ -7056,12 +7076,12 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 	t.Run("yaml_to_events", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 		m = r1.(AppModel)
 		if !m.yamlMode {
 			t.Fatal("setup: y did not enter yaml mode")
 		}
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := r2.(AppModel)
 		if !appM.eventsMode {
 			t.Error("yaml→E: eventsMode=false, want true")
@@ -7074,12 +7094,12 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 	t.Run("events_to_yaml", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = r1.(AppModel)
 		if !m.eventsMode {
 			t.Fatal("setup: E did not enter events mode")
 		}
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 		appM := r2.(AppModel)
 		if appM.eventsMode {
 			t.Error("events→y: eventsMode=true, want false (exclusivity)")
@@ -7092,12 +7112,12 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 	t.Run("conditions_to_events", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		m = r1.(AppModel)
 		if !m.conditionsMode {
 			t.Fatal("setup: C did not enter conditions mode")
 		}
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		appM := r2.(AppModel)
 		if !appM.eventsMode {
 			t.Error("conditions→E: eventsMode=false, want true")
@@ -7110,12 +7130,12 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 	t.Run("events_to_conditions", func(t *testing.T) {
 		t.Parallel()
 		m := base
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = r1.(AppModel)
 		if !m.eventsMode {
 			t.Fatal("setup: E did not enter events mode")
 		}
-		r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		r2, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		appM := r2.(AppModel)
 		if appM.eventsMode {
 			t.Error("events→C: eventsMode=true, want false (exclusivity)")
@@ -7129,7 +7149,7 @@ func TestAppModel_DetailPane_QuadStateToggle(t *testing.T) {
 		t.Parallel()
 		m := base
 		for i, key := range []string{"E", "y", "C", "E", "C", "y"} {
-			r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			r, _ := m.Update(keyMsg(key))
 			m = r.(AppModel)
 			active := 0
 			if m.yamlMode {
@@ -7238,7 +7258,7 @@ func TestAppModel_EventsMode_ResetsOnEsc(t *testing.T) {
 	m.detailReturnPane = TablePane
 	m.tableTypeName = "pods"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -7256,7 +7276,7 @@ func TestAppModel_RowChange_ResetsEventsMode_PairsNewFetch(t *testing.T) {
 	m := newTablePaneModel()
 	m.eventsMode = true
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	appM := result.(AppModel)
 
 	if appM.eventsMode {
@@ -7307,7 +7327,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")},
+			fire: tea.KeyPressMsg{Code: 'H', Text: "H"},
 		},
 		{
 			name: "site_H_from_DiffPane",
@@ -7317,7 +7337,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")},
+			fire: tea.KeyPressMsg{Code: 'H', Text: "H"},
 		},
 		{
 			name: "site_Esc_from_HistoryPane",
@@ -7327,7 +7347,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEsc},
+			fire: tea.KeyPressMsg{Code: tea.KeyEscape},
 		},
 		{
 			name: "site_Esc_from_DetailPane",
@@ -7339,7 +7359,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.tableTypeName = "pods"
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEsc},
+			fire: tea.KeyPressMsg{Code: tea.KeyEscape},
 		},
 		{
 			name: "site_Enter_from_TablePane",
@@ -7349,7 +7369,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEnter},
+			fire: tea.KeyPressMsg{Code: tea.KeyEnter},
 		},
 		{
 			name: "site_Enter_from_QuotaDashboardPane",
@@ -7359,7 +7379,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyEnter},
+			fire: tea.KeyPressMsg{Code: tea.KeyEnter},
 		},
 		{
 			name: "site_a_from_DetailPane",
@@ -7369,7 +7389,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")},
+			fire: tea.KeyPressMsg{Code: 'a', Text: "a"},
 		},
 		{
 			name: "site_d_from_TablePane",
@@ -7379,7 +7399,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")},
+			fire: tea.KeyPressMsg{Code: 'd', Text: "d"},
 		},
 	}
 
@@ -7419,7 +7439,7 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 	t.Run("DetailPane_shows_E_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newDetailPaneModelWithEventsRaw()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#26 setup: expected HelpOverlayID, got %v", appM.overlay)
@@ -7439,7 +7459,7 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 	t.Run("TablePane_omits_E_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newTablePaneModel()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#26 TablePane setup: expected HelpOverlayID, got %v", appM.overlay)
@@ -7456,7 +7476,7 @@ func TestHelpOverlay_EventsHint_PaneGated(t *testing.T) {
 	t.Run("NavPane_omits_E_entry", func(t *testing.T) {
 		t.Parallel()
 		m := newNavPaneModelWithBC(nil)
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		if appM.overlay != HelpOverlayID {
 			t.Fatalf("AC#26 NavPane setup: expected HelpOverlayID, got %v", appM.overlay)
@@ -7481,7 +7501,7 @@ func TestAppModel_DeleteDialog_PreservesEventsMode(t *testing.T) {
 	m.detail.SetMode("events")
 
 	// Step 1: x opens delete dialog; eventsMode must remain true.
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	m = r1.(AppModel)
 	if cmd1 != nil {
 		r2, _ := m.Update(cmd1())
@@ -7495,7 +7515,7 @@ func TestAppModel_DeleteDialog_PreservesEventsMode(t *testing.T) {
 	}
 
 	// Step 2: N dismisses dialog; eventsMode must still be true.
-	r3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("N")})
+	r3, _ := m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	appM := r3.(AppModel)
 	if appM.overlay != NoOverlay {
 		t.Errorf("S17 step 2: overlay = %v after N, want NoOverlay", appM.overlay)
@@ -7514,7 +7534,7 @@ func TestAppModel_DetailPane_EventsRoundTrip(t *testing.T) {
 	m := newTablePaneModel()
 
 	// Step 1: press "d" → DetailPane + LoadEventsCmd dispatched.
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	m = r1.(AppModel)
 	if m.activePane != DetailPane {
 		t.Fatalf("S15 step 1: activePane = %v after d, want DetailPane", m.activePane)
@@ -7539,7 +7559,7 @@ func TestAppModel_DetailPane_EventsRoundTrip(t *testing.T) {
 	}
 
 	// Step 4: E → eventsMode=true.
-	r4, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r4, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r4.(AppModel)
 	if !m.eventsMode {
 		t.Fatal("S15 step 4: eventsMode = false after E, want true")
@@ -7548,7 +7568,7 @@ func TestAppModel_DetailPane_EventsRoundTrip(t *testing.T) {
 	// Step 5: Esc → TablePane; eventsMode=false, events=nil.
 	m.detailReturnPane = TablePane
 	m.tableTypeName = "pods"
-	r5, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r5, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r5.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -7573,14 +7593,14 @@ func TestAppModel_EventsError_RetryOnToggle(t *testing.T) {
 	m.detail.SetMode("events")
 
 	// Press E to toggle off.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r1.(AppModel)
 	if m.eventsMode {
 		t.Fatal("S6 step 1: E did not toggle off eventsMode")
 	}
 
 	// Press E again to toggle on — should re-dispatch because eventsErr != nil.
-	r2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r2, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := r2.(AppModel)
 
 	if !appM.eventsMode {
@@ -7611,7 +7631,7 @@ func TestAppModel_DKey_DispatchesLoadEventsCmd(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	if cmd == nil {
 		t.Fatal("d from TablePane: cmd = nil, want tea.Batch")
 	}
@@ -7654,7 +7674,7 @@ func TestAppModel_Delete_ContextSwitchDismisses_BothStates(t *testing.T) {
 	t.Run("InFlight_state", func(t *testing.T) {
 		t.Parallel()
 		m := newDeleteDialogModel(nil)
-		r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+		r1, _ := m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
 		m = r1.(AppModel) // InFlight
 		r2, _ := m.Update(components.ContextSwitchedMsg{})
 		appM := r2.(AppModel)
@@ -7711,7 +7731,7 @@ func TestAppModel_RKey_ErrorState_Warning_RedispatchesTableList(t *testing.T) {
 	t.Parallel()
 	m := newErrorStateTableModel(errors.New("timeout"))
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	// AC#11: error-state branch fired — state is now Loading, not Error.
@@ -7736,7 +7756,7 @@ func TestAppModel_RKey_ErrorState_Error_Severity_IsNoop(t *testing.T) {
 	t.Parallel()
 	m := newErrorStateTableModel(errStubForbidden)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	// loadState must still be Error — no retry dispatched.
@@ -7755,7 +7775,7 @@ func TestAppModel_EscKey_ErrorState_TablePane_GoesToNav(t *testing.T) {
 	t.Parallel()
 	m := newErrorStateTableModel(errors.New("timeout"))
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -7866,7 +7886,7 @@ func TestAppModel_TypeSwitch_ClearsErrorState(t *testing.T) {
 	m.activePane = NavPane
 	m.updatePaneFocus()
 	// Press Enter to select the pods type from sidebar.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := result.(AppModel)
 
 	if appM.loadState == data.LoadStateError {
@@ -7884,7 +7904,7 @@ func TestAppModel_RKey_ErrorState_RepeatPressGuarded(t *testing.T) {
 	m := newErrorStateTableModel(errors.New("timeout"))
 
 	// First r — transitions from Error → Loading.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	m2 := r1.(AppModel)
 	if m2.loadState != data.LoadStateLoading {
 		t.Fatalf("loadState = %v after first r, want LoadStateLoading", m2.loadState)
@@ -7893,7 +7913,7 @@ func TestAppModel_RKey_ErrorState_RepeatPressGuarded(t *testing.T) {
 	// Second r while Loading — the normal-state refreshing guard applies.
 	// loadState is Loading (not Error), so error-state branch skips;
 	// normal-state branch guards on m.refreshing.
-	r2, cmd2 := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	r2, cmd2 := m2.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := r2.(AppModel)
 	_ = appM
 
@@ -7997,7 +8017,7 @@ func TestAppModel_EscKey_DetailPane_ErrorState_GoesToTable(t *testing.T) {
 	m.loadErr = errors.New("timeout")
 	m.updatePaneFocus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -8109,7 +8129,7 @@ func TestAppModel_FB005_AntiRegression_ForceRefreshUnaffected(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel() // loadState = Idle
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 	_ = appM
 
@@ -8132,7 +8152,7 @@ func TestAppModel_RetryInFlight_ThenSuccess_ThenReFail(t *testing.T) {
 	}
 
 	// Phase 2: press r — loadState transitions to Loading (retry in-flight).
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	m2 := r1.(AppModel)
 	if m2.loadState != data.LoadStateLoading {
 		t.Fatalf("phase 2: loadState = %v after r, want LoadStateLoading", m2.loadState)
@@ -8313,7 +8333,7 @@ func TestAppModel_RKey_ErrorState_Error_Severity_HintVisible_InView(t *testing.T
 	t.Parallel()
 	m := newErrorStateTableModel(errStubForbidden) // Error severity
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	// [Observable]: set a display width so View() renders at full content.
@@ -8344,7 +8364,7 @@ func TestAppModel_RKey_ErrorState_RepeatPress_ExactlyOneLoadCmd(t *testing.T) {
 
 	var totalLoads int
 	for i := 0; i < 5; i++ {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 		m = result.(AppModel)
 		for _, msg := range collectMsgs(cmd) {
 			if _, ok := msg.(data.ResourcesLoadedMsg); ok {
@@ -8495,7 +8515,7 @@ func TestFB024_EGuard_DescribeNil_EventsLoaded_EntersEventsMode(t *testing.T) {
 		t.Fatal("setup: events must be non-empty")
 	}
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if !appM.eventsMode {
@@ -8522,14 +8542,14 @@ func TestFB024_ToggleOut_DescribeNil_EventsLoaded_ShowsPlaceholder(t *testing.T)
 	m := newDetailPaneModelWithEventsOnly()
 
 	// Enter events mode.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r1.(AppModel)
 	if !m.eventsMode {
 		t.Fatal("setup: first E did not enter events mode")
 	}
 
 	// Toggle back out of events mode.
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := r2.(AppModel)
 
 	if appM.eventsMode {
@@ -8552,7 +8572,7 @@ func TestFB024_EGuard_BothNil_NotLoading_IsNoop(t *testing.T) {
 		t.Fatal("setup: fixture must have describeRaw=nil, events=nil, eventsLoading=false")
 	}
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if appM.eventsMode {
@@ -8570,7 +8590,7 @@ func TestFB024_YamlAndConditions_Noop_DescribeNil(t *testing.T) {
 	m := newDetailPaneModelWithEventsOnly()
 
 	t.Run("y_key_noop_when_describeRaw_nil", func(t *testing.T) {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 		appM := result.(AppModel)
 		if appM.yamlMode {
 			t.Error("AC#3a: yamlMode = true with describeRaw=nil, want no-op")
@@ -8581,7 +8601,7 @@ func TestFB024_YamlAndConditions_Noop_DescribeNil(t *testing.T) {
 	})
 
 	t.Run("C_key_noop_when_describeRaw_nil", func(t *testing.T) {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 		appM := result.(AppModel)
 		if appM.conditionsMode {
 			t.Error("AC#3a: conditionsMode = true with describeRaw=nil, want no-op")
@@ -8625,7 +8645,7 @@ func TestFB024_RapidEPress_InFlight_NoExtraDispatch(t *testing.T) {
 	// eventsLoading=true is already set; outer guard passes, inner dispatch guard blocks.
 
 	for i := 1; i <= 3; i++ {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = result.(AppModel)
 		if cmd != nil {
 			// Execute to check if it's a LoadEventsCmd.
@@ -8647,7 +8667,7 @@ func TestFB024_RepeatToggle_CacheHit_NoRedispatch(t *testing.T) {
 
 	// Five toggles — none should dispatch.
 	for i := 1; i <= 5; i++ {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = result.(AppModel)
 		if cmd != nil {
 			msgs := collectMsgs(cmd)
@@ -8676,14 +8696,14 @@ func TestFB024_EAfterError_Redispatch_OnceOnly(t *testing.T) {
 	m.eventsErr = errors.New("forbidden")
 
 	// First E press — toggle off (eventsMode=true → false).
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r1.(AppModel)
 	if cmd1 != nil {
 		t.Error("AC#9 step 1: toggling OFF events mode should produce nil cmd, got non-nil")
 	}
 
 	// Second E press — toggle on: guard fires (eventsErr!=nil, !eventsLoading) → dispatch.
-	r2, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r2, cmd2 := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r2.(AppModel)
 	if cmd2 == nil {
 		t.Fatal("AC#9 step 2: expected LoadEventsCmd dispatch on retry, got nil")
@@ -8694,7 +8714,7 @@ func TestFB024_EAfterError_Redispatch_OnceOnly(t *testing.T) {
 
 	// Rapid mash: 3 more E presses while eventsLoading=true — each must produce nil cmd.
 	for i := 3; i <= 5; i++ {
-		result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = result.(AppModel)
 		if cmd != nil {
 			msgs := collectMsgs(cmd)
@@ -8730,7 +8750,7 @@ func TestFB024_NonDetailPane_E_IsNoop_Regardless(t *testing.T) {
 			// Inject events so the D1-relaxed guard would fire if pane check were removed.
 			m.events = []data.EventRow{{Type: "Normal", Reason: "Test", Message: "msg"}}
 
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+			result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 			appM := result.(AppModel)
 			if appM.eventsMode {
 				t.Errorf("AC#10 %s: eventsMode = true after E with events loaded, want no-op (pane guard)", tt.name)
@@ -8749,7 +8769,7 @@ func TestFB035_Key3_FromNavPane_EntersDashboard(t *testing.T) {
 	m := newNavPaneModelWithBC(nil)
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -8766,7 +8786,7 @@ func TestFB035_Key3_FromTablePane_EntersDashboard(t *testing.T) {
 	m := newTablePaneModel()
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -8780,7 +8800,7 @@ func TestFB035_Key3_FromDetailPane_EntersDashboard(t *testing.T) {
 	m := newDetailPaneModelWithHC()
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -8793,7 +8813,7 @@ func TestFB035_Key3_FromQuotaDashboard_TogglesBackToNav(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -8809,7 +8829,7 @@ func TestFB035_Key3_RapidMash_DeterministicToggle(t *testing.T) {
 
 	wantPanes := []PaneID{QuotaDashboardPane, NavPane, QuotaDashboardPane, NavPane, QuotaDashboardPane}
 	for i, want := range wantPanes {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		m = result.(AppModel)
 		if m.activePane != want {
 			t.Errorf("AC#3a press %d: activePane = %v, want %v", i+1, m.activePane, want)
@@ -8835,7 +8855,7 @@ func TestFB035_Key3_OverlayOpen_IsNoop(t *testing.T) {
 			m.statusBar.Mode = components.ModeOverlay
 			before := m.activePane
 
-			result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+			result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 			appM := result.(AppModel)
 
 			if appM.activePane != before {
@@ -8853,7 +8873,7 @@ func TestFB035_Key3_FilterBarFocused_TypesIntoFilter(t *testing.T) {
 	m.statusBar.Mode = components.ModeFilter
 	before := m.activePane
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != before {
@@ -8872,7 +8892,7 @@ func TestFB035_Key3_QuotaIsLoading_IsNoop(t *testing.T) {
 	m.quota.SetLoading(true)
 	before := m.activePane
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != before {
@@ -8886,7 +8906,7 @@ func TestFB035_HelpOverlay_ContainsKey3Row(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 	if appM.overlay != HelpOverlayID {
 		t.Fatal("setup: expected HelpOverlayID after ? press")
@@ -8921,7 +8941,7 @@ func TestFB035_Key4_AndTToggle_Unchanged(t *testing.T) {
 		t.Parallel()
 		m := newActivityDashboardPaneModel()
 		m.tuiCtx.ActiveCtx = nil // org scope → no fetch dispatched, simpler assertion
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 		appM := result.(AppModel)
 		if appM.activePane != ActivityDashboardPane {
 			t.Errorf("4 key: activePane = %v, want ActivityDashboardPane", appM.activePane)
@@ -8931,7 +8951,7 @@ func TestFB035_Key4_AndTToggle_Unchanged(t *testing.T) {
 	t.Run("t_toggle_from_dashboard_to_table", func(t *testing.T) {
 		t.Parallel()
 		m := newQuotaDashboardPaneModel(&stubBucketClient{})
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
 		appM := result.(AppModel)
 		if appM.activePane != TablePane {
 			t.Errorf("t key from QuotaDashboard: activePane = %v, want TablePane", appM.activePane)
@@ -8948,7 +8968,7 @@ func TestFB035_Key3_FromActivityDashboardPane_EntersDashboard(t *testing.T) {
 	m.activePane = ActivityDashboardPane
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -8966,7 +8986,7 @@ func TestFB035_Key3_FromNavPane_ResourceListVisible_EntersDashboard(t *testing.T
 	m.tableTypeName = "projects"
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -9100,7 +9120,7 @@ func TestFB037_EFromPlaceholder_EntersEventsMode(t *testing.T) {
 	}
 
 	// Press E — should enter events mode.
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := r2.(AppModel)
 
 	if !appM.eventsMode {
@@ -9123,14 +9143,14 @@ func TestFB037_RepeatE_FromPlaceholder_TogglesEventsMode(t *testing.T) {
 	m = r0.(AppModel)
 
 	// Press 1: enter events mode.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	m = r1.(AppModel)
 	if !m.eventsMode {
 		t.Fatal("AC#7: first E did not enter events mode")
 	}
 
 	// Press 2: toggle back to placeholder.
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := r2.(AppModel)
 
 	if appM.eventsMode {
@@ -9188,7 +9208,7 @@ func TestFB041_Esc_NavPane_WithTableLoaded_ShowsDashboard(t *testing.T) {
 	m := newNavPaneWithTableLoaded()
 	selectedBefore, _ := m.sidebar.SelectedType()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	// AC#2: pane and sidebar selection unchanged.
@@ -9220,14 +9240,14 @@ func TestFB041_Esc_NavPane_SecondPress_IsNoop(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithTableLoaded()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m1 := r1.(AppModel)
 	if !m1.showDashboard {
 		t.Fatal("AC#3 setup: first Esc did not set showDashboard=true")
 	}
 	view1 := m1.table.View()
 
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m2 := r2.(AppModel)
 
 	if !m2.showDashboard {
@@ -9246,14 +9266,14 @@ func TestFB041_Esc_ThenEnter_ClearsDashboard(t *testing.T) {
 	m := newNavPaneWithTableLoaded()
 
 	// Go to dashboard.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = r1.(AppModel)
 	if !m.showDashboard {
 		t.Fatal("setup: Esc did not set showDashboard=true")
 	}
 
 	// Press Enter to select the sidebar item.
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	appM := r2.(AppModel)
 
 	if appM.showDashboard {
@@ -9270,13 +9290,13 @@ func TestFB041_Esc_ThenTab_ClearsDashboard(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithTableLoaded()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = r1.(AppModel)
 	if !m.showDashboard {
 		t.Fatal("setup: Esc did not set showDashboard=true")
 	}
 
-	r2, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	r2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := r2.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -9322,7 +9342,7 @@ func TestFB041_JKey_DuringDashboard_UpdatesLeftBlock(t *testing.T) {
 	}
 
 	// Press j to move to Deployment.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	appM := result.(AppModel)
 
 	after := stripANSIModel(appM.table.View())
@@ -9336,7 +9356,7 @@ func TestFB041_TablePane_Esc_NoShowDashboard(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -9360,7 +9380,7 @@ func TestFB041_Startup_Esc_IsNoop_NoTableTypeName(t *testing.T) {
 		t.Fatalf("precondition: tableTypeName must be empty, got %q", m.tableTypeName)
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.showDashboard {
@@ -9373,7 +9393,7 @@ func TestFB041_TableRows_PreservedInMemory_AfterEsc(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithTableLoaded()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if !appM.showDashboard {
@@ -9394,7 +9414,7 @@ func TestFB041_DetailPane_Esc_GoesToTablePane_NotNavPane(t *testing.T) {
 	m.detailReturnPane = TablePane
 	m.tableTypeName = "pods"
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane == NavPane {
@@ -9415,7 +9435,7 @@ func TestFB041_Overlay_Esc_DismissesOverlay_NoShowDashboard(t *testing.T) {
 	m.overlay = HelpOverlayID
 	m.statusBar.Mode = components.ModeOverlay
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.overlay != NoOverlay {
@@ -9761,7 +9781,7 @@ func TestFB065_AC1_Observable_QuotaLabelConsistent(t *testing.T) {
 
 	// HelpOverlay surface.
 	m2 := newNavPaneModelWithBC(nil)
-	result, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m2.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 	overlayView := stripANSIModel(appM.helpOverlay.View())
 	if !strings.Contains(overlayView, "quota dashboard") {
@@ -9773,7 +9793,7 @@ func TestFB065_AC1_Observable_QuotaLabelConsistent(t *testing.T) {
 func TestFB065_AC2_AntiRegression_NoQuoteToggleCopy(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 	view := stripANSIModel(appM.helpOverlay.View())
 	if strings.Contains(view, "quota (toggle)") {
@@ -9915,7 +9935,7 @@ func TestFB042_QuickJump_NKey_WithMatchingType_Navigates(t *testing.T) {
 	m.activePane = TablePane
 	m.updatePaneFocus()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	appM := result.(AppModel)
 
 	if appM.tableTypeName != "namespaces" {
@@ -9934,7 +9954,7 @@ func TestFB042_QuickJump_NKey_NoMatchingType_NoOp(t *testing.T) {
 		{Name: "projects", Kind: "Project", Group: "resourcemanager.miloapis.com"},
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	appM := result.(AppModel)
 
 	if appM.tableTypeName != "" {
@@ -9951,7 +9971,7 @@ func TestFB042_QuickJump_InactiveWhenTypeLoaded(t *testing.T) {
 		{Name: "pods", Kind: "Pod", Namespaced: true},
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	appM := result.(AppModel)
 
 	// tableTypeName must remain "pods" — quick-jump must not fire when type is loaded.
@@ -9973,7 +9993,7 @@ func TestFB042_QuickJump_RoundTrip_ReturnsToWelcome(t *testing.T) {
 	m.updatePaneFocus()
 
 	// Forward leg: 'n' quick-jump navigates to namespaces (loadState=Loading).
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	appM := result.(AppModel)
 	if appM.tableTypeName != "namespaces" {
 		t.Fatalf("forward leg: tableTypeName = %q, want 'namespaces'", appM.tableTypeName)
@@ -9989,10 +10009,10 @@ func TestFB042_QuickJump_RoundTrip_ReturnsToWelcome(t *testing.T) {
 	appM = result.(AppModel)
 
 	// Return leg: FB-072 — quick-jump entry means one Esc press returns to welcome directly.
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyEsc}) // TablePane → welcome (single press)
+	result, _ = appM.Update(tea.KeyPressMsg{Code: tea.KeyEscape}) // TablePane → welcome (single press)
 	appM = result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC8 round-trip: 'Welcome' missing after Esc; showDashboard=%v tableTypeName=%q\nview: %q",
 			appM.showDashboard, appM.tableTypeName, got)
@@ -10017,7 +10037,7 @@ func newQuickJumpModel() AppModel {
 	// FB-073: quick-jump fires from TablePane, not NavPane.
 	m.activePane = TablePane
 	m.updatePaneFocus()
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	appM := result.(AppModel)
 	// Simulate load completion so view shows table, not spinner.
 	result, _ = appM.Update(data.ResourcesLoadedMsg{
@@ -10040,13 +10060,13 @@ func TestFB072_AC1_QuickJump_SingleEsc_RestoresWelcome(t *testing.T) {
 		t.Fatal("precondition: lastEntryViaQuickJump must be true after quick-jump")
 	}
 
-	result, _ := appM.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := appM.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM = result.(AppModel)
 
 	if !appM.showDashboard {
 		t.Error("AC1: showDashboard=false after single Esc from quick-jump entry, want true")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC1: 'Welcome' absent from View() after single Esc:\n%s", got)
 	}
@@ -10059,14 +10079,14 @@ func TestFB072_AC2_QuickJump_SecondEsc_IsNoop(t *testing.T) {
 	appM := newQuickJumpModel()
 
 	// First Esc: TablePane → welcome.
-	r1, _ := appM.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r1, _ := appM.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m1 := r1.(AppModel)
 	if !m1.showDashboard {
 		t.Fatal("AC2 setup: first Esc did not restore welcome panel")
 	}
 
 	// Second Esc: must not leave welcome panel.
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m2 := r2.(AppModel)
 	if !m2.showDashboard {
 		t.Error("AC2: showDashboard=false after second Esc, want true (no re-entry into TablePane)")
@@ -10086,14 +10106,14 @@ func TestFB072_AC3_SidebarNav_TwoEscRequired(t *testing.T) {
 	}
 
 	// Navigate to TablePane via Enter.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m1 := r1.(AppModel)
 	if m1.lastEntryViaQuickJump {
 		t.Fatal("AC3: lastEntryViaQuickJump set after sidebar Enter, want false")
 	}
 
 	// First Esc: TablePane → NavPane (NOT welcome).
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m2 := r2.(AppModel)
 	if m2.activePane != NavPane {
 		t.Errorf("AC3: first Esc from sidebar-nav TablePane: activePane=%v, want NavPane", m2.activePane)
@@ -10103,7 +10123,7 @@ func TestFB072_AC3_SidebarNav_TwoEscRequired(t *testing.T) {
 	}
 
 	// Second Esc: NavPane → welcome.
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m3 := r3.(AppModel)
 	if !m3.showDashboard {
 		t.Error("AC3: showDashboard=false after second Esc from sidebar-nav NavPane, want true")
@@ -10120,28 +10140,28 @@ func TestFB072_AC4_QuickJump_ThenSidebarJ_ClearsFlag_TwoStepEsc(t *testing.T) {
 	}
 
 	// Tab: TablePane → NavPane (flag still set).
-	r1, _ := appM.Update(tea.KeyMsg{Type: tea.KeyTab})
+	r1, _ := appM.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m1 := r1.(AppModel)
 	if m1.activePane != NavPane {
 		t.Fatalf("precondition: Tab from TablePane should give NavPane, got %v", m1.activePane)
 	}
 
 	// 'j' in NavPane → clears flag.
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	m2 := r2.(AppModel)
 	if m2.lastEntryViaQuickJump {
 		t.Error("AC4: lastEntryViaQuickJump still true after 'j' in NavPane, want false")
 	}
 
 	// Tab: NavPane → TablePane (flag still false).
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m3 := r3.(AppModel)
 	if m3.activePane != TablePane {
 		t.Fatalf("precondition: Tab from NavPane should give TablePane, got %v", m3.activePane)
 	}
 
 	// Esc: flag is false → standard FB-041 path → NavPane, NOT welcome.
-	r4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m4 := r4.(AppModel)
 	if m4.showDashboard {
 		t.Error("AC4: showDashboard=true after Esc with flag cleared, want false (requires two-step)")
@@ -10173,7 +10193,7 @@ func TestFB073_AC1_NavPane_QuickJump_NoFire(t *testing.T) {
 		t.Fatalf("precondition: activePane=%v, want NavPane", m.activePane)
 	}
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -10185,7 +10205,7 @@ func TestFB073_AC1_NavPane_QuickJump_NoFire(t *testing.T) {
 	if cmd != nil {
 		t.Error("AC1 [Anti-behavior]: non-nil cmd after suppressed NavPane quick-jump, want nil")
 	}
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if !strings.Contains(view, "Welcome") {
 		t.Errorf("AC1 [Anti-behavior]: 'Welcome' absent from View() after suppressed NavPane 'b' — welcome panel must remain:\n%s", view)
 	}
@@ -10196,10 +10216,10 @@ func TestFB073_AC2_NavPane_QuickJump_ViewUnchanged(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWelcomeWithBackend()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	appM := result.(AppModel)
 
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if !strings.Contains(view, "Welcome") {
 		t.Errorf("AC2 [Observable]: 'Welcome' absent after suppressed NavPane 'b' — welcome panel must remain:\n%s", view)
 	}
@@ -10212,7 +10232,7 @@ func TestFB073_AC3_TablePane_QuickJump_StillFires(t *testing.T) {
 	m.activePane = TablePane
 	m.updatePaneFocus()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	appM := result.(AppModel)
 
 	if appM.tableTypeName != "backends" {
@@ -10221,7 +10241,7 @@ func TestFB073_AC3_TablePane_QuickJump_StillFires(t *testing.T) {
 	if cmd == nil {
 		t.Error("AC3 [Anti-regression]: nil cmd after TablePane quick-jump, want LoadResourcesCmd")
 	}
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if strings.Contains(view, "Welcome") {
 		t.Errorf("AC3 [Anti-regression]: 'Welcome' still in View() after TablePane quick-jump — welcome panel must be gone once tableTypeName is set:\n%s", view)
 	}
@@ -10255,10 +10275,10 @@ func TestFB047_Key3_DuringLoading_PostsHint(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC1: 'Quota dashboard loading' missing from View() after '3' during loading:\n%s", got)
 	}
@@ -10272,9 +10292,9 @@ func TestFB047_Key3_DuringLoading_ViewChanges(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	before := stripANSIModel(m.View())
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
-	after := stripANSIModel(result.(AppModel).View())
+	before := stripANSIModel(m.View().Content)
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	after := stripANSIModel(result.(AppModel).View().Content)
 
 	if before == after {
 		t.Error("AC4: View() identical before and after '3' during loading, want hint to appear")
@@ -10287,9 +10307,9 @@ func TestFB047_Key3_DoublePressLoading_SingleTransition(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
 	// FB-080: second press cancels the queued open.
@@ -10304,7 +10324,7 @@ func TestFB047_Key3_DoublePressLoading_SingleTransition(t *testing.T) {
 	if appM.activePane == QuotaDashboardPane {
 		t.Errorf("AC2: activePane = QuotaDashboardPane after BucketsLoadedMsg, want origin pane (pending was cancelled)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("AC2: ready prompt shown after cancel + BucketsLoadedMsg, want absent:\n%s", got)
 	}
@@ -10316,7 +10336,7 @@ func TestFB047_Key3_NotLoading_ImmediateTransition(t *testing.T) {
 	m := newQuotaLoadingModel()
 	m.quota.SetLoading(false)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -10333,7 +10353,7 @@ func TestFB047_BucketsLoadedMsg_ResolvesPending_TransitionsAndClearsHint(t *test
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("precondition: pendingQuotaOpen must be true after '3' during loading")
@@ -10346,7 +10366,7 @@ func TestFB047_BucketsLoadedMsg_ResolvesPending_TransitionsAndClearsHint(t *test
 	if appM.activePane == QuotaDashboardPane {
 		t.Errorf("AC5: activePane = QuotaDashboardPane after BucketsLoadedMsg, want origin pane (no force-transition)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("AC5: ready prompt missing from View() after BucketsLoadedMsg:\n%s", got)
 	}
@@ -10360,7 +10380,7 @@ func TestFB047_BucketsErrorMsg_ClearsPendingOpen(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("precondition: pendingQuotaOpen must be true after '3' during loading")
@@ -10372,7 +10392,7 @@ func TestFB047_BucketsErrorMsg_ClearsPendingOpen(t *testing.T) {
 	if appM.pendingQuotaOpen {
 		t.Error("AC6: pendingQuotaOpen = true after BucketsErrorMsg, want false")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC6: 'Quota dashboard loading' hint still present after BucketsErrorMsg, want absent:\n%s", got)
 	}
@@ -10384,7 +10404,7 @@ func TestFB047_LoadErrorMsg_ClearsPendingOpen(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("precondition: pendingQuotaOpen must be true after '3' during loading")
@@ -10396,7 +10416,7 @@ func TestFB047_LoadErrorMsg_ClearsPendingOpen(t *testing.T) {
 	if appM.pendingQuotaOpen {
 		t.Error("AC7: pendingQuotaOpen = true after LoadErrorMsg, want false")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC7: 'Quota dashboard loading' hint still present after LoadErrorMsg, want absent:\n%s", got)
 	}
@@ -10424,17 +10444,17 @@ func TestFB080_AC1_SecondPress_HintAbsentFromView(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// First press: queue the open.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("precondition: pendingQuotaOpen must be true after first '3'")
 	}
 
 	// Second press: cancel.
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "loading") {
 		t.Errorf("AC1: 'loading' still present in View() after second '3' (cancel):\n%s", got)
 	}
@@ -10449,12 +10469,12 @@ func TestFB080_AC2_InputChanged_3Key_FirstPress_Stashes(t *testing.T) {
 		t.Fatal("precondition: pendingQuotaOpen must be false before first '3'")
 	}
 
-	beforeView := stripANSIModel(m.View())
+	beforeView := stripANSIModel(m.View().Content)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
-	afterView := stripANSIModel(appM.View())
+	afterView := stripANSIModel(appM.View().Content)
 
 	// View changed (hint appeared).
 	if beforeView == afterView {
@@ -10478,21 +10498,21 @@ func TestFB080_AC2_InputChanged_3Key_SecondPress_Cancels(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// First press to set up pending state.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("precondition: pendingQuotaOpen must be true after first '3'")
 	}
-	beforeSecond := stripANSIModel(appM.View())
+	beforeSecond := stripANSIModel(appM.View().Content)
 	if !strings.Contains(beforeSecond, "loading") {
 		t.Fatalf("precondition: 'loading' must be in View() before second press:\n%s", beforeSecond)
 	}
 
 	// Second press: cancel.
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
-	afterSecond := stripANSIModel(appM.View())
+	afterSecond := stripANSIModel(appM.View().Content)
 
 	// Same key type ('3'), different model state → different output.
 	if beforeSecond == afterSecond {
@@ -10511,9 +10531,9 @@ func TestFB080_AC3_SecondPress_PendingFalse(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
 	if appM.pendingQuotaOpen {
@@ -10530,11 +10550,11 @@ func TestFB080_AC3_SecondPress_PreservesQuotaOriginPane(t *testing.T) {
 	m.quotaOriginPane = DashboardOrigin{Pane: TablePane}
 
 	// First press queues open.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	// Second press cancels. FB-095: quotaOriginPane must be zero.
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
 	if appM.quotaOriginPane != (DashboardOrigin{}) {
@@ -10548,13 +10568,13 @@ func TestFB080_AC4_FirstPress_StillQueues(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if !appM.pendingQuotaOpen {
 		t.Error("AC4: pendingQuotaOpen = false after first '3' during loading, want true")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "loading") {
 		t.Errorf("AC4: 'loading' hint missing from View() after first '3':\n%s", got)
 	}
@@ -10616,7 +10636,7 @@ func TestFB067_ProjectActivityLoadedMsg_RendersRowsInWelcomeView(t *testing.T) {
 	})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "alice@example.com") {
 		t.Errorf("AC1: 'alice@example.com' missing from welcome View() after ProjectActivityLoadedMsg:\n%s", got)
 	}
@@ -10729,7 +10749,7 @@ func TestFB082_AC1_Init_ProjectScope_ViewShowsLoading(t *testing.T) {
 	m := newLargeProjectScopedModelWithAC()
 	m.table.SetActivityLoading(true) // simulates the state Init() sets inside the dispatch gate
 
-	got := stripANSIModel(m.View())
+	got := stripANSIModel(m.View().Content)
 	if !strings.Contains(got, "⟳ loading") {
 		t.Errorf("AC1: '⟳ loading' spinner missing from View() when activityLoading=true:\n%s", got)
 	}
@@ -10749,7 +10769,7 @@ func TestFB082_AC2_InputChanged_CtxSwitch_ProjectScope_Loads(t *testing.T) {
 	result, _ := m.Update(components.ContextSwitchedMsg{Ctx: projCtx})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	// Use "⟳ loading…" (ellipsis directly after "loading") to match S3 activity spinner
 	// specifically. S2 bucket spinner renders "⟳ loading platform health…" — the ellipsis
 	// follows "health", not "loading", so it doesn't match this substring check.
@@ -10774,7 +10794,7 @@ func TestFB082_AC2_InputChanged_CtxSwitch_OrgScope_Empty(t *testing.T) {
 	result, _ := m.Update(components.ContextSwitchedMsg{Ctx: orgCtx})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	// "⟳ loading…" (ellipsis right after "loading") is S3-specific. S2 shows
 	// "⟳ loading platform health…" which does NOT contain this exact substring.
 	if strings.Contains(got, "⟳ loading…") {
@@ -10791,7 +10811,7 @@ func TestFB082_AC3_ProjectActivityErrorMsg_ShowsUnavailable(t *testing.T) {
 	m := newLargeProjectScopedModelWithAC()
 	m.table.SetActivityLoading(true) // simulate post-Init loading state
 
-	before := stripANSIModel(m.View())
+	before := stripANSIModel(m.View().Content)
 	if !strings.Contains(before, "loading") {
 		t.Fatal("precondition: 'loading' must be visible before error arrives")
 	}
@@ -10799,7 +10819,7 @@ func TestFB082_AC3_ProjectActivityErrorMsg_ShowsUnavailable(t *testing.T) {
 	result, _ := m.Update(data.ProjectActivityErrorMsg{Err: errors.New("fetch failed")})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC3: 'activity unavailable' missing from View() after ProjectActivityErrorMsg:\n%s", got)
 	}
@@ -10822,7 +10842,7 @@ func TestFB082_AC4_SuccessfulFetch_RendersRows(t *testing.T) {
 	})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "bob@example.com") {
 		t.Errorf("AC4: actor 'bob@example.com' missing from View() after ProjectActivityLoadedMsg:\n%s", got)
 	}
@@ -10850,7 +10870,7 @@ func TestFB100_AC1_ErrorWithPopulatedRows_KeepsStaleRows(t *testing.T) {
 	result, _ := m.Update(data.ProjectActivityErrorMsg{Err: errors.New("transient error")})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "alice@datum.net") {
 		t.Errorf("AC1: stale actor row 'alice@datum.net' missing from View() after error with rows:\n%s", got)
 	}
@@ -10868,7 +10888,7 @@ func TestFB100_AC2_ErrorWithEmptyRows_ShowsUnavailable(t *testing.T) {
 	result, _ := m.Update(data.ProjectActivityErrorMsg{Err: errors.New("fetch failed")})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC2: 'activity unavailable' missing when no rows exist:\n%s", got)
 	}
@@ -10889,8 +10909,8 @@ func TestFB100_AC3_InputChanged_PopulatedVsEmpty_DifferentView(t *testing.T) {
 	r1, _ := withRows.Update(errMsg)
 	r2, _ := withoutRows.Update(errMsg)
 
-	view1 := stripANSIModel(r1.(AppModel).View())
-	view2 := stripANSIModel(r2.(AppModel).View())
+	view1 := stripANSIModel(r1.(AppModel).View().Content)
+	view2 := stripANSIModel(r2.(AppModel).View().Content)
 	if view1 == view2 {
 		t.Error("AC3: same View() for populated-rows vs empty-rows after error; want different output")
 	}
@@ -10922,7 +10942,7 @@ func TestFB100_AC4_StaleRowsRetained_ThenSuccessfulFetch_RendersNewRows(t *testi
 	})
 	m2 := r2.(AppModel)
 
-	got := stripANSIModel(m2.View())
+	got := stripANSIModel(m2.View().Content)
 	if !strings.Contains(got, "bob@datum.net") {
 		t.Errorf("AC4: new row 'bob@datum.net' missing after successful reload:\n%s", got)
 	}
@@ -10944,13 +10964,13 @@ func TestFB050_Key3_ToggleFromTablePane_RestoresTablePane(t *testing.T) {
 	// Ensure quota is not loading so open-path fires immediately.
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if appM.activePane != QuotaDashboardPane {
 		t.Fatalf("first '3': activePane = %v, want QuotaDashboardPane", appM.activePane)
 	}
 
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -10963,13 +10983,13 @@ func TestFB050_Key4_ToggleFromTablePane_RestoresTablePane(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 	if appM.activePane != ActivityDashboardPane {
 		t.Fatalf("first '4': activePane = %v, want ActivityDashboardPane", appM.activePane)
 	}
 
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM = result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -10982,7 +11002,7 @@ func TestFB132_HelpOverlay_ActivityDashboardLabel(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 	if appM.overlay != HelpOverlayID {
 		t.Fatal("setup: expected HelpOverlayID after ? press")
@@ -11005,7 +11025,7 @@ func TestFB050_Key3_FirstPress_FromNavPane_StillEntersDashboard(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -11018,7 +11038,7 @@ func TestFB050_Key4_FirstPress_FromNavPane_StillEntersDashboard(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityDashboardPane {
@@ -11034,19 +11054,19 @@ func TestFB048_Key3_RoundTrip_FromTablePane_RestoresTablePane(t *testing.T) {
 	m := newTablePaneModel()
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if appM.quotaOriginPane.Pane != TablePane {
 		t.Fatalf("stash: quotaOriginPane.Pane = %v, want TablePane", appM.quotaOriginPane.Pane)
 	}
 
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
 	if appM.activePane != TablePane {
 		t.Errorf("FB-048 AC1: after 3→QDash→3: activePane = %v, want TablePane", appM.activePane)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "my-pod") {
 		t.Errorf("FB-048 AC1: 'my-pod' missing from View() after round-trip — table not rendered:\n%s", got)
 	}
@@ -11064,7 +11084,7 @@ func TestFB048_Key3_RoundTrip_FromDetailPane_RestoresDetailPane(t *testing.T) {
 		t.Fatal("precondition: yamlMode must be true")
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if appM.activePane != QuotaDashboardPane {
 		t.Fatalf("setup: activePane = %v after '3', want QuotaDashboardPane", appM.activePane)
@@ -11073,13 +11093,13 @@ func TestFB048_Key3_RoundTrip_FromDetailPane_RestoresDetailPane(t *testing.T) {
 		t.Fatalf("stash: quotaOriginPane.Pane = %v, want DetailPane", appM.quotaOriginPane.Pane)
 	}
 
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM = result.(AppModel)
 
 	if appM.activePane != DetailPane {
 		t.Errorf("FB-048 AC2: after Esc from QDash: activePane = %v, want DetailPane", appM.activePane)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "yaml") && !strings.Contains(got, "YAML") && !strings.Contains(got, "apiVersion") {
 		t.Errorf("FB-048 AC2: yaml content missing from View() after Esc restores DetailPane:\n%s", got)
 	}
@@ -11090,19 +11110,19 @@ func TestFB048_Key4_RoundTrip_FromTablePane_RestoresTablePane(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 	if appM.activityOriginPane.Pane != TablePane {
 		t.Fatalf("stash: activityOriginPane.Pane = %v, want TablePane", appM.activityOriginPane.Pane)
 	}
 
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM = result.(AppModel)
 
 	if appM.activePane != TablePane {
 		t.Errorf("FB-048 AC3: after 4→ActivityDash→4: activePane = %v, want TablePane", appM.activePane)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "my-pod") {
 		t.Errorf("FB-048 AC3: 'my-pod' missing from View() after round-trip — table not rendered:\n%s", got)
 	}
@@ -11120,7 +11140,7 @@ func TestFB048_Esc_FromQDash_RestoresTablePane(t *testing.T) {
 	m.activePane = QuotaDashboardPane
 	m.updatePaneFocus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -11137,7 +11157,7 @@ func TestFB048_Key3_Exit_ZeroOrigin_ReturnsToNavPane(t *testing.T) {
 	m.activePane = QuotaDashboardPane
 	m.updatePaneFocus()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -11152,12 +11172,12 @@ func TestFB048_Key3_RoundTrip_PreservesTableFilter(t *testing.T) {
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 	m.table.SetFilter("xyz-unique")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "xyz-unique") {
 		t.Errorf("FB-048 AC6: filter 'xyz-unique' lost after QDash round-trip:\n%s", got)
 	}
@@ -11173,7 +11193,7 @@ func TestFB048_Key3_RoundTrip_ShowDashboardTrue_RestoresWelcome(t *testing.T) {
 	m.table.SetForceDashboard(true)
 	m.quota = components.NewQuotaDashboardModel(58, 20, "proj")
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if appM.activePane != QuotaDashboardPane {
 		t.Fatalf("setup: activePane = %v after '3', want QuotaDashboardPane", appM.activePane)
@@ -11182,13 +11202,13 @@ func TestFB048_Key3_RoundTrip_ShowDashboardTrue_RestoresWelcome(t *testing.T) {
 		t.Fatal("stash: quotaOriginPane.ShowDashboard = false, want true (was in welcome overlay)")
 	}
 
-	result, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = result.(AppModel)
 
 	if !appM.showDashboard {
 		t.Error("FB-048 AC7: showDashboard = false after round-trip, want true (welcome panel must be restored)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("FB-048 AC7: 'Welcome' missing from View() after round-trip through QDash:\n%s", got)
 	}
@@ -11341,7 +11361,7 @@ func TestFB051_AC6_RKey_ErrorPlaceholder_DispatchesRetryCmd(t *testing.T) {
 	t.Parallel()
 	m := newErrorEventPlaceholderModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	if cmd == nil {
@@ -11454,7 +11474,7 @@ func TestFB052_AC5_EKey_FromPlaceholder_OpensEventsMode(t *testing.T) {
 
 	before := stripANSIModel(m.detail.View())
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if !appM.eventsMode {
@@ -11546,7 +11566,7 @@ func TestFB084_AC2_Retryable_RKeyAndRetryDescribeInView(t *testing.T) {
 	// newErrorEventPlaceholderModel uses errors.New("connection refused") → ErrorSeverityWarning.
 	m := newErrorEventPlaceholderModel()
 
-	got := stripANSIModel(m.View())
+	got := stripANSIModel(m.View().Content)
 	if !strings.Contains(got, "[r]") {
 		t.Errorf("AC2: '[r]' missing from View() when error is retryable (Warning severity):\n%s", got)
 	}
@@ -11565,7 +11585,7 @@ func TestFB084_AC3_NonRetryable_RKeyPressed_PostsNoRetryHint(t *testing.T) {
 	t.Parallel()
 	m := newForbiddenErrorEventPlaceholderModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
 	appM.statusBar.Width = 80
@@ -11728,7 +11748,7 @@ func TestFB106_AC3_InputChanged_WideNarrowWide(t *testing.T) {
 // pendingQuotaOpen=true — the state after '3' was pressed during bucket loading.
 func newPendingQuotaOpenModel() AppModel {
 	m := newQuotaLoadingModel()
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	return r.(AppModel)
 }
 
@@ -11745,7 +11765,7 @@ func TestFB077_AC1_BucketsErrorMsg_ThenKey3_TakesImmediatePath(t *testing.T) {
 	m = r.(AppModel)
 
 	// Next '3' press: quota.IsLoading()==false → immediate transition, NOT re-queue.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -11754,7 +11774,7 @@ func TestFB077_AC1_BucketsErrorMsg_ThenKey3_TakesImmediatePath(t *testing.T) {
 	if appM.pendingQuotaOpen {
 		t.Error("AC1: pendingQuotaOpen = true after immediate transition, want false")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC1: 'Quota dashboard loading' hint still present after immediate transition:\n%s", got)
 	}
@@ -11771,13 +11791,13 @@ func TestFB077_AC1b_LoadErrorMsg_ThenKey3_TakesImmediatePath(t *testing.T) {
 	r, _ := m.Update(data.LoadErrorMsg{Err: errors.New("network error")})
 	m = r.(AppModel)
 
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
 		t.Errorf("AC1b: activePane = %v after LoadErrorMsg + '3', want QuotaDashboardPane (immediate path)", appM.activePane)
 	}
-	if strings.Contains(stripANSIModel(appM.View()), "Quota dashboard loading") {
+	if strings.Contains(stripANSIModel(appM.View().Content), "Quota dashboard loading") {
 		t.Errorf("AC1b: 'Quota dashboard loading' hint still present after immediate transition")
 	}
 }
@@ -11845,7 +11865,7 @@ func TestFB076_AC1_ProjectScope_RPress_BatchIncludesActivityCmd(t *testing.T) {
 	t.Parallel()
 	m := newProjectScopedNavModel()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if batchLen(cmd) < 2 {
 		t.Errorf("AC1: batchLen = %d, want ≥2 (LoadResourceTypesCmd + LoadRecentProjectActivityCmd)", batchLen(cmd))
@@ -11858,7 +11878,7 @@ func TestFB076_AC2_ProjectScope_ActivityLoadedMsg_RendersRows(t *testing.T) {
 	m := newProjectScopedNavModel()
 
 	// r-press transitions to loading; don't execute cmd (nil-factory would panic).
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	m = r.(AppModel)
 
 	// Inject loaded rows directly (sidesteps nil-factory panic).
@@ -11869,7 +11889,7 @@ func TestFB076_AC2_ProjectScope_ActivityLoadedMsg_RendersRows(t *testing.T) {
 	})
 	appM := r.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "bob@example.com") {
 		t.Errorf("AC2: 'bob@example.com' missing from View() after r + ProjectActivityLoadedMsg:\n%s", got)
 	}
@@ -11881,7 +11901,7 @@ func TestFB076_AC3_OrgScope_RPress_NoActivityCmd(t *testing.T) {
 	m := newProjectScopedNavModel()
 	m.tuiCtx.ActiveCtx = nil // org scope
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if batchLen(cmd) != 1 {
 		t.Errorf("AC3: batchLen = %d, want 1 (only LoadResourceTypesCmd, no activity cmd for org scope)", batchLen(cmd))
@@ -11893,7 +11913,7 @@ func TestFB076_AC4_RPress_StillDispatches_LoadResourceTypesCmd(t *testing.T) {
 	t.Parallel()
 	m := newProjectScopedNavModel()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if cmd == nil {
 		t.Error("AC4: cmd = nil after r from NavPane, want LoadResourceTypesCmd dispatched")
@@ -11928,7 +11948,7 @@ func TestFB049_AC1_QuotaPane_AbsentsNavTableKeys(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	got := stripANSIModel(m.View())
+	got := stripANSIModel(m.View().Content)
 	for _, absent := range []string{"[/] filter", "[Enter] select", "[d] describe"} {
 		if strings.Contains(got, absent) {
 			t.Errorf("AC1: %q present in QuotaDashboard View(), want absent:\n%s", absent, got)
@@ -11941,7 +11961,7 @@ func TestFB049_AC2_QuotaPane_ContainsTSR3Keys(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	got := stripANSIModel(m.View())
+	got := stripANSIModel(m.View().Content)
 	for _, want := range []string{"[t]", "[s]", "[r]", "[3]"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AC2: %q missing from QuotaDashboard View():\n%s", want, got)
@@ -11954,7 +11974,7 @@ func TestFB049_AC3_QuotaPane_ContainsHelpQuitKeys(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
 
-	got := stripANSIModel(m.View())
+	got := stripANSIModel(m.View().Content)
 	for _, want := range []string{"[?]", "[q]"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("AC3: %q missing from QuotaDashboard View():\n%s", want, got)
@@ -11967,15 +11987,15 @@ func TestFB049_AC4_Transition_TableToQuota_HintSwitches(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModelWithQuota()
 
-	before := stripANSIModel(m.View())
+	before := stripANSIModel(m.View().Content)
 	if !strings.Contains(before, "[/] filter") {
 		t.Fatalf("setup: '[/] filter' absent from TablePane View():\n%s", before)
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
-	after := stripANSIModel(appM.View())
+	after := stripANSIModel(appM.View().Content)
 	if !strings.Contains(after, "[s]") {
 		t.Errorf("AC4: '[s]' (group key) missing from QuotaDashboard View():\n%s", after)
 	}
@@ -11989,18 +12009,18 @@ func TestFB049_AC5_Transition_QuotaToTable_HintSwitches(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModelWithQuota()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = result.(AppModel)
 
-	before := stripANSIModel(m.View())
+	before := stripANSIModel(m.View().Content)
 	if !strings.Contains(before, "[s]") {
 		t.Fatalf("setup: '[s]' absent from QuotaDashboard View():\n%s", before)
 	}
 
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	result, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
-	after := stripANSIModel(appM.View())
+	after := stripANSIModel(appM.View().Content)
 	if !strings.Contains(after, "[/] filter") {
 		t.Errorf("AC5: '[/] filter' missing after returning to TablePane:\n%s", after)
 	}
@@ -12013,10 +12033,10 @@ func TestFB049_AC5_Transition_QuotaToTable_HintSwitches(t *testing.T) {
 func TestFB049_AC6_SlashKey_QuotaPane_ViewUnchanged(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardPaneModel(&stubBucketClient{})
-	before := stripANSIModel(m.View())
+	before := stripANSIModel(m.View().Content)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
-	after := stripANSIModel(result.(AppModel).View())
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	after := stripANSIModel(result.(AppModel).View().Content)
 
 	if before != after {
 		t.Errorf("AC6: View() changed after '/' in QuotaDashboard, want silent no-op:\nbefore: %s\nafter: %s", before, after)
@@ -12029,7 +12049,7 @@ func TestFB049_AC7_NavTableHints_Unchanged(t *testing.T) {
 	t.Run("NavPane", func(t *testing.T) {
 		t.Parallel()
 		m := newNavPaneModelWithBC(nil)
-		got := stripANSIModel(m.View())
+		got := stripANSIModel(m.View().Content)
 		for _, want := range []string{"[Enter] select", "[c] ctx", "[?] help", "[q] quit"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("AC7 NAV regression: %q missing from NavPane View():\n%s", want, got)
@@ -12044,7 +12064,7 @@ func TestFB049_AC7_NavTableHints_Unchanged(t *testing.T) {
 	t.Run("TablePane", func(t *testing.T) {
 		t.Parallel()
 		m := newTablePaneModel()
-		got := stripANSIModel(m.View())
+		got := stripANSIModel(m.View().Content)
 		for _, want := range []string{"[/] filter", "[d] describe", "[r] refresh"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("AC7 TABLE regression: %q missing from TablePane View():\n%s", want, got)
@@ -12107,7 +12127,7 @@ func TestFB134_AC3_AntiRegression_QuotaDashboardInlineHint(t *testing.T) {
 func TestFB134_AC4_AntiRegression_HelpOverlay_TQuotaTable(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneModelWithBC(nil)
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 	appM.helpOverlay.Width = 120
 	appM.helpOverlay.Height = 40
@@ -12140,7 +12160,7 @@ func TestFB053_AC1_ErrorToPlaceholder_HintAppearsInView(t *testing.T) {
 	})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Events loaded") {
 		t.Errorf("AC1: 'Events loaded' missing from View() after error→placeholder transition:\n%s", got)
 	}
@@ -12150,12 +12170,12 @@ func TestFB053_AC1_ErrorToPlaceholder_HintAppearsInView(t *testing.T) {
 func TestFB053_AC2_ViewDiffers_BeforeAfterEventsLoaded(t *testing.T) {
 	t.Parallel()
 	m := newDescribeErrorDetailModel()
-	before := stripANSIModel(m.View())
+	before := stripANSIModel(m.View().Content)
 
 	result, _ := m.Update(data.EventsLoadedMsg{
 		Events: []data.EventRow{{Type: "Warning", Reason: "BackOff", Message: "Restarting", Count: 3}},
 	})
-	after := stripANSIModel(result.(AppModel).View())
+	after := stripANSIModel(result.(AppModel).View().Content)
 
 	if before == after {
 		t.Error("AC2: View() identical before and after EventsLoadedMsg, want hint + placeholder change")
@@ -12172,7 +12192,7 @@ func TestFB053_AC3_NormalEventsLoad_NoHint(t *testing.T) {
 	})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Events loaded") {
 		t.Errorf("AC3: 'Events loaded' hint present for normal events load, want absent:\n%s", got)
 	}
@@ -12186,7 +12206,7 @@ func TestFB053_AC4_EventsLoadError_NoHint(t *testing.T) {
 	result, _ := m.Update(data.EventsLoadedMsg{Err: errors.New("events fetch failed")})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Events loaded") {
 		t.Errorf("AC4: 'Events loaded' hint present when EventsLoadedMsg.Err set, want absent:\n%s", got)
 	}
@@ -12224,7 +12244,7 @@ func TestFB053_AC5_FB037Placeholder_StillRenders(t *testing.T) {
 // a cached table — the state FB-054 targets for the Tab-to-resume hint.
 func newNavPaneWithDashboard() AppModel {
 	m := newNavPaneWithTableLoaded()
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r.(AppModel)
 	if !appM.showDashboard {
 		panic("newNavPaneWithDashboard: Esc did not set showDashboard=true")
@@ -12237,7 +12257,7 @@ func TestFB054_AC3_WelcomeDashboard_ViewContainsTabHint(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithDashboard()
 
-	got := stripANSIModel(m.View())
+	got := stripANSIModel(m.View().Content)
 	if !strings.Contains(got, "[Tab]") {
 		t.Errorf("AC3: '[Tab]' missing from welcome-dashboard View():\n%s", got)
 	}
@@ -12251,7 +12271,7 @@ func TestFB054_AC4_Tab_ResumesTable_NilCmd(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithDashboard()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := result.(AppModel)
 
 	if appM.activePane != TablePane {
@@ -12263,7 +12283,7 @@ func TestFB054_AC4_Tab_ResumesTable_NilCmd(t *testing.T) {
 	if cmd != nil {
 		t.Error("AC4: cmd != nil after Tab — table rows are cached, want no ListResourcesCmd")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "[Tab]") && strings.Contains(got, "to resume") {
 		t.Errorf("AC4: Tab-to-resume hint still present after Tab pressed:\n%s", got)
 	}
@@ -12274,7 +12294,7 @@ func TestFB054_AC5_Enter_StillFiresLoadCmd(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithTableLoaded()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Error("AC5 regression: cmd = nil after Enter from NavPane, want LoadResourcesCmd")
 	}
@@ -12285,13 +12305,13 @@ func TestFB054_AC6_FB041_EscChain_Unchanged(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithTableLoaded()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if !appM.showDashboard {
 		t.Error("AC6 regression: showDashboard = false after Esc, want true (FB-041 chain broken)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC6 regression: 'Welcome' missing from View() after Esc:\n%s", got)
 	}
@@ -12321,7 +12341,7 @@ func TestFB055_AC1_Esc_NavPane_WithTable_PostsHint(t *testing.T) {
 	m.showDashboard = false
 	m.statusBar.Width = 120
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	appM.statusBar.Width = 120
@@ -12351,7 +12371,7 @@ func TestFB055_AC2_FreshStartup_Esc_NoHint(t *testing.T) {
 	}
 	m.statusBar.Width = 120
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	appM.statusBar.Width = 120
@@ -12369,7 +12389,7 @@ func TestFB055_AC3_AlreadyDashboard_Esc_NoHint(t *testing.T) {
 	m.table.SetForceDashboard(true)
 	m.statusBar.Width = 120
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	appM.statusBar.Width = 120
@@ -12386,11 +12406,11 @@ func TestFB055_AC4_OtherKeys_ClearingDashboard_NoHint(t *testing.T) {
 		name string
 		msg  tea.KeyMsg
 	}{
-		{"key3", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")}},
-		{"key4", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")}},
-		{"enter", tea.KeyMsg{Type: tea.KeyEnter}},
-		{"tab", tea.KeyMsg{Type: tea.KeyTab}},
-		{"shifttab", tea.KeyMsg{Type: tea.KeyShiftTab}},
+		{"key3", tea.KeyPressMsg{Code: '3', Text: "3"}},
+		{"key4", tea.KeyPressMsg{Code: '4', Text: "4"}},
+		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}},
+		{"tab", tea.KeyPressMsg{Code: tea.KeyTab}},
+		{"shifttab", tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}},
 	}
 	for _, tt := range keys {
 		t.Run(tt.name, func(t *testing.T) {
@@ -12419,7 +12439,7 @@ func TestFB055_AC5_HintClearMsg_MatchingToken_ClearsHint(t *testing.T) {
 	m.statusBar.Width = 120
 
 	// Fire the transition to post the hint.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	appM.statusBar.Width = 120
@@ -12444,7 +12464,7 @@ func TestFB055_AC6_FB041_EscChain_Unchanged(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneWithTableLoaded()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := result.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -12503,7 +12523,7 @@ func TestFB056_AC5_SlashKey_TablePane_OpensFilter(t *testing.T) {
 	m := newTablePaneModel()
 	// showDashboard is false by default in newTablePaneModel.
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	appM := result.(AppModel)
 
 	if !appM.filterBar.Focused() {
@@ -12525,7 +12545,7 @@ func TestFB057_AC1AC2_HelpOverlay_NewCopy(t *testing.T) {
 	m.helpOverlay.Width = 100
 	m.helpOverlay.Height = 40
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 
 	view := stripANSIModel(appM.helpOverlay.View())
@@ -12547,7 +12567,7 @@ func TestFB057_AC3_HelpOverlay_PreexistingKeys(t *testing.T) {
 	m.helpOverlay.Width = 100
 	m.helpOverlay.Height = 40
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 	view := stripANSIModel(appM.helpOverlay.View())
 
@@ -12602,14 +12622,14 @@ func TestFB087_AC1_Chain_3_4_EscEsc_ReturnsToNavPane(t *testing.T) {
 	m := newNavPaneOnDashboard()
 
 	// NavPane → 3
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
 	if m1.activePane != QuotaDashboardPane {
 		t.Fatalf("AC1 setup: '3' from NavPane: activePane = %v, want QuotaDashboardPane", m1.activePane)
 	}
 
 	// QuotaDashboard → 4
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m2 := r2.(AppModel)
 	if m2.activePane != ActivityDashboardPane {
 		t.Fatalf("AC1 setup: '4' from QuotaDashboard: activePane = %v, want ActivityDashboardPane", m2.activePane)
@@ -12618,14 +12638,14 @@ func TestFB087_AC1_Chain_3_4_EscEsc_ReturnsToNavPane(t *testing.T) {
 	// ActivityDashboard → Esc
 	// FB-094: 4-from-QuotaDash guard skips activityOriginPane write → first Esc lands at
 	// NavPane directly (not QuotaDashboardPane as in pre-FB-094 behavior).
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m3 := r3.(AppModel)
 	if m3.activePane != NavPane {
 		t.Fatalf("AC1 setup: first Esc: activePane = %v, want NavPane (FB-094 guard collapses cross-dashboard Esc depth)", m3.activePane)
 	}
 
 	// NavPane → Esc (no-op — already at origin)
-	r4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r4.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -12634,7 +12654,7 @@ func TestFB087_AC1_Chain_3_4_EscEsc_ReturnsToNavPane(t *testing.T) {
 	if !appM.showDashboard {
 		t.Error("AC1 [Observable]: showDashboard = false after 3→4→Esc→Esc, want true (welcome panel)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC1 [Observable]: 'Welcome' missing from View() — welcome panel not restored:\n%s", got)
 	}
@@ -12646,14 +12666,14 @@ func TestFB087_AC2_Chain_4_3_EscEsc_ReturnsToNavPane(t *testing.T) {
 	m := newNavPaneOnDashboard()
 
 	// NavPane → 4
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m1 := r1.(AppModel)
 	if m1.activePane != ActivityDashboardPane {
 		t.Fatalf("AC2 setup: '4' from NavPane: activePane = %v, want ActivityDashboardPane", m1.activePane)
 	}
 
 	// ActivityDashboard → 3
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m2 := r2.(AppModel)
 	if m2.activePane != QuotaDashboardPane {
 		t.Fatalf("AC2 setup: '3' from ActivityDashboard: activePane = %v, want QuotaDashboardPane", m2.activePane)
@@ -12662,14 +12682,14 @@ func TestFB087_AC2_Chain_4_3_EscEsc_ReturnsToNavPane(t *testing.T) {
 	// QuotaDashboard → Esc
 	// FB-094: 3-from-ActivityDash guard skips quotaOriginPane write → first Esc lands at
 	// NavPane directly (not ActivityDashboardPane as in pre-FB-094 behavior).
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m3 := r3.(AppModel)
 	if m3.activePane != NavPane {
 		t.Fatalf("AC2 setup: first Esc: activePane = %v, want NavPane (FB-094 guard collapses cross-dashboard Esc depth)", m3.activePane)
 	}
 
 	// NavPane → Esc (no-op — already at origin)
-	r4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r4.(AppModel)
 
 	if appM.activePane != NavPane {
@@ -12678,7 +12698,7 @@ func TestFB087_AC2_Chain_4_3_EscEsc_ReturnsToNavPane(t *testing.T) {
 	if !appM.showDashboard {
 		t.Error("AC2 [Observable]: showDashboard = false after 4→3→Esc→Esc, want true (welcome panel)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC2 [Observable]: 'Welcome' missing from View() — welcome panel not restored:\n%s", got)
 	}
@@ -12689,12 +12709,12 @@ func TestFB087_AC5_Chain_3_4_Esc_CollapsesToNavPane(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m2 := r2.(AppModel)
 
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r3.(AppModel)
 
 	// FB-094 Option A: 4-from-QuotaDash skips activityOriginPane write (guard fires).
@@ -12734,7 +12754,7 @@ func TestFB078_AC1_NavigateAway_BucketsLoaded_NoForceSwitch(t *testing.T) {
 	m := newQuotaLoadingNavModel()
 
 	// Press 3 during loading → queues open.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("setup: pendingQuotaOpen = false after '3' during loading, want true")
@@ -12744,7 +12764,7 @@ func TestFB078_AC1_NavigateAway_BucketsLoaded_NoForceSwitch(t *testing.T) {
 	}
 
 	// Tab from NavPane → TablePane; Option B fires in updatePaneFocus.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = r.(AppModel)
 	if m.pendingQuotaOpen {
 		t.Error("AC1: pendingQuotaOpen = true after Tab (navigate away), want false (Option B cancel)")
@@ -12761,7 +12781,7 @@ func TestFB078_AC1_NavigateAway_BucketsLoaded_NoForceSwitch(t *testing.T) {
 		t.Error("AC1: activePane = QuotaDashboardPane after BucketsLoadedMsg post-navigation-cancel, want TablePane")
 	}
 	// No ready prompt should appear — pending was already cleared before buckets arrived.
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("AC1: 'Quota dashboard ready' prompt visible after navigation-cancel, want absent:\n%s", got)
 	}
@@ -12773,18 +12793,18 @@ func TestFB078_AC2_NavigateAway_HintCleared(t *testing.T) {
 	m := newQuotaLoadingNavModel()
 
 	// Press 3 → loading hint appears.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
-	before := stripANSIModel(m.View())
+	before := stripANSIModel(m.View().Content)
 	if !strings.Contains(before, "Quota dashboard loading") {
 		t.Fatalf("AC2 setup: 'Quota dashboard loading' missing from View() before navigation:\n%s", before)
 	}
 
 	// Tab from NavPane → Option B clears hint.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := r.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC2: 'Quota dashboard loading' hint still visible after navigation cancel:\n%s", got)
 	}
@@ -12800,24 +12820,24 @@ func TestFB078_AC3_RepeatCancelGesture_NoOp(t *testing.T) {
 	m := newQuotaLoadingNavModel()
 
 	// Press 3 → queue.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
 	// First navigation (NavPane → TablePane): cancels pending.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = r.(AppModel)
 	if m.pendingQuotaOpen {
 		t.Error("AC3 first cancel: pendingQuotaOpen = true, want false")
 	}
 
 	// Second navigation (TablePane → NavPane): already cancelled, must be a no-op.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := r.(AppModel)
 
 	if appM.pendingQuotaOpen {
 		t.Error("AC3 second cancel: pendingQuotaOpen = true after repeat navigation, want false (no-op)")
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard loading") {
 		t.Errorf("AC3: loading hint still visible after repeat cancel:\n%s", got)
 	}
@@ -12831,7 +12851,7 @@ func TestFB078_AC4_StaysOnOrigin_ReadyPromptShown_NoForceSwitch(t *testing.T) {
 	m := newQuotaLoadingNavModel()
 
 	// Press 3 → queue (remain on NavPane).
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("setup: pendingQuotaOpen = false, want true")
@@ -12853,7 +12873,7 @@ func TestFB078_AC4_StaysOnOrigin_ReadyPromptShown_NoForceSwitch(t *testing.T) {
 		t.Error("AC4: pendingQuotaOpen = true after BucketsLoadedMsg, want false")
 	}
 	// Ready prompt visible in View().
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("AC4: 'Quota dashboard ready' prompt missing from View() after BucketsLoadedMsg on origin pane:\n%s", got)
 	}
@@ -12869,14 +12889,14 @@ func TestFB078_AC4_StaysOnOrigin_ReadyPromptShown_NoForceSwitch(t *testing.T) {
 func TestFB078_InputChanged_a_OnOriginPane_ReadyPromptVisible(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingNavModel()
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
 	// Remain on origin pane, then deliver buckets.
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	appM := r.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("[Input-changed](a): 'Quota dashboard ready' absent when staying on origin pane:\n%s", got)
 	}
@@ -12888,18 +12908,18 @@ func TestFB078_InputChanged_a_OnOriginPane_ReadyPromptVisible(t *testing.T) {
 func TestFB078_InputChanged_b_OffOriginPane_ReadyPromptAbsent(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingNavModel()
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
 	// Navigate away (Option B clears pendingQuotaOpen).
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = r.(AppModel)
 
 	// Deliver same BucketsLoadedMsg — pending already cleared, no ready-prompt.
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	appM := r.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("[Input-changed](b): 'Quota dashboard ready' present after off-origin delivery, want absent:\n%s", got)
 	}
@@ -12915,18 +12935,18 @@ func TestFB078_AC4_AfterReadyPrompt_Key3_TransitionsToQuotaDashboard(t *testing.
 	m := newQuotaLoadingNavModel()
 
 	// Press 3 → queue.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
 	// BucketsLoadedMsg → ready-prompt, pendingQuotaOpen cleared.
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	m = r.(AppModel)
-	if !strings.Contains(stripANSIModel(m.View()), "Quota dashboard ready") {
+	if !strings.Contains(stripANSIModel(m.View().Content), "Quota dashboard ready") {
 		t.Fatal("setup: ready-prompt not shown after BucketsLoadedMsg")
 	}
 
 	// Operator presses '3' at the ready-prompt → immediate transition (quota not loading).
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -13052,14 +13072,14 @@ func TestFB095_AC1_NavCancel_ClearsOriginPane(t *testing.T) {
 	m := newQuotaLoadingNavModel()
 
 	// Press 3 → stash written (NavPane origin) + pendingQuotaOpen=true.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("AC1 setup: pendingQuotaOpen = false after first press — queue not set")
 	}
 
 	// Tab → navigate away → nav-cancel fires.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := r.(AppModel)
 
 	if appM.pendingQuotaOpen {
@@ -13078,14 +13098,14 @@ func TestFB095_AC2_SecondPressCancel_ClearsOriginPane(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// First press → stash written (NavPane origin) + pendingQuotaOpen=true.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("AC2 setup: pendingQuotaOpen = false after first press — queue not set")
 	}
 
 	// Second press → cancel path fires.
-	r, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = r.(AppModel)
 
 	if appM.pendingQuotaOpen {
@@ -13105,9 +13125,9 @@ func TestFB095_AC3_PostCancel_Fresh3_WritesCleanStash(t *testing.T) {
 		t.Parallel()
 		m := newQuotaLoadingNavModel()
 
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		m = r.(AppModel)
-		r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)}) // nav-cancel
+		r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // nav-cancel
 		m = r.(AppModel)
 		// Simulate buckets loaded so next '3' takes the immediate path.
 		r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
@@ -13116,7 +13136,7 @@ func TestFB095_AC3_PostCancel_Fresh3_WritesCleanStash(t *testing.T) {
 		m.activePane = TablePane
 		m.quota.SetLoading(false)
 
-		r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		appM := r.(AppModel)
 
 		if appM.quotaOriginPane.Pane != TablePane {
@@ -13128,9 +13148,9 @@ func TestFB095_AC3_PostCancel_Fresh3_WritesCleanStash(t *testing.T) {
 		t.Parallel()
 		m := newQuotaLoadingModel()
 
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		m = r.(AppModel)
-		r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // second-press cancel
+		r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"}) // second-press cancel
 		m = r.(AppModel)
 		// Simulate buckets loaded so next '3' takes the immediate path.
 		r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
@@ -13138,7 +13158,7 @@ func TestFB095_AC3_PostCancel_Fresh3_WritesCleanStash(t *testing.T) {
 		m.activePane = TablePane
 		m.quota.SetLoading(false)
 
-		r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		appM := r.(AppModel)
 
 		if appM.quotaOriginPane.Pane != TablePane {
@@ -13155,9 +13175,9 @@ func TestFB095_AC4_InputChanged_BothCancelPaths_ClearStash(t *testing.T) {
 	t.Run("nav-cancel", func(t *testing.T) {
 		t.Parallel()
 		m := newQuotaLoadingNavModel()
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		m = r.(AppModel)
-		r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+		r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		appM := r.(AppModel)
 		if appM.quotaOriginPane != (DashboardOrigin{}) {
 			t.Errorf("nav-cancel: quotaOriginPane = %v, want zero", appM.quotaOriginPane)
@@ -13167,9 +13187,9 @@ func TestFB095_AC4_InputChanged_BothCancelPaths_ClearStash(t *testing.T) {
 	t.Run("second-press-cancel", func(t *testing.T) {
 		t.Parallel()
 		m := newQuotaLoadingModel()
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		m = r.(AppModel)
-		r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		appM := r.(AppModel)
 		if appM.quotaOriginPane != (DashboardOrigin{}) {
 			t.Errorf("second-press-cancel: quotaOriginPane = %v, want zero", appM.quotaOriginPane)
@@ -13213,33 +13233,33 @@ func TestFB094_AC1_3_4_3_EscEsc_ReachesNavPane(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
 	if m1.activePane != QuotaDashboardPane {
 		t.Fatalf("AC1 setup: '3' from NavPane → %v, want QuotaDashboardPane", m1.activePane)
 	}
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m2 := r2.(AppModel)
 	if m2.activePane != ActivityDashboardPane {
 		t.Fatalf("AC1 setup: '4' from QuotaDash → %v, want ActivityDashboardPane", m2.activePane)
 	}
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m3 := r3.(AppModel)
 	if m3.activePane != QuotaDashboardPane {
 		t.Fatalf("AC1 setup: second '3' from ActivityDash → %v, want QuotaDashboardPane", m3.activePane)
 	}
 
 	// First Esc: guard preserved quotaOriginPane={NavPane} → restores NavPane.
-	r4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m4 := r4.(AppModel)
 	// Second Esc: on NavPane, showDashboard=true → no-op.
-	r5, _ := m4.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r5, _ := m4.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r5.(AppModel)
 
 	if appM.activePane != NavPane {
 		t.Errorf("AC1 [Anti-behavior]: 3→4→3→Esc→Esc → activePane = %v, want NavPane", appM.activePane)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC1 [Anti-behavior]: Welcome panel missing from View() after Esc chain:\n%s", got)
 	}
@@ -13250,31 +13270,31 @@ func TestFB094_AC2_4_3_4_EscEsc_ReachesNavPane(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m1 := r1.(AppModel)
 	if m1.activePane != ActivityDashboardPane {
 		t.Fatalf("AC2 setup: '4' from NavPane → %v, want ActivityDashboardPane", m1.activePane)
 	}
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m2 := r2.(AppModel)
 	if m2.activePane != QuotaDashboardPane {
 		t.Fatalf("AC2 setup: '3' from ActivityDash → %v, want QuotaDashboardPane", m2.activePane)
 	}
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m3 := r3.(AppModel)
 	if m3.activePane != ActivityDashboardPane {
 		t.Fatalf("AC2 setup: second '4' from QuotaDash → %v, want ActivityDashboardPane", m3.activePane)
 	}
 
-	r4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m4 := r4.(AppModel)
-	r5, _ := m4.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r5, _ := m4.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r5.(AppModel)
 
 	if appM.activePane != NavPane {
 		t.Errorf("AC2 [Anti-behavior] symmetric: 4→3→4→Esc→Esc → activePane = %v, want NavPane", appM.activePane)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Welcome") {
 		t.Errorf("AC2 [Anti-behavior] symmetric: Welcome panel missing from View():\n%s", got)
 	}
@@ -13286,11 +13306,11 @@ func TestFB094_AC3_3_4_3_QuotaOriginPreserved(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m2 := r2.(AppModel)
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r3.(AppModel)
 
 	if appM.quotaOriginPane.Pane == ActivityDashboardPane {
@@ -13307,7 +13327,7 @@ func TestFB094_AC4a_NavPaneStart_QuotaOriginIsNavPane(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r1.(AppModel)
 
 	if appM.quotaOriginPane.Pane != NavPane {
@@ -13320,7 +13340,7 @@ func TestFB094_AC4b_TablePaneStart_QuotaOriginIsTablePane(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r1.(AppModel)
 
 	if appM.quotaOriginPane.Pane != TablePane {
@@ -13333,19 +13353,19 @@ func TestFB094_AC5_ExtraEscFromNavPane_NoDashboardReentry(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m2 := r2.(AppModel)
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m3 := r3.(AppModel)
-	r4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m4 := r4.(AppModel)
 	if m4.activePane != NavPane {
 		t.Fatalf("AC5 setup: 3→4→3→Esc → %v, want NavPane", m4.activePane)
 	}
 
-	r5, _ := m4.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r5, _ := m4.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r5.(AppModel)
 
 	if appM.activePane == QuotaDashboardPane || appM.activePane == ActivityDashboardPane {
@@ -13359,7 +13379,7 @@ func TestFB094_AC8_SinglePress3_StillWorks(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r1.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -13375,7 +13395,7 @@ func TestFB094_AC8_SinglePress4_StillWorks(t *testing.T) {
 	t.Parallel()
 	m := newTablePaneModel()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := r1.(AppModel)
 
 	if appM.activePane != ActivityDashboardPane {
@@ -13395,7 +13415,7 @@ func TestFB094_InputChanged_3Key_NavPane_StashWritten(t *testing.T) {
 	m := newNavPaneOnDashboard()
 
 	before := m.quotaOriginPane.Pane // NavPane or zero
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r1.(AppModel)
 
 	// Guard did not fire (NavPane ≠ ActivityDash) → stash updated to NavPane.
@@ -13412,13 +13432,13 @@ func TestFB094_InputChanged_3Key_ActivityDash_StashPreserved(t *testing.T) {
 	m := newNavPaneOnDashboard()
 
 	// Navigate to ActivityDash so quotaOriginPane is set to NavPane.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel) // now on QuotaDash, quotaOriginPane={NavPane}
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m2 := r2.(AppModel) // now on ActivityDash, quotaOriginPane still {NavPane}
 
 	// Press '3' from ActivityDash: guard fires → quotaOriginPane must NOT change.
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r3.(AppModel)
 
 	// Same '3' key, but activePane was ActivityDash → stash preserved.
@@ -13435,7 +13455,7 @@ func TestFB094_InputChanged_4Key_NavPane_StashWritten(t *testing.T) {
 	t.Parallel()
 	m := newNavPaneOnDashboard()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := r1.(AppModel)
 
 	if appM.activityOriginPane.Pane != NavPane {
@@ -13448,13 +13468,13 @@ func TestFB094_InputChanged_4Key_QuotaDash_StashPreserved(t *testing.T) {
 	m := newNavPaneOnDashboard()
 
 	// Navigate to QuotaDash so activityOriginPane remains zero.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m1 := r1.(AppModel) // ActivityDash, activityOriginPane={NavPane}
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m2 := r2.(AppModel) // QuotaDash, activityOriginPane still {NavPane}
 
 	// Press '4' from QuotaDash: guard fires → activityOriginPane must NOT change.
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := r3.(AppModel)
 
 	if appM.activityOriginPane.Pane == QuotaDashboardPane {
@@ -13500,7 +13520,7 @@ func TestFB088_Model_AC6_EscClearsOriginLabel(t *testing.T) {
 	m := newQuotaDashboardNavModel()
 
 	// Press '3' from NavPane (welcome) — stash write + SetOriginLabel fires.
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
 	if m1.activePane != QuotaDashboardPane {
 		t.Fatalf("setup: after '3', activePane = %v, want QuotaDashboardPane", m1.activePane)
@@ -13510,7 +13530,7 @@ func TestFB088_Model_AC6_EscClearsOriginLabel(t *testing.T) {
 	}
 
 	// Press Esc — should clear origin label.
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m2 := r2.(AppModel)
 	if m2.activePane == QuotaDashboardPane {
 		t.Fatalf("setup: after Esc, still in QuotaDashboardPane")
@@ -13526,13 +13546,13 @@ func TestFB088_Model_AC7_FB048RoundTripPreserved(t *testing.T) {
 	t.Parallel()
 	m := newQuotaDashboardNavModel()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
 	if m1.activePane != QuotaDashboardPane {
 		t.Fatalf("after '3': activePane = %v, want QuotaDashboardPane", m1.activePane)
 	}
 
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m2 := r2.(AppModel)
 	if m2.activePane != NavPane {
 		t.Errorf("AC7 [Anti-regression]: after '3' → Esc, activePane = %v, want NavPane", m2.activePane)
@@ -13549,7 +13569,7 @@ func TestFB088_Model_Observable_TablePaneOrigin(t *testing.T) {
 	m.showDashboard = false
 	m.updatePaneFocus()
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m1 := r1.(AppModel)
 	if m1.activePane != QuotaDashboardPane {
 		t.Fatalf("after '3' from TablePane: activePane = %v, want QuotaDashboardPane", m1.activePane)
@@ -13567,7 +13587,7 @@ func TestFB088_Model_Observable_ActivityDash_WelcomePanelOrigin(t *testing.T) {
 	m := newQuotaDashboardNavModel()
 	// showDashboard = true (welcome panel state).
 
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m1 := r1.(AppModel)
 	if m1.activePane != ActivityDashboardPane {
 		t.Fatalf("after '4': activePane = %v, want ActivityDashboardPane", m1.activePane)
@@ -13585,16 +13605,16 @@ func TestFB088_Model_AntiBehavior_4FromQuotaDashGuardPreservesLabel(t *testing.T
 	m := newQuotaDashboardNavModel()
 
 	// '4' from NavPane: activityOriginPane = NavPane, label = "welcome panel".
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m1 := r1.(AppModel)
 	// Navigate to QuotaDash (via '3' from ActivityDash — guard fires).
-	r2, _ := m1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	r2, _ := m1.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m2 := r2.(AppModel)
 	if m2.activePane != QuotaDashboardPane {
 		t.Fatalf("after '4'→'3': activePane = %v, want QuotaDashboardPane", m2.activePane)
 	}
 	// Press '4' again from QuotaDash: guard fires → activityOriginPane preserved.
-	r3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	r3, _ := m2.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	m3 := r3.(AppModel)
 	if m3.activePane != ActivityDashboardPane {
 		t.Fatalf("after '4'→'3'→'4': activePane = %v, want ActivityDashboardPane", m3.activePane)
@@ -13637,10 +13657,10 @@ func TestFB079_AC1_LoadingHint_ContainsPress3Suffix(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "press [3] to cancel") {
 		t.Errorf("AC1: 'press [3] to cancel' missing from View() after '3' during loading:\n%s", got)
 	}
@@ -13656,7 +13676,7 @@ func TestFB079_AC2_ReadyHint_ContainsDashboardReadyAndPress3(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// Press '3' to set pendingQuotaOpen=true; operator stays on NavPane (origin pane).
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("precondition: pendingQuotaOpen must be true after '3' during loading")
@@ -13666,7 +13686,7 @@ func TestFB079_AC2_ReadyHint_ContainsDashboardReadyAndPress3(t *testing.T) {
 	result, _ = appM.Update(data.BucketsLoadedMsg{})
 	appM = result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "Quota dashboard ready") {
 		t.Errorf("AC2: 'Quota dashboard ready' missing from View() after BucketsLoadedMsg:\n%s", got)
 	}
@@ -13682,7 +13702,7 @@ func TestFB079_AC3_OldLoadingCopy_Absent(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := result.(AppModel)
 
 	const oldCopy = "Quota dashboard loading\u2026" // "Quota dashboard loading…" — old exact string
@@ -13839,7 +13859,7 @@ func TestFB083_AC6_AntiBehavior_SuppressedHint_4KeyStillNavigates(t *testing.T) 
 		t.Fatal("precondition: hint should be suppressed with empty activityRows, but found it in View()")
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '4', Text: "4"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityDashboardPane {
@@ -13870,14 +13890,14 @@ func TestFB096_AC1_EscCancel_NavPane_HintShown(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// Queue open via first '3' press.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("AC1 setup: pendingQuotaOpen = false after first press")
 	}
 
 	// Esc on NavPane → Site 1 cancel.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -13894,14 +13914,14 @@ func TestFB096_AC2_NavCancel_HintShown(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("AC2 setup: pendingQuotaOpen = false after first press")
 	}
 
 	// Tab → navigate away → nav-cancel in updatePaneFocus.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -13921,14 +13941,14 @@ func TestFB096_AC3_InputChanged_LoadingToCancelled(t *testing.T) {
 		t.Parallel()
 		m := newQuotaLoadingModel()
 
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		before := r.(AppModel)
 		normBefore := statusBarNorm(before)
 		if !strings.Contains(normBefore, "loading") {
 			t.Fatalf("AC3 setup: loading hint not in statusBar.View() before Esc: %q", normBefore)
 		}
 
-		r, _ = before.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+		r, _ = before.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 		after := r.(AppModel)
 		normAfter := statusBarNorm(after)
 		if !strings.Contains(normAfter, "Quota dashboard cancelled") {
@@ -13940,14 +13960,14 @@ func TestFB096_AC3_InputChanged_LoadingToCancelled(t *testing.T) {
 		t.Parallel()
 		m := newQuotaLoadingModel()
 
-		r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		before := r.(AppModel)
 		normBefore := statusBarNorm(before)
 		if !strings.Contains(normBefore, "loading") {
 			t.Fatalf("AC3 setup: loading hint not in statusBar.View() before second press: %q", normBefore)
 		}
 
-		r, _ = before.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, _ = before.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		after := r.(AppModel)
 		normAfter := statusBarNorm(after)
 		if !strings.Contains(normAfter, "Quota dashboard cancelled") {
@@ -13961,7 +13981,7 @@ func TestFB096_AC4_AntiBehavior_EscNoPending_NoCancelHint(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel() // starts on NavPane, pendingQuotaOpen=false
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+	r, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -13979,7 +13999,7 @@ func TestFB096_AC5_AntiRegression_FB055_EscBackToDashboard(t *testing.T) {
 	m.tableTypeName = "backends"
 	m.table.SetForceDashboard(false)
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+	r, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -13996,13 +14016,13 @@ func TestFB096_AC6_AntiRegression_PendingOverridesDashboardRestore(t *testing.T)
 	m.showDashboard = false
 	m.tableTypeName = "backends"
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("AC6 setup: pendingQuotaOpen = false")
 	}
 
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -14019,10 +14039,10 @@ func TestFB096_AC7_AntiRegression_FB079_NavCancelClearsPending(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyTab)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := r.(AppModel)
 
 	if appM.pendingQuotaOpen {
@@ -14036,21 +14056,21 @@ func TestFB096_AC8_Integration_QueueEscRequeue(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// First press: queue.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("AC8 setup: queue failed")
 	}
 
 	// Esc: cancel.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = r.(AppModel)
 	if m.pendingQuotaOpen {
 		t.Fatal("AC8: pendingQuotaOpen still true after Esc")
 	}
 
 	// Second press: re-queue.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	if !appM.pendingQuotaOpen {
@@ -14067,10 +14087,10 @@ func TestFB096_AC9_SecondPress_HintContainsCancelled(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -14084,11 +14104,11 @@ func TestFB096_AC10_InputChanged_FirstVsSecondPress(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	after1 := r.(AppModel)
 	norm1 := statusBarNorm(after1)
 
-	r, _ = after1.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = after1.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	after2 := r.(AppModel)
 	norm2 := statusBarNorm(after2)
 
@@ -14108,11 +14128,11 @@ func TestFB096_AC11_AntiBehavior_ThirdPress_Requeues(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // cancel
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"}) // cancel
 	m = r.(AppModel)
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // third press → re-queue
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"}) // third press → re-queue
 	appM := r.(AppModel)
 
 	if !appM.pendingQuotaOpen {
@@ -14132,12 +14152,12 @@ func TestFB096_AC11_AntiBehavior_ThirdPress_Requeues(t *testing.T) {
 // ==================== FB-099: [3] strip label wire-up in model — BucketsLoadedMsg resets strip ====================
 
 // AC6 [Anti-regression / FB-078] — BucketsLoadedMsg with pendingQuotaOpen=true resets strip to "3 quota".
-// Asserts via stripANSIModel(appM.View()) substring after the message is processed.
+// Asserts via stripANSIModel(appM.View().Content) substring after the message is processed.
 func TestFB099_AC6_AntiRegression_FB078_BucketsLoaded_StripResets(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 	m, _ = func() (AppModel, tea.Cmd) {
-		r, c := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+		r, c := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 		return r.(AppModel), c
 	}()
 	if !m.pendingQuotaOpen {
@@ -14152,7 +14172,7 @@ func TestFB099_AC6_AntiRegression_FB078_BucketsLoaded_StripResets(t *testing.T) 
 		t.Fatal("AC6 setup: pendingQuotaOpen still true after BucketsLoadedMsg")
 	}
 
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if !strings.Contains(view, "quota") {
 		t.Errorf("AC6 [Anti-regression FB-078]: View() does not contain 'quota' after strip reset:\n%s", view)
 	}
@@ -14173,7 +14193,7 @@ func TestFB097_AC1_BucketsLoaded_ReadyPromptShown(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	if !m.pendingQuotaOpen {
 		t.Fatal("AC1 setup: pendingQuotaOpen = false after first press")
@@ -14194,7 +14214,7 @@ func TestFB097_AC2_BucketsLoaded_NoClearCmd(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 
 	_, cmd := m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
@@ -14210,7 +14230,7 @@ func TestFB097_AC3_InputChanged_PendingVsNoPending_BucketsLoaded(t *testing.T) {
 
 	// With pendingQuotaOpen=true: ready-prompt appears.
 	mPending := newQuotaLoadingModel()
-	r, _ := mPending.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := mPending.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	mPending = r.(AppModel)
 	r, _ = mPending.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	withPending := statusBarNorm(r.(AppModel))
@@ -14236,7 +14256,7 @@ func TestFB097_AC4_AntiBehavior_StaleHintClearMsg_DoesNotClear(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	appM := r.(AppModel)
@@ -14260,7 +14280,7 @@ func TestFB097_AC5_AntiBehavior_ContextSwitch_ClearsReadyPrompt(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	m = r.(AppModel)
@@ -14284,7 +14304,7 @@ func TestFB097_AC6_AntiRegression_FB078_LoadingHintNoClearCmd(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 
 	// Loading hint is posted via statusBar.PostHint (no Cmd returned from Update).
 	// The '3' key handler calls m.statusBar.PostHint(...) directly — returns no Cmd.
@@ -14299,7 +14319,7 @@ func TestFB097_AC7_AntiRegression_FB079_LoadingCopyUnchanged(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -14317,7 +14337,7 @@ func TestFB097_AC8_AntiRegression_FB096_CancelClearsReadyPrompt(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// 3 → queue; BucketsLoadedMsg → ready-prompt; Esc → cancel.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	m = r.(AppModel)
@@ -14329,7 +14349,7 @@ func TestFB097_AC8_AntiRegression_FB096_CancelClearsReadyPrompt(t *testing.T) {
 	// Esc on NavPane — FB-096 Site 1 cancel path: since pendingQuotaOpen=false now (cleared by BucketsLoadedMsg),
 	// Esc falls through to FB-055 path. Confirm ready-prompt is replaced by the natural Esc flow
 	// (no "cancelled" hint, since pendingQuotaOpen is already false).
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyType(tea.KeyEsc)})
+	r, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	appM := r.(AppModel)
 
 	normAfter := statusBarNorm(appM)
@@ -14345,7 +14365,7 @@ func TestFB097_BriefAC4_ConfirmClearsReadyPrompt(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// Prime: [3] → pendingQuotaOpen=true; BucketsLoadedMsg → ready-prompt shown.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	m = r.(AppModel)
 	r, _ = m.Update(data.BucketsLoadedMsg{Buckets: []data.AllowanceBucket{}})
 	m = r.(AppModel)
@@ -14356,7 +14376,7 @@ func TestFB097_BriefAC4_ConfirmClearsReadyPrompt(t *testing.T) {
 	}
 
 	// Confirm: [3] → opens QuotaDashboardPane.
-	r, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	if appM.activePane != QuotaDashboardPane {
@@ -14381,7 +14401,7 @@ func TestFB115_AC1_Observable_LoadingHintContainsToCancel(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -14398,10 +14418,10 @@ func TestFB115_AC2_Observable_HintAndStripAligned(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if !strings.Contains(view, "to cancel") {
 		t.Errorf("AC2 [Observable]: 'to cancel' absent from View() during loading:\n%s", view)
 	}
@@ -14420,7 +14440,7 @@ func TestFB115_AC3_InputChanged_BeforeVsAfterFirstPress(t *testing.T) {
 		t.Errorf("AC3 [Input-changed]: loading hint present before [3] press: %q", beforeNorm)
 	}
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	afterNorm := statusBarNorm(appM)
@@ -14440,7 +14460,7 @@ func TestFB115_AC4_AntiRegression_FB097_ReadyPromptUnchanged(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	r, _ = appM.Update(data.BucketsLoadedMsg{})
@@ -14461,14 +14481,14 @@ func TestFB115_AC5_AntiRegression_FB080_CancelHintUnchanged(t *testing.T) {
 	m := newQuotaLoadingModel()
 
 	// First press: start pending.
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 	if !appM.pendingQuotaOpen {
 		t.Fatal("AC5 precondition: pendingQuotaOpen must be true after first [3]")
 	}
 
 	// Second press: cancel.
-	r, _ = appM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ = appM.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM = r.(AppModel)
 
 	norm := statusBarNorm(appM)
@@ -14483,7 +14503,7 @@ func TestFB115_AC6_AntiRegression_FB079_AnchorUpdated(t *testing.T) {
 	t.Parallel()
 	m := newQuotaLoadingModel()
 
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	appM := r.(AppModel)
 
 	hint := appM.statusBar.Hint
@@ -14539,7 +14559,7 @@ func TestFB085_AC1_LoadingTrue_UnavailableLabelAbsent(t *testing.T) {
 	m.detail.SetLoading(true)
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if strings.Contains(view, "[unavailable]") {
 		t.Errorf("AC1 [Observable FB-085]: View() contains \"[unavailable]\" while loading=true; want absent.\nView:\n%s", view)
 	}
@@ -14553,7 +14573,7 @@ func TestFB085_AC2_LoadingFalse_UnavailableLabelPresent(t *testing.T) {
 	m.detail.SetLoading(false)
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if !strings.Contains(view, "[unavailable]") {
 		t.Errorf("AC2 [Observable FB-085]: View() does not contain \"[unavailable]\" while loading=false; want present.\nView:\n%s", view)
 	}
@@ -14568,7 +14588,7 @@ func TestFB085_AC3_LoadingTransition_FlipsLabel(t *testing.T) {
 	// loading = true: label must be absent
 	m.detail.SetLoading(true)
 	m.detail.SetMode(m.detailModeLabel())
-	viewLoading := stripANSIModel(m.View())
+	viewLoading := stripANSIModel(m.View().Content)
 	if strings.Contains(viewLoading, "[unavailable]") {
 		t.Errorf("AC3 [Input-changed FB-085]: loading=true: View() contains \"[unavailable]\"; want absent.\nView:\n%s", viewLoading)
 	}
@@ -14576,7 +14596,7 @@ func TestFB085_AC3_LoadingTransition_FlipsLabel(t *testing.T) {
 	// loading = false: label must appear
 	m.detail.SetLoading(false)
 	m.detail.SetMode(m.detailModeLabel())
-	viewDone := stripANSIModel(m.View())
+	viewDone := stripANSIModel(m.View().Content)
 	if !strings.Contains(viewDone, "[unavailable]") {
 		t.Errorf("AC3 [Input-changed FB-085]: loading=false: View() missing \"[unavailable]\"; want present.\nView:\n%s", viewDone)
 	}
@@ -14623,7 +14643,7 @@ func TestFB086_AC5_EKey_DoubleFailure_AdmitsAndRedispatches(t *testing.T) {
 	t.Parallel()
 	m := newDoubleFailureDetailModel()
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if !appM.eventsMode {
@@ -14635,7 +14655,7 @@ func TestFB086_AC5_EKey_DoubleFailure_AdmitsAndRedispatches(t *testing.T) {
 	if cmd == nil {
 		t.Errorf("AC5 [Observable FB-086]: cmd = nil after [E] in double-failure; want LoadEventsCmd dispatched")
 	}
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if !strings.Contains(view, "Loading events") {
 		t.Errorf("AC5 [Observable FB-086]: View() missing \"Loading events\" after [E] in double-failure; want events-loading spinner visible.\nView:\n%s", view)
 	}
@@ -14655,13 +14675,13 @@ func TestFB086_AC6_EKey_SingleFailure_DescribePresent_StillAdmits(t *testing.T) 
 	m.eventsErr = nil
 	m.eventsLoading = false
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := result.(AppModel)
 
 	if !appM.eventsMode {
 		t.Errorf("AC6 [Anti-behavior FB-086]: eventsMode = false after [E] with describeRaw present; want true (pre-existing path)")
 	}
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if !strings.Contains(view, "Loading events") {
 		t.Errorf("AC6 [Anti-behavior FB-086]: View() missing \"Loading events\" after [E] with describeRaw present; want events-loading spinner visible.\nView:\n%s", view)
 	}
@@ -14675,7 +14695,7 @@ func TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition(t *testing
 	m := newDoubleFailureDetailModel()
 
 	// Press [E] to enter events mode
-	r1, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	r1, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 	appM := r1.(AppModel)
 
 	// Simulate events load succeeding
@@ -14686,7 +14706,7 @@ func TestFB086_AC7_EKey_DoubleFailure_ThenEventsLoaded_ViewTransition(t *testing
 	})
 	appM2 := r2.(AppModel)
 
-	view := stripANSIModel(appM2.View())
+	view := stripANSIModel(appM2.View().Content)
 	if !strings.Contains(view, "Scheduled") {
 		t.Errorf("AC7 [Input-changed FB-086]: View() missing event content after EventsLoadedMsg.\nView:\n%s", view)
 	}
@@ -14705,7 +14725,7 @@ func TestFB038_AC1_InFlight_ViewContainsLoading(t *testing.T) {
 	m.detail.SetContent(m.buildDetailContent())
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if !strings.Contains(view, "Loading") {
 		t.Errorf("AC1 [Observable FB-038]: View() missing \"Loading\" during in-flight state; want operator sees loading indicator.\nView:\n%s", view)
 	}
@@ -14718,7 +14738,7 @@ func TestFB038_AC2_RapidEPress_NoBlankBody(t *testing.T) {
 	m := newDetailPaneModelWithEventsInFlight()
 
 	for i := 1; i <= 4; i++ {
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'E', Text: "E"})
 		m = result.(AppModel)
 		view := stripANSIModel(m.detail.View())
 		if strings.TrimSpace(view) == "" {
@@ -14751,7 +14771,7 @@ func TestFB038_AC3_PreCheck_Inert_AfterEventsLoaded(t *testing.T) {
 
 	// With eventsMode=false and eventsLoading=false, pre-check must NOT fire.
 	// The FB-024 placeholder ("Describe unavailable") should render instead.
-	view := stripANSIModel(appM.View())
+	view := stripANSIModel(appM.View().Content)
 	if strings.Contains(view, "Loading\u2026") {
 		t.Errorf("AC3 [Anti-behavior FB-038]: View() contains the FB-038 loading placeholder after events loaded; pre-check must be inert.\nView:\n%s", view)
 	}
@@ -14828,7 +14848,7 @@ func TestFB026_AC1_TitleBar_HintMatrix(t *testing.T) {
 func TestFB026_AC2_HelpOverlay_CanonicalFormat(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModelWithEventsRaw()
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 
 	view := stripANSIModel(appM.helpOverlay.View())
@@ -14851,7 +14871,7 @@ func TestFB026_AC2_HelpOverlay_CanonicalFormat(t *testing.T) {
 func TestFB026_AC3_HelpOverlay_GlobalHelp_NoToggleVerb(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModelWithEventsRaw()
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	appM := result.(AppModel)
 
 	view := stripANSIModel(appM.helpOverlay.View())
@@ -14875,7 +14895,7 @@ func TestFB026_AC4_ConditionsMode_ToggleSwap(t *testing.T) {
 	r0, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	m = r0.(AppModel)
 	// Press C to enter conditions mode
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'C', Text: "C"})
 	appM := result.(AppModel)
 
 	view := stripANSIModel(appM.detail.View())
@@ -14895,7 +14915,7 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 	t.Run("conditions_hint_gated_on_in_detail", func(t *testing.T) {
 		t.Parallel()
 		m := newDetailPaneModelWithEventsRaw()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
 		if !strings.Contains(view, "[C]    conditions") {
@@ -14906,7 +14926,7 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 	t.Run("conditions_hint_gated_off_in_table", func(t *testing.T) {
 		t.Parallel()
 		m := newTablePaneModel()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
 		if strings.Contains(view, "[C]    conditions") {
@@ -14917,7 +14937,7 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 	t.Run("events_hint_gated_on_in_detail", func(t *testing.T) {
 		t.Parallel()
 		m := newDetailPaneModelWithEventsRaw()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
 		if !strings.Contains(view, "[E]    events") {
@@ -14928,7 +14948,7 @@ func TestFB026_AC5_PaneGating_Preserved(t *testing.T) {
 	t.Run("events_hint_gated_off_in_table", func(t *testing.T) {
 		t.Parallel()
 		m := newTablePaneModel()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 		appM := result.(AppModel)
 		view := stripANSIModel(appM.helpOverlay.View())
 		if strings.Contains(view, "[E]    events") {
@@ -14988,7 +15008,7 @@ func TestFB118_AC1_Observable_EventsMode_DescribeFailed_EventsInFlight_ShowsSpin
 	m.detail.SetContent(m.buildDetailContent())
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if !strings.Contains(view, "Loading events") {
 		t.Errorf("AC1 [Observable FB-118]: eventsMode=true + describe failed + eventsLoading=true: want 'Loading events' in output, got:\n%s", view)
 	}
@@ -15027,7 +15047,7 @@ func TestFB118_AC2_Observable_EventsMode_DescribeFailed_EventsLoaded_ShowsTable(
 	m.detail.SetContent(m.buildDetailContent())
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if !strings.Contains(view, "SuccessfulCreate") {
 		t.Errorf("AC2 [Observable FB-118]: eventsMode=true + describe failed + events loaded: want 'SuccessfulCreate' in output, got:\n%s", view)
 	}
@@ -15067,7 +15087,7 @@ func TestFB118_AC3_Observable_EventsMode_BothFailed_ShowsEventsError(t *testing.
 	m.detail.SetContent(m.buildDetailContent())
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if strings.Contains(view, "Could not describe") {
 		t.Errorf("AC3 [Observable FB-118]: eventsMode=true + both failed: got describe error card; want events error surface:\n%s", view)
 	}
@@ -15106,7 +15126,7 @@ func TestFB118_AC4_AntiRegression_EventsModeFalse_DescribeFailed_ShowsDescribeCa
 	m.detail.SetContent(m.buildDetailContent())
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if !strings.Contains(view, "Could not describe") {
 		t.Errorf("AC4 [Anti-regression FB-118]: eventsMode=false + describe failed: want 'Could not describe' (describe error card), got:\n%s", view)
 	}
@@ -15157,7 +15177,7 @@ func TestFB118_AC6_AntiRegression_FB038PreCheckUnaffected(t *testing.T) {
 	m.detail.SetContent(m.buildDetailContent())
 	m.detail.SetMode(m.detailModeLabel())
 
-	view := stripANSIModel(m.View())
+	view := stripANSIModel(m.View().Content)
 	if !strings.Contains(view, "Loading") {
 		t.Errorf("AC6 [Anti-regression FB-118]: LoadStateIdle + eventsLoading=true: want muted 'Loading…' from FB-038 pre-check, got:\n%s", view)
 	}
@@ -15215,7 +15235,7 @@ func TestFB025_AC1_RKey_EventsMode_DispatchesBoth(t *testing.T) {
 	m.eventsMode = true
 	m.events = []data.EventRow{{Type: "Normal", Reason: "Created", Count: 1}}
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd == nil {
 		t.Fatal("AC1: cmd = nil, want batch with LoadResourcesCmd + LoadEventsCmd")
 	}
@@ -15245,7 +15265,7 @@ func TestFB025_AC2_RKey_AfterEOnOff_DispatchesEvents(t *testing.T) {
 	m.eventsMode = false
 	m.events = []data.EventRow{{Type: "Normal", Reason: "Created", Count: 1}} // visited, then toggled off
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd == nil {
 		t.Fatal("AC2: cmd = nil, want batch including LoadEventsCmd")
 	}
@@ -15269,7 +15289,7 @@ func TestFB025_AC3_RKey_EventsNeverFetched_NoEventsCmd(t *testing.T) {
 	m.eventsMode = false
 	m.events = nil
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd == nil {
 		return // no dispatch is also acceptable
 	}
@@ -15393,7 +15413,7 @@ func TestFB025_AC8_ResetSites_ClearFetchedAt(t *testing.T) {
 	t.Run("site-A: case-d enters new resource", func(t *testing.T) {
 		t.Parallel()
 		m := setFetchedAt(newTablePaneModel())
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 		appM := result.(AppModel)
 		if !appM.detail.EventsFetchedAt().IsZero() {
 			t.Error("AC8 site-A: eventsFetchedAt non-zero after case-d entry, want zero")
@@ -15416,7 +15436,7 @@ func TestFB025_AC8_ResetSites_ClearFetchedAt(t *testing.T) {
 		t.Parallel()
 		m := setFetchedAt(newDetailPaneModelForRefresh())
 		m.detailReturnPane = TablePane
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 		appM := result.(AppModel)
 		if !appM.detail.EventsFetchedAt().IsZero() {
 			t.Error("AC8 site-C: eventsFetchedAt non-zero after Esc from DetailPane, want zero")
@@ -15429,7 +15449,7 @@ func TestFB025_AC8_ResetSites_ClearFetchedAt(t *testing.T) {
 		m := setFetchedAt(newDetailPaneModelWithHC())
 		m.activePane = HistoryPane
 		m.updatePaneFocus()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 		appM := result.(AppModel)
 		if !appM.detail.EventsFetchedAt().IsZero() {
 			t.Error("AC8 site-D: eventsFetchedAt non-zero after Esc from HistoryPane, want zero")
@@ -15442,7 +15462,7 @@ func TestFB025_AC8_ResetSites_ClearFetchedAt(t *testing.T) {
 		m := setFetchedAt(newDetailPaneModelWithHC())
 		m.activePane = HistoryPane
 		m.updatePaneFocus()
-		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+		result, _ := m.Update(tea.KeyPressMsg{Code: 'H', Text: "H"})
 		appM := result.(AppModel)
 		if !appM.detail.EventsFetchedAt().IsZero() {
 			t.Error("AC8 site-E: eventsFetchedAt non-zero after H from HistoryPane, want zero")
@@ -15460,7 +15480,7 @@ func TestFB025_AC9_RapidR_RefreshingGuard_NoDoubleDispatch(t *testing.T) {
 	m.events = []data.EventRow{{Type: "Normal", Reason: "Created", Count: 1}}
 
 	// First r — sets refreshing=true.
-	r1, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	r1, cmd1 := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	m = r1.(AppModel)
 	if cmd1 == nil {
 		t.Fatal("AC9: first r produced nil cmd, want batch cmd")
@@ -15470,7 +15490,7 @@ func TestFB025_AC9_RapidR_RefreshingGuard_NoDoubleDispatch(t *testing.T) {
 	}
 
 	// Second r — must be blocked by m.refreshing guard.
-	_, cmd2 := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, cmd2 := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if cmd2 != nil {
 		t.Error("AC9: second r produced non-nil cmd, want nil (refreshing guard blocks)")
 	}
@@ -15512,16 +15532,16 @@ func TestFB124_AC8_Integration_TabPaneSwitchRemovesHint(t *testing.T) {
 		t.Fatalf("precondition: activePane=%v, want NavPane", m.activePane)
 	}
 
-	v1 := stripANSIModel(m.View())
+	v1 := stripANSIModel(m.View().Content)
 	if !strings.Contains(v1, "[Tab] next pane") {
 		t.Errorf("AC8 [Integration]: '[Tab] next pane' absent when NavPane active:\n%s", v1)
 	}
 
 	// Tab → TablePane
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	appM := result.(AppModel)
 
-	v2 := stripANSIModel(appM.View())
+	v2 := stripANSIModel(appM.View().Content)
 	if strings.Contains(v2, "[Tab] next pane") {
 		t.Errorf("AC8 [Integration]: '[Tab] next pane' still present after Tab to TablePane:\n%s", v2)
 	}
@@ -15556,10 +15576,10 @@ func TestFB103_AC1_Observable_EmptyRows_RPress_ShowsLoading(t *testing.T) {
 	m := newFB103ProjectModel()
 	// no rows loaded
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "loading") {
 		t.Errorf("AC1 [Observable]: 'loading' absent from View() after [r] with empty rows:\n%s", got)
 	}
@@ -15571,10 +15591,10 @@ func TestFB103_AC2_AntiBehavior_OrgScope_RPress_NoLoadingSignal(t *testing.T) {
 	m := newFB103ProjectModel()
 	m.tuiCtx.ActiveCtx = nil // org scope — no activity fetch dispatched
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if strings.Contains(got, "loading") {
 		t.Errorf("AC2 [Anti-behavior]: 'loading' present in View() for org-scope [r] (no activity fetch):\n%s", got)
 	}
@@ -15591,10 +15611,10 @@ func TestFB103_AC3_AntiBehavior_PopulatedRows_RPress_RowsPreserved(t *testing.T)
 		{ActorDisplay: "alice@example.com", Summary: "created cluster", Timestamp: time.Now().Add(-1 * time.Minute)},
 	})
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "alice@example.com") {
 		t.Errorf("AC3 [Anti-behavior]: stale rows 'alice@example.com' gone after [r] with populated rows:\n%s", got)
 	}
@@ -15608,15 +15628,15 @@ func TestFB103_AC4_InputChanged_EmptyRows_BeforeAfterRPress(t *testing.T) {
 	t.Parallel()
 	m := newFB103ProjectModel()
 
-	v1 := stripANSIModel(m.View())
+	v1 := stripANSIModel(m.View().Content)
 	if !strings.Contains(v1, "no recent activity") {
 		t.Fatalf("AC4 precondition: 'no recent activity' absent before [r]:\n%s", v1)
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	v2 := stripANSIModel(appM.View())
+	v2 := stripANSIModel(appM.View().Content)
 	if v1 == v2 {
 		t.Error("AC4 [Input-changed]: View() unchanged after [r] with empty rows")
 	}
@@ -15630,7 +15650,7 @@ func TestFB103_AC5_AntiRegression_FB076_DispatchPreserved(t *testing.T) {
 	t.Parallel()
 	m := newFB103ProjectModel()
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 
 	if batchLen(cmd) < 2 {
 		t.Errorf("AC5 [Anti-regression FB-076]: batchLen=%d, want ≥2 (resource types + activity cmd)", batchLen(cmd))
@@ -15643,14 +15663,14 @@ func TestFB103_AC6_AntiRegression_FB082_FetchFailedReRendersError(t *testing.T) 
 	m := newFB103ProjectModel()
 
 	// Press [r] → loading state
-	r, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	r, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	m = r.(AppModel)
 
 	// Simulate error response
 	r, _ = m.Update(data.ProjectActivityErrorMsg{Err: errors.New("network timeout")})
 	appM := r.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "activity unavailable") {
 		t.Errorf("AC6 [Anti-regression FB-082]: 'activity unavailable' absent after fetch error:\n%s", got)
 	}
@@ -15663,10 +15683,10 @@ func TestFB103_AC7_Observable_ErrorState_RPress_ShowsLoading(t *testing.T) {
 	m.table.SetActivityFetchFailed(true)
 	m.table.SetActivityCRDAbsent(false)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "loading") {
 		t.Errorf("AC7 [Observable]: 'loading' absent from View() after [r] in error state:\n%s", got)
 	}
@@ -15682,15 +15702,15 @@ func TestFB103_AC8_InputChanged_ErrorState_BeforeAfterRPress(t *testing.T) {
 	m.table.SetActivityFetchFailed(true)
 	m.table.SetActivityCRDAbsent(false)
 
-	v1 := stripANSIModel(m.View())
+	v1 := stripANSIModel(m.View().Content)
 	if !strings.Contains(v1, "activity unavailable") {
 		t.Fatalf("AC8 precondition: 'activity unavailable' absent before [r]:\n%s", v1)
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	v2 := stripANSIModel(appM.View())
+	v2 := stripANSIModel(appM.View().Content)
 	if v1 == v2 {
 		t.Error("AC8 [Input-changed]: View() unchanged after [r] in error state")
 	}
@@ -15706,10 +15726,10 @@ func TestFB103_AC9_Observable_CRDAbsent_RPress_ShowsLoading(t *testing.T) {
 	m.table.SetActivityFetchFailed(true)
 	m.table.SetActivityCRDAbsent(true)
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "loading") {
 		t.Errorf("AC9 [Observable]: 'loading' absent from View() after [r] in CRD-absent state:\n%s", got)
 	}
@@ -15727,15 +15747,15 @@ func TestFB130_AC2_InputChanged_EmptyNonNilRows_RPress_ShowsLoading(t *testing.T
 	m := newFB103ProjectModel()
 	m.table.SetActivityRows([]data.ActivityRow{}) // prior fetch returned 0 rows — non-nil empty
 
-	v1 := stripANSIModel(m.View())
+	v1 := stripANSIModel(m.View().Content)
 	if !strings.Contains(v1, "no recent activity") {
 		t.Fatalf("AC2 precondition: 'no recent activity' absent before [r]:\n%s", v1)
 	}
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	appM := result.(AppModel)
 
-	v2 := stripANSIModel(appM.View())
+	v2 := stripANSIModel(appM.View().Content)
 	if v1 == v2 {
 		t.Error("AC2 [Input-changed]: View() unchanged after [r] with empty non-nil rows")
 	}
@@ -15772,7 +15792,7 @@ func TestFB071_AC1_Observable_StatusBarErrSet(t *testing.T) {
 	if appM.statusBar.ErrSeverity != data.ErrorSeverityWarning {
 		t.Errorf("AC1: ErrSeverity = %v, want ErrorSeverityWarning", appM.statusBar.ErrSeverity)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "bucket load failed") {
 		t.Errorf("AC1: View() does not contain error message after BucketsErrorMsg:\n%s", got)
 	}
@@ -15792,7 +15812,7 @@ func TestFB071_AC1b_Observable_UnauthorizedSetsErrorSeverity(t *testing.T) {
 	if appM.statusBar.ErrSeverity != data.ErrorSeverityError {
 		t.Errorf("AC1b: ErrSeverity = %v, want ErrorSeverityError", appM.statusBar.ErrSeverity)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "✕") {
 		t.Errorf("AC1b: View() does not contain error glyph '✕' for ErrorSeverityError:\n%s", got)
 	}
@@ -15809,7 +15829,7 @@ func TestFB071_AC2_InputChanged_LoadedMsgClearsStatusBarErr(t *testing.T) {
 	if errM.statusBar.Err == nil {
 		t.Fatal("AC2 precondition: statusBar.Err must be non-nil after BucketsErrorMsg")
 	}
-	v1 := stripANSIModel(errM.View())
+	v1 := stripANSIModel(errM.View().Content)
 
 	// Recover: inject success.
 	result, _ = errM.Update(data.BucketsLoadedMsg{})
@@ -15818,7 +15838,7 @@ func TestFB071_AC2_InputChanged_LoadedMsgClearsStatusBarErr(t *testing.T) {
 	if recoveredM.statusBar.Err != nil {
 		t.Errorf("AC2: statusBar.Err = %v after BucketsLoadedMsg, want nil", recoveredM.statusBar.Err)
 	}
-	v2 := stripANSIModel(recoveredM.View())
+	v2 := stripANSIModel(recoveredM.View().Content)
 	if strings.Contains(v2, "bucket load failed") {
 		t.Errorf("AC2 [Input-changed]: error message still present in View() after BucketsLoadedMsg:\n%s", v2)
 	}
@@ -15839,7 +15859,7 @@ func TestFB071_AC3_AntiRegression_WelcomePanelS2Unchanged(t *testing.T) {
 		t.Fatal("AC3: bucketErr == nil after BucketsErrorMsg — FB-042 path broken")
 	}
 	// Status bar also carries the error now (FB-071), and S2 still renders it.
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "network timeout") {
 		t.Errorf("AC3: error not visible in View() after BucketsErrorMsg:\n%s", got)
 	}
@@ -15895,7 +15915,7 @@ func TestFB135_AC1_Observable_BucketErrSurvivesClear(t *testing.T) {
 	if appM.statusBar.Err.Error() != "bucket load failed" {
 		t.Errorf("AC1: statusBar.Err = %q, want 'bucket load failed' (bucket signal must win)", appM.statusBar.Err.Error())
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "bucket load failed") {
 		t.Errorf("AC1: View() does not contain 'bucket load failed' after clear:\n%s", got)
 	}
@@ -15919,7 +15939,7 @@ func TestFB135_AC2_InputChanged_LoadedMsgClears(t *testing.T) {
 	if m.statusBar.Err == nil {
 		t.Fatal("AC2 precondition: statusBar.Err must be non-nil (bucket restored)")
 	}
-	v1 := stripANSIModel(m.View())
+	v1 := stripANSIModel(m.View().Content)
 
 	// Recovery via BucketsLoadedMsg.
 	result, _ = m.Update(data.BucketsLoadedMsg{})
@@ -15928,7 +15948,7 @@ func TestFB135_AC2_InputChanged_LoadedMsgClears(t *testing.T) {
 	if appM.statusBar.Err != nil {
 		t.Errorf("AC2: statusBar.Err = %v after BucketsLoadedMsg, want nil", appM.statusBar.Err)
 	}
-	v2 := stripANSIModel(appM.View())
+	v2 := stripANSIModel(appM.View().Content)
 	if strings.Contains(v2, "bucket load failed") {
 		t.Errorf("AC2 [Input-changed]: 'bucket load failed' still in View() after BucketsLoadedMsg:\n%s", v2)
 	}
@@ -15989,7 +16009,7 @@ func TestFB135_AC4_Unauthorized_SeverityPreservedThroughClear(t *testing.T) {
 	if appM.statusBar.ErrSeverity != data.ErrorSeverityError {
 		t.Errorf("AC1: ErrSeverity = %v after clear, want ErrorSeverityError (unauthorized severity must not be downgraded)", appM.statusBar.ErrSeverity)
 	}
-	got := stripANSIModel(appM.View())
+	got := stripANSIModel(appM.View().Content)
 	if !strings.Contains(got, "✕") {
 		t.Errorf("AC1: View() does not contain '✕' glyph after clear — unauthorized severity downgraded to warning:\n%s", got)
 	}
@@ -16379,15 +16399,14 @@ func TestFB039_AC3_Observable_HeaderAndBodyCoexist(t *testing.T) {
 // rendered ANSI output from PaneBorder in TrueColor mode.
 func TestViewLineWidths(t *testing.T) {
 	t.Parallel()
-	// Simulate what a real terminal sees: force TrueColor renderer so ANSI bg
-	// codes are emitted, then check the LAST characters on each rendered line
-	// actually have an explicit background color.
-	r := lipgloss.NewRenderer(os.Stdout)
-	r.SetColorProfile(termenv.TrueColor)
+	// Simulate what a real terminal sees: in lipgloss v2, Render() always emits
+	// full-fidelity ANSI (TrueColor), so no renderer configuration is needed.
+	// Check that the LAST characters on each rendered line have an explicit
+	// background color.
 
 	// Render a PaneBorder at a fixed size and check the tail of each line.
 	inner := strings.Repeat("A", 10) // 10 visible chars
-	borderStyle := r.NewStyle().
+	borderStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("#0C1D31")).
 		Foreground(lipgloss.Color("#F6F6F5")).
 		Border(lipgloss.NormalBorder(), false, true, false, false).

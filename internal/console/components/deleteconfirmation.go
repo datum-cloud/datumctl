@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
@@ -53,7 +53,7 @@ func NewDeleteConfirmationModel(target data.DeleteTarget, registrations []data.R
 }
 
 func (m DeleteConfirmationModel) Init() tea.Cmd {
-	return m.spinner.Tick
+	return func() tea.Msg { return m.spinner.Tick() }
 }
 
 func (m DeleteConfirmationModel) Update(msg tea.Msg) (DeleteConfirmationModel, tea.Cmd) {
@@ -96,7 +96,7 @@ func (m DeleteConfirmationModel) View(appWidth, appHeight int) string {
 
 	return lipgloss.Place(appWidth, appHeight,
 		lipgloss.Center, lipgloss.Center, box,
-		lipgloss.WithWhitespaceBackground(styles.OverlayBackdrop),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
 	)
 }
 

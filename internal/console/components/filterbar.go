@@ -1,9 +1,9 @@
 package components
 
 import (
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/styles"
 )
 
@@ -14,9 +14,13 @@ type FilterBarModel struct {
 func NewFilterBarModel() FilterBarModel {
 	ti := textinput.New()
 	ti.Placeholder = "filter by name..."
-	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(styles.Muted).Italic(true)
 	ti.Prompt = "▸ "
-	ti.PromptStyle = lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
+	s := ti.Styles()
+	s.Focused.Placeholder = lipgloss.NewStyle().Foreground(styles.Muted).Italic(true)
+	s.Blurred.Placeholder = lipgloss.NewStyle().Foreground(styles.Muted).Italic(true)
+	s.Focused.Prompt = lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
+	s.Blurred.Prompt = lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
+	ti.SetStyles(s)
 	return FilterBarModel{input: ti}
 }
 

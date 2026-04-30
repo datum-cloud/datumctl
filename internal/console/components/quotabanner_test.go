@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/data"
 )
 

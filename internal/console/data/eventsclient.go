@@ -3,7 +3,7 @@ package data
 import (
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // EventsLoadedMsg is the result message returned by LoadEventsCmd. // AC#27

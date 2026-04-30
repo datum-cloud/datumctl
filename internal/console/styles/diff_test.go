@@ -4,12 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
+// TestMain runs the test suite. In lipgloss v2, Render() always emits
+// full-fidelity ANSI, so no color profile configuration is needed.
 func TestMain(m *testing.M) {
-	lipgloss.SetColorProfile(termenv.TrueColor)
 	m.Run()
 }
 

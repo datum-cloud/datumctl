@@ -3,8 +3,8 @@ package components
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"go.datum.net/datumctl/internal/datumconfig"
 	tuictx "go.datum.net/datumctl/internal/console/context"
@@ -183,6 +183,6 @@ func (m CtxSwitcherModel) View() string {
 
 	return lipgloss.Place(m.width, m.height,
 		lipgloss.Center, lipgloss.Center, modal,
-		lipgloss.WithWhitespaceBackground(styles.OverlayBackdrop),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
 	)
 }

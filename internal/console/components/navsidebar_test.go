@@ -34,7 +34,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"go.datum.net/datumctl/internal/console/data"
 )
 
@@ -55,13 +55,13 @@ func threeGroupFixture() []data.ResourceType {
 
 // pressJ sends a "j" key message to the sidebar and returns the updated model.
 func pressJ(m NavSidebarModel) NavSidebarModel {
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	return updated
 }
 
 // pressK sends a "k" key message to the sidebar and returns the updated model.
 func pressK(m NavSidebarModel) NavSidebarModel {
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	return updated
 }
 
@@ -487,7 +487,7 @@ func TestFB023_AC13_HeaderPositionEnterNoOp(t *testing.T) {
 	}
 
 	// Enter key: send it and confirm SelectedType still returns false.
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) //nolint:errcheck
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) //nolint:errcheck
 	if _, ok := m.SelectedType(); ok {
 		t.Error("AC13: SelectedType returned true after Enter on headerItem")
 	}
@@ -505,7 +505,7 @@ func TestFB023_AC14_DigitKeysUnaffected(t *testing.T) {
 	before := selectedName(m)
 
 	for _, digit := range []rune{'1', '2', '3', '4', '5', '6', '7', '8', '9'} {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{digit}})
+		m, _ = m.Update(tea.KeyPressMsg{Code: digit, Text: string(digit)})
 	}
 
 	after := selectedName(m)

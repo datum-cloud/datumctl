@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
 )
@@ -72,8 +72,8 @@ func (m *DiffViewModel) SetSize(w, h int) {
 		// titleBar + titleRule + metaBanner + metaRule + footerRule + scrollFooter = 6 lines
 		vpH = max(h-6, 1)
 	}
-	m.vp.Width = w
-	m.vp.Height = vpH
+	m.vp.SetWidth(w)
+	m.vp.SetHeight(vpH)
 }
 
 func (m *DiffViewModel) SetFocused(focused bool) { m.focused = focused }

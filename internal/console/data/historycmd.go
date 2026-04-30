@@ -3,7 +3,7 @@ package data
 import (
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // HistoryLoadedMsg carries the result of a LoadHistory call.

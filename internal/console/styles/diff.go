@@ -3,7 +3,7 @@ package styles
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // ColorizeDiff takes a raw unified-diff string and returns an ANSI-colorized string.
