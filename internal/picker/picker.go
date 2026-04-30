@@ -5,7 +5,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"golang.org/x/term"
 
 	"go.datum.net/datumctl/internal/datumconfig"
