@@ -21,7 +21,7 @@ require (
 	go.miloapis.com/activity v0.3.1
 	go.miloapis.com/milo v0.21.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/term v0.39.0
+	golang.org/x/term v0.42.0
 	k8s.io/api v0.35.2
 	k8s.io/apimachinery v0.35.2
 	k8s.io/cli-runtime v0.35.2
