@@ -5,15 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"go.datum.net/datumctl/internal/client"
-	"go.datum.net/datumctl/internal/cmd/auth"
-	"go.datum.net/datumctl/internal/cmd/create"
-	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
-	"go.datum.net/datumctl/internal/cmd/docs"
-	"go.datum.net/datumctl/internal/cmd/login"
-	"go.datum.net/datumctl/internal/cmd/logout"
-	"go.datum.net/datumctl/internal/cmd/whoami"
-	customerrors "go.datum.net/datumctl/internal/errors"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -26,6 +17,17 @@ import (
 	"k8s.io/kubectl/pkg/cmd/explain"
 	"k8s.io/kubectl/pkg/cmd/get"
 	"k8s.io/kubectl/pkg/cmd/version"
+
+	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/cmd/auth"
+	"go.datum.net/datumctl/internal/cmd/create"
+	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
+	"go.datum.net/datumctl/internal/cmd/docs"
+	"go.datum.net/datumctl/internal/cmd/login"
+	"go.datum.net/datumctl/internal/cmd/logout"
+	"go.datum.net/datumctl/internal/cmd/console"
+	"go.datum.net/datumctl/internal/cmd/whoami"
+	customerrors "go.datum.net/datumctl/internal/errors"
 )
 
 // hideFlags hides the named flags from a command's flag set. Flags that do not
@@ -546,6 +548,10 @@ Specify the resource type and name to view its history.`
 	docsCmd := docs.Command(rootCmd)
 	docsCmd.GroupID = "other"
 	rootCmd.AddCommand(docsCmd)
+
+	consoleCmd := console.Command(factory)
+	consoleCmd.GroupID = "other"
+	rootCmd.AddCommand(consoleCmd)
 
 	return rootCmd
 }
