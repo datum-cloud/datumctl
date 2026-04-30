@@ -6,16 +6,23 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/pflag"
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/miloapi"
 	"golang.org/x/oauth2"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/discovery"
+	diskcached "k8s.io/client-go/discovery/cached/disk"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/client-go/util/homedir"
 	"k8s.io/kubectl/pkg/cmd/util"
 )
 
@@ -182,6 +189,38 @@ func (c *CustomConfigFlags) ToRawKubeConfigLoader() clientcmd.ClientConfig {
 	}
 
 	return clientcmd.NewDefaultClientConfig(*kubeConfig, overrides)
+}
+
+// ToDiscoveryClient overrides the embedded ConfigFlags method so that discovery
+// requests are sent to the scope-correct control plane (project, org, etc.)
+// rather than always using the user control plane. The embedded method calls
+// f.ToRESTConfig() on *ConfigFlags, which bypasses our CustomConfigFlags
+// override — this method fixes that by calling c.ToRESTConfig() directly.
+func (c *CustomConfigFlags) ToDiscoveryClient() (discovery.CachedDiscoveryInterface, error) {
+	config, err := c.ToRESTConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	cacheDir := filepath.Join(homedir.HomeDir(), ".kube", "cache")
+	httpCacheDir := filepath.Join(cacheDir, "http")
+	discoveryCacheDir := filepath.Join(cacheDir, "discovery", config.Host)
+
+	return diskcached.NewCachedDiscoveryClientForConfig(config, discoveryCacheDir, httpCacheDir, 6*time.Hour)
+}
+
+// ToRESTMapper overrides the embedded ConfigFlags method for the same reason as
+// ToDiscoveryClient: the embedded toRESTMapper calls f.ToDiscoveryClient() on
+// *ConfigFlags, which would bypass our ToDiscoveryClient override.
+func (c *CustomConfigFlags) ToRESTMapper() (meta.RESTMapper, error) {
+	discoveryClient, err := c.ToDiscoveryClient()
+	if err != nil {
+		return nil, err
+	}
+
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(discoveryClient)
+	expander := restmapper.NewShortcutExpander(mapper, discoveryClient, nil)
+	return expander, nil
 }
 
 // loadDatumContext resolves the active v1beta1 session and current context,
