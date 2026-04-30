@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	tuictx "go.datum.net/datumctl/internal/console/context"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
@@ -102,6 +102,7 @@ type ResourceTableModel struct {
 func NewResourceTableModel(tableWidth, totalHeight int) ResourceTableModel {
 	t := table.New(
 		table.WithFocused(true),
+		table.WithWidth(tableWidth),
 		table.WithHeight(totalHeight),
 		table.WithStyles(table.Styles{
 			Header:   styles.TableStyle.Bold(true).Foreground(styles.Secondary),
@@ -120,7 +121,7 @@ func NewResourceTableModel(tableWidth, totalHeight int) ResourceTableModel {
 }
 
 func (m ResourceTableModel) Init() tea.Cmd {
-	return m.spinner.Tick
+	return func() tea.Msg { return m.spinner.Tick() }
 }
 
 func (m ResourceTableModel) Update(msg tea.Msg) (ResourceTableModel, tea.Cmd) {
@@ -1017,6 +1018,8 @@ func (m *ResourceTableModel) SetColumns(cols []string, tableWidth int) {
 	// Rows from a prior resource type have a different cell count and will panic.
 	m.table.SetRows(nil)
 	m.table.SetColumns(tableCols)
+	// v2 viewport guards against width==0 returning empty string; set width explicitly.
+	m.table.SetWidth(tableWidth)
 	m.table.SetStyles(table.Styles{
 		Header:   styles.TableStyle.Bold(true).Foreground(styles.Secondary),
 		Cell:     lipgloss.NewStyle().Foreground(styles.Primary).Padding(0, 1),

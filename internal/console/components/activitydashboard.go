@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
@@ -46,7 +46,9 @@ func NewActivityDashboardModel(width, height int, ctxLabel string) ActivityDashb
 	return m
 }
 
-func (m ActivityDashboardModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m ActivityDashboardModel) Init() tea.Cmd {
+	return func() tea.Msg { return m.spinner.Tick() }
+}
 
 func (m ActivityDashboardModel) Update(msg tea.Msg) (ActivityDashboardModel, tea.Cmd) {
 	switch msg := msg.(type) {

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"go.datum.net/datumctl/internal/console/data"
@@ -34,14 +34,16 @@ func NewDetailViewModel(width, height int) DetailViewModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	m := DetailViewModel{
-		vp:      viewport.New(width, height),
+		vp:      viewport.New(viewport.WithWidth(width), viewport.WithHeight(height)),
 		spinner: s,
 	}
 	m.SetSize(width, height)
 	return m
 }
 
-func (m DetailViewModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m DetailViewModel) Init() tea.Cmd {
+	return func() tea.Msg { return m.spinner.Tick() }
+}
 
 func (m DetailViewModel) Update(msg tea.Msg) (DetailViewModel, tea.Cmd) {
 	var cmd tea.Cmd
@@ -88,8 +90,8 @@ func (m *DetailViewModel) SetSize(w, h int) {
 	if h >= 6 {
 		vpH = max(h-4, 1)
 	}
-	m.vp.Width = w
-	m.vp.Height = vpH
+	m.vp.SetWidth(w)
+	m.vp.SetHeight(vpH)
 }
 
 func (m *DetailViewModel) SetResourceContext(kind, name string) {

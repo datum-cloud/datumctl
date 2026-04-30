@@ -20,15 +20,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// TestMain sets a stable color profile for the entire components package test suite
-// so that ANSI-color assertions in conditions tests produce deterministic output.
+// TestMain runs the test suite. In lipgloss v2, Render() always emits
+// full-fidelity ANSI, so no color profile configuration is needed.
 func TestMain(m *testing.M) {
-	lipgloss.SetColorProfile(termenv.TrueColor)
 	m.Run()
 }
 

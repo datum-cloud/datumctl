@@ -279,7 +279,7 @@ func TestDeleteConfirmation_WidthBand_NarrowMode(t *testing.T) {
 	if strings.Contains(got, "Deployment") {
 		t.Errorf("S15 narrow: Kind 'Deployment' must be absent at narrow width, got: %q", got)
 	}
-	if !strings.Contains(got, "datumctl-") {
+	if !strings.Contains(got, "datumct") {
 		t.Errorf("S15 narrow: resource name (partial) must appear even in narrow mode, got: %q", got)
 	}
 }

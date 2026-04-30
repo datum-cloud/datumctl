@@ -1,9 +1,10 @@
 package styles
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 const SidebarWidth = 22
@@ -88,15 +89,15 @@ var (
 // render on the dark-mode Midnight Fjord surface rather than inheriting the
 // user's terminal background.
 func PaneBorder(focused bool) lipgloss.Style {
-	color := lipgloss.TerminalColor(InactiveBorderColor)
+	borderColor := InactiveBorderColor
 	if focused {
-		color = ActiveBorderColor
+		borderColor = ActiveBorderColor
 	}
 	return lipgloss.NewStyle().
 		Background(Surface).
 		Foreground(Primary).
 		Border(lipgloss.NormalBorder(), false, true, false, false).
-		BorderForeground(color).
+		BorderForeground(borderColor).
 		BorderBackground(Surface).
 		Padding(0, 1)
 }
@@ -129,8 +130,8 @@ func PaneInnerSize(width, height int) (innerW, innerH int) {
 // so the highlight spans the full row width.
 func SurfaceFill(s string, width, height int) string {
 	surfaceOpen := lipgloss.NewStyle().Background(Surface).Render("")
-	surfaceOpen = strings.TrimSuffix(surfaceOpen, "\x1b[0m")
-	const reset = "\x1b[0m"
+	surfaceOpen = strings.TrimSuffix(surfaceOpen, "\x1b[m")
+	const reset = "\x1b[m"
 
 	var lines []string
 	if s == "" {
@@ -193,7 +194,7 @@ func max(a, b int) int {
 }
 
 // StatusColorFor returns a semantic color for a Kubernetes status string.
-func StatusColorFor(status string) lipgloss.TerminalColor {
+func StatusColorFor(status string) color.Color {
 	switch strings.ToLower(status) {
 	case "running", "ready", "active", "succeeded", "available", "true", "healthy":
 		return Success

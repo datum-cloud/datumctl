@@ -320,8 +320,8 @@ func TestActivityViewModel_SetSize_ViewportHeightClamped(t *testing.T) {
 	m := NewActivityViewModel(80, 10)
 	// After SetSize(80, 10), vpH = 10 - 5 = 5.
 	m.SetSize(80, 10)
-	if m.vp.Height != 5 {
-		t.Errorf("vp.Height = %d, want %d (h-5 chrome)", m.vp.Height, 5)
+	if m.vp.Height() != 5 {
+		t.Errorf("vp.Height = %d, want %d (h-5 chrome)", m.vp.Height(), 5)
 	}
 }
 
@@ -330,7 +330,7 @@ func TestActivityViewModel_SetSize_SmallHeight_MinViewport(t *testing.T) {
 	m := NewActivityViewModel(80, 3)
 	m.SetSize(80, 3)
 	// h < 6: no chrome deduction, vpH = h = 3.
-	if m.vp.Height != 3 {
-		t.Errorf("vp.Height = %d for h=3, want %d", m.vp.Height, 3)
+	if m.vp.Height() != 3 {
+		t.Errorf("vp.Height = %d for h=3, want %d", m.vp.Height(), 3)
 	}
 }

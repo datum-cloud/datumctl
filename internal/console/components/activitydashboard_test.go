@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"go.datum.net/datumctl/internal/console/data"
 )
 
@@ -567,12 +567,16 @@ func TestActivityDashboardModel_WidthBand_OffByOne_ActorAtExactly80(t *testing.T
 	}
 }
 
-// keyMsg builds a tea.KeyMsg for the given key string (for use in Update calls).
+// keyMsg builds a tea.KeyPressMsg for the given key string (for use in Update calls).
 func keyMsg(s string) tea.Msg {
 	if s == "enter" {
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	runes := []rune(s)
+	if len(runes) == 1 {
+		return tea.KeyPressMsg{Code: runes[0], Text: s}
+	}
+	return tea.KeyPressMsg{Text: s}
 }
 
 // ==================== FB-088: ActivityDashboard origin affordance ====================

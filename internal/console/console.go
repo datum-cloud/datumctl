@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/datumconfig"
@@ -19,7 +19,7 @@ func Run(ctx context.Context, factory *client.DatumCloudFactory, readOnly bool) 
 	consoleCtx := consolectx.FromConfig(cfg)
 	consoleCtx.ReadOnly = readOnly
 	model := NewAppModel(ctx, factory, consoleCtx)
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(model)
 	_, err = p.Run()
 	return err
 }

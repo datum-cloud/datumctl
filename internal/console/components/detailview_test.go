@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
+	"charm.land/bubbles/v2/spinner"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"go.datum.net/datumctl/internal/console/data"
@@ -151,7 +151,7 @@ func TestDetailViewModel_ScrollProgress(t *testing.T) {
 			setup: func(m *DetailViewModel) {
 				m.SetContent(makeContent(50))
 				// Position mid-scroll: YOffset=20 out of max≈40, ≈50%.
-				m.vp.YOffset = 20
+				m.vp.SetYOffset(20)
 			},
 			wantLabel: "%",
 		},
@@ -223,7 +223,7 @@ func TestDetailViewModel_SetSize(t *testing.T) {
 			t.Parallel()
 			m := NewDetailViewModel(60, 10)
 			m.SetSize(tt.newW, tt.newH)
-			if got := m.vp.Height; got != tt.wantVpHeight {
+			if got := m.vp.Height(); got != tt.wantVpHeight {
 				t.Errorf("SetSize(%d, %d): viewport height = %d, want %d", tt.newW, tt.newH, got, tt.wantVpHeight)
 			}
 		})
@@ -332,8 +332,8 @@ func TestDetailViewModel_ScrollToTop_ResetsViewport(t *testing.T) {
 	m.ScrollToTop()
 
 	// After ScrollToTop the viewport offset must be zero.
-	if m.vp.YOffset != 0 {
-		t.Errorf("ScrollToTop: YOffset = %d, want 0", m.vp.YOffset)
+	if m.vp.YOffset() != 0 {
+		t.Errorf("ScrollToTop: YOffset = %d, want 0", m.vp.YOffset())
 	}
 }
 

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
 )
@@ -57,7 +57,9 @@ func NewQuotaDashboardModel(width, height int, ctxLabel string) QuotaDashboardMo
 	return m
 }
 
-func (m QuotaDashboardModel) Init() tea.Cmd { return m.spinner.Tick }
+func (m QuotaDashboardModel) Init() tea.Cmd {
+	return func() tea.Msg { return m.spinner.Tick() }
+}
 
 func (m QuotaDashboardModel) Update(msg tea.Msg) (QuotaDashboardModel, tea.Cmd) {
 	var cmd tea.Cmd
@@ -400,8 +402,8 @@ func (m *QuotaDashboardModel) SetSize(w, h int) {
 	if h >= 6 {
 		vpH = max(h-4, 1)
 	}
-	m.vp.Width = w
-	m.vp.Height = vpH
+	m.vp.SetWidth(w)
+	m.vp.SetHeight(vpH)
 	m.refreshViewport()
 }
 

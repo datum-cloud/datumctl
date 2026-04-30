@@ -1,7 +1,7 @@
 package components
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"go.datum.net/datumctl/internal/console/styles"
 )
 
@@ -78,6 +78,6 @@ func (m HelpOverlayModel) View() string {
 
 	return lipgloss.Place(m.Width, m.Height,
 		lipgloss.Center, lipgloss.Center, modal,
-		lipgloss.WithWhitespaceBackground(styles.OverlayBackdrop),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
 	)
 }
