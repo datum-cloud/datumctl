@@ -13,7 +13,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud accounts and switch between them with `datumctl auth switch`.
 *   **Resource Management:** Interact with Datum Cloud resources with a kubectl-style interface (`get`, `apply`, `describe`, `delete`, ...).
 *   **Kubernetes Integration:** Configure `kubectl` to use your Datum Cloud credentials for accessing control planes.
-*   **AI Agents / MCP:** The standalone [`datum-mcp`](https://github.com/datum-cloud/datum-mcp) project provides a Model Context Protocol server for integrating Datum Cloud with Claude and other AI tools.
+*   **AI Agents / MCP:** `datumctl` can be used directly by agents for CLI-driven workflows. The standalone [`datum-mcp`](https://github.com/datum-cloud/datum-mcp) project provides a Model Context Protocol server for tool-based integrations.
 *   **Cross-Platform:** Pre-built binaries available for Linux, macOS, and Windows.
 
 ## Getting Started
@@ -65,6 +65,18 @@ DATUM_ORGANIZATION=my-org datumctl get projects
 ```
 
 `--project` and `--organization` flags work too. For machine-to-machine auth, see `datumctl auth login --credentials` for the machine-account flow.
+
+## Agent Skills
+
+This repository includes a bundled [`datumctl` skill](./skills/datumctl/SKILL.md) for agents that need lightweight guidance for direct CLI usage.
+
+Use the Datum repositories for different integration layers:
+
+*   [`datumctl`](https://github.com/datum-cloud/datumctl): the CLI itself, plus a small routing skill for direct `datumctl` usage.
+*   [`datum-cloud/skills`](https://github.com/datum-cloud/skills): the canonical repository for Datum skills that should be installed into agent runtimes such as Claude, Codex, Cursor, and similar tools.
+*   [`datum-mcp`](https://github.com/datum-cloud/datum-mcp): the MCP server for tool-based integrations.
+
+If you are installing skills into an agent environment, prefer `datum-cloud/skills` as the public install target. Keep `datumctl` focused on CLI behavior and lightweight agent guidance rather than agent-specific installation logic.
 
 ## Documentation
 
