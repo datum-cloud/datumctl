@@ -3,10 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	componentversion "k8s.io/component-base/version"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
 	kubeauth "k8s.io/kubectl/pkg/cmd/auth"
@@ -29,6 +32,7 @@ import (
 	"go.datum.net/datumctl/internal/cmd/logout"
 	"go.datum.net/datumctl/internal/cmd/whoami"
 	customerrors "go.datum.net/datumctl/internal/errors"
+	"go.datum.net/datumctl/internal/updatecheck"
 )
 
 // hideFlags hides the named flags from a command's flag set. Flags that do not
@@ -68,13 +72,17 @@ Get started:
 			format, _ := cmd.Flags().GetString("error-format")
 			switch format {
 			case customerrors.FormatHuman, customerrors.FormatJSON, customerrors.FormatYAML:
-				return nil
 			default:
 				return customerrors.NewUserErrorWithHint(
 					fmt.Sprintf("invalid value %q for --error-format", format),
 					"Allowed values: human, json, yaml.",
 				)
 			}
+			startUpdateCheck(cmd)
+			return nil
+		},
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			emitUpdateCheckWarning(cmd)
 		},
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
@@ -557,4 +565,38 @@ Specify the resource type and name to view its history.`
 	rootCmd.AddCommand(consoleCmd)
 
 	return rootCmd
+}
+
+// updateCheckKey is the cobra annotation key under which the active
+// updatecheck.Checker is stashed between PersistentPreRun and
+// PersistentPostRun. Cobra commands don't expose user-data fields, but
+// PersistentPostRun receives the same *cobra.Command as PersistentPreRun, so
+// we attach the checker to the command itself via a package-level map keyed
+// by the command pointer.
+var activeUpdateChecker = map[*cobra.Command]*updatecheck.Checker{}
+
+func startUpdateCheck(cmd *cobra.Command) {
+	if updatecheck.SkipFromEnvironment() {
+		return
+	}
+	current := componentversion.Get().GitVersion
+	checker := updatecheck.New(current)
+	checker.Start(cmd.Context())
+	activeUpdateChecker[cmd.Root()] = checker
+}
+
+func emitUpdateCheckWarning(cmd *cobra.Command) {
+	root := cmd.Root()
+	checker, ok := activeUpdateChecker[root]
+	if !ok {
+		return
+	}
+	delete(activeUpdateChecker, root)
+	// Wait up to slightly more than the underlying HTTP timeout so that
+	// cold-cache runs successfully populate the cache; warm-cache runs
+	// return in well under 50ms because the goroutine signals done as
+	// soon as it has read the cache file.
+	if msg := checker.Wait(2500 * time.Millisecond); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 }
