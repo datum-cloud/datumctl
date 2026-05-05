@@ -79,10 +79,8 @@ Get started:
 				)
 			}
 			startUpdateCheck(cmd)
-			return nil
-		},
-		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			emitUpdateCheckWarning(cmd)
+			return nil
 		},
 	}
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
