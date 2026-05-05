@@ -25,6 +25,7 @@ type ConfigV1Beta1 struct {
 	Contexts       []DiscoveredContext `json:"contexts,omitempty" yaml:"contexts,omitempty"`
 	CurrentContext string              `json:"current-context,omitempty" yaml:"current-context,omitempty"`
 	ActiveSession  string              `json:"active-session,omitempty" yaml:"active-session,omitempty"`
+	AutoUpdate     bool                `json:"auto-update,omitempty" yaml:"auto-update,omitempty"`
 	Cache          ContextCache        `json:"cache" yaml:"cache,omitempty"`
 }
 

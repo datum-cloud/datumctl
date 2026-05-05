@@ -22,6 +22,8 @@ import (
 	"k8s.io/kubectl/pkg/cmd/version"
 	utilcomp "k8s.io/kubectl/pkg/util/completion"
 
+	autoupdatecmd "go.datum.net/datumctl/internal/cmd/autoupdate"
+
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/console"
@@ -31,6 +33,7 @@ import (
 	"go.datum.net/datumctl/internal/cmd/login"
 	"go.datum.net/datumctl/internal/cmd/logout"
 	"go.datum.net/datumctl/internal/cmd/whoami"
+	"go.datum.net/datumctl/internal/datumconfig"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/updatecheck"
 )
@@ -79,7 +82,7 @@ Get started:
 				)
 			}
 			startUpdateCheck(cmd)
-			emitUpdateCheckWarning(cmd)
+			handleUpdateCheck(cmd)
 			return nil
 		},
 	}
@@ -141,6 +144,10 @@ Get started:
 	ctxCmd := datumctx.Command()
 	ctxCmd.GroupID = "context"
 	rootCmd.AddCommand(ctxCmd)
+
+	autoUpdateCmd := autoupdatecmd.Command()
+	autoUpdateCmd.GroupID = "other"
+	rootCmd.AddCommand(autoUpdateCmd)
 
 	authCommand := auth.Command()
 	whoami := kubeauth.NewCmdWhoAmI(factory, ioStreams)
@@ -565,12 +572,9 @@ Specify the resource type and name to view its history.`
 	return rootCmd
 }
 
-// updateCheckKey is the cobra annotation key under which the active
-// updatecheck.Checker is stashed between PersistentPreRun and
-// PersistentPostRun. Cobra commands don't expose user-data fields, but
-// PersistentPostRun receives the same *cobra.Command as PersistentPreRun, so
-// we attach the checker to the command itself via a package-level map keyed
-// by the command pointer.
+// activeUpdateChecker holds the in-flight update check between when it is
+// launched and when its result is consumed within PersistentPreRunE. Keyed by
+// the root command pointer so concurrent test invocations don't collide.
 var activeUpdateChecker = map[*cobra.Command]*updatecheck.Checker{}
 
 func startUpdateCheck(cmd *cobra.Command) {
@@ -583,7 +587,7 @@ func startUpdateCheck(cmd *cobra.Command) {
 	activeUpdateChecker[cmd.Root()] = checker
 }
 
-func emitUpdateCheckWarning(cmd *cobra.Command) {
+func handleUpdateCheck(cmd *cobra.Command) {
 	root := cmd.Root()
 	checker, ok := activeUpdateChecker[root]
 	if !ok {
@@ -594,7 +598,43 @@ func emitUpdateCheckWarning(cmd *cobra.Command) {
 	// cold-cache runs successfully populate the cache; warm-cache runs
 	// return in well under 50ms because the goroutine signals done as
 	// soon as it has read the cache file.
-	if msg := checker.Wait(2500 * time.Millisecond); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
+	msg := checker.Wait(2500 * time.Millisecond)
+	if msg == "" {
+		return
 	}
+
+	if updatecheck.AlreadyUpdated() || !autoUpdateEnabled() {
+		fmt.Fprintln(os.Stderr, msg)
+		return
+	}
+
+	latest := checker.Latest()
+	if latest == "" {
+		fmt.Fprintln(os.Stderr, msg)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "Updating datumctl %s → %s ...\n", checker.Current(), latest)
+	if err := updatecheck.SelfUpdate(cmd.Context(), latest); err != nil {
+		fmt.Fprintf(os.Stderr, "auto-update failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, msg)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "datumctl updated to %s. Resuming...\n", latest)
+	if err := updatecheck.ReExec(); err != nil {
+		fmt.Fprintf(os.Stderr, "re-exec failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// autoUpdateEnabled reads the on-disk config and returns the current value of
+// the auto-update preference. Failures to load the config (missing file,
+// parse errors) are treated as "disabled" so update checks remain a no-op
+// for users without a config.
+func autoUpdateEnabled() bool {
+	cfg, err := datumconfig.LoadV1Beta1()
+	if err != nil || cfg == nil {
+		return false
+	}
+	return cfg.AutoUpdate
 }

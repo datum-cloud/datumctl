@@ -41,6 +41,7 @@ type Checker struct {
 	disabled bool
 	done     chan struct{}
 	warning  string
+	latest   string
 }
 
 // New constructs a Checker for the given current version (e.g. "v0.13.2").
@@ -109,7 +110,20 @@ func (c *Checker) run(ctx context.Context) string {
 	if !isNewer(c.current, latest) {
 		return ""
 	}
+	c.latest = latest
 	return formatWarning(c.current, latest)
+}
+
+// Latest returns the detected newer release version. Empty when no update is
+// available, the check has not completed, or the checker is disabled. Only
+// safe to read after Wait has returned.
+func (c *Checker) Latest() string {
+	return c.latest
+}
+
+// Current returns the version the checker was constructed with.
+func (c *Checker) Current() string {
+	return c.current
 }
 
 func formatWarning(current, latest string) string {
@@ -145,4 +159,21 @@ func SkipFromEnvironment() bool {
 		return true
 	}
 	return false
+}
+
+// FetchLatestVersion performs a fresh HTTP lookup for the latest release tag.
+// Unlike the background Checker, it does not cache and does not gate on
+// whether the current build looks like a release; callers (e.g. the manual
+// 'auto-update' command) decide how to handle the result.
+func FetchLatestVersion(ctx context.Context) (string, error) {
+	c := &Checker{
+		client: &http.Client{
+			Timeout: httpTimeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		url: releasesLatestURL,
+	}
+	return c.fetchLatest(ctx)
 }
