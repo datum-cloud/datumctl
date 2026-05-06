@@ -139,16 +139,16 @@ func nextSelectable(entries []treeEntry, cur, dir int) int {
 }
 
 func (m CtxSwitcherModel) View() string {
-	headerStyle := lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
-	selectedStyle := lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
-	normalStyle := lipgloss.NewStyle().Foreground(styles.Secondary)
-	currentStyle := lipgloss.NewStyle().Foreground(styles.Success)
-	muted := lipgloss.NewStyle().Foreground(styles.Muted).Italic(true)
+	headerStyle := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Primary).Bold(true)
+	selectedStyle := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Accent).Bold(true)
+	normalStyle := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Secondary)
+	currentStyle := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Success)
+	muted := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted).Italic(true)
 
 	var lines []string
 
 	if m.cfg == nil || len(m.cfg.Contexts) == 0 {
-		empty := lipgloss.NewStyle().Foreground(styles.Muted).
+		empty := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted).
 			Width(ctxModalWidth - 4).Align(lipgloss.Center).
 			Render("No contexts available")
 		lines = append(lines, empty)
@@ -179,6 +179,7 @@ func (m CtxSwitcherModel) View() string {
 	lines = append(lines, "", footer)
 
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	body = styles.SurfaceFill(body, ctxModalWidth, lipgloss.Height(body))
 	modal := styles.OverlayStyle.Width(ctxModalWidth).Render(body)
 
 	return lipgloss.Place(m.width, m.height,
