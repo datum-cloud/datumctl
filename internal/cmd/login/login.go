@@ -9,6 +9,7 @@ import (
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/discovery"
+	"go.datum.net/datumctl/internal/keyring"
 	"go.datum.net/datumctl/internal/picker"
 )
 
@@ -88,6 +89,8 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Printf("\n\u2713 Authenticated as %s (%s)\n\n", result.UserName, result.UserEmail)
+
+	keyring.WarnIfFallbackActive(cmd.ErrOrStderr())
 
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
