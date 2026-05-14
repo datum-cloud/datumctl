@@ -272,6 +272,20 @@ func (c *CustomConfigFlags) resolveBaseServer(userKey string, session *datumconf
 	return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname)), nil
 }
 
+// ResolvedScope returns the effective project, organization, and platform-wide
+// flag for this request by running the same flags → env → active-context
+// resolution that ToRESTConfig uses internally. Callers that need to know
+// whether any scope is available before making API calls should use this
+// instead of inspecting ConfigFlags fields directly.
+func (c *CustomConfigFlags) ResolvedScope() (project, org string, platformWide bool, err error) {
+	ctxEntry, _, err := c.loadDatumContext()
+	if err != nil {
+		return "", "", false, err
+	}
+	project, org, platformWide, err = c.resolveScope(ctxEntry)
+	return
+}
+
 // resolveScope picks the org/project/platform-wide scope for the request. It
 // tries, in order: flags → environment variables → active context. Returns an
 // error if the inputs are contradictory.
