@@ -43,10 +43,15 @@
             #   task nix-update-hash
             vendorHash = "sha256-jxzvSrc07U7zSkv/CnCVD1uhklhadze1rcr/KGYiJQs=";
 
+            env.CGO_ENABLED = 0;
+
+            tags = [ "netgo" "osusergo" ];
+
             ldflags = [
               "-s"
               "-w"
               "-X main.version=${version}"
+              "-extldflags=-static"
             ];
 
             meta = with pkgs.lib; {
