@@ -110,7 +110,7 @@ func RunInteractiveLogin(ctx context.Context, authHostname, apiHostname, clientI
 		}
 	}
 
-	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose)
+	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose, false)
 }
 
 // runPKCEFlow executes the OAuth2 PKCE authorization code flow and returns the
@@ -239,7 +239,7 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 // completeLogin verifies the ID token, stores credentials in the keyring, sets
 // the active user, registers the user in the known-users list, and returns a
 // LoginResult.
-func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authHostname, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose bool) (*LoginResult, error) {
+func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authHostname, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose, quiet bool) (*LoginResult, error) {
 	idTokenString, ok := token.Extra("id_token").(string)
 	if !ok {
 		return nil, fmt.Errorf("id_token not found in token response")
@@ -267,7 +267,9 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authH
 		return nil, fmt.Errorf("could not extract email claim from ID token, which is required for user identification")
 	}
 
-	fmt.Printf("\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
+	if !quiet {
+		fmt.Printf("\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
+	}
 
 	// Use email as the keyring key for interactive logins, matching the
 	// behaviour of the original cmd/auth/login.go implementation.
@@ -297,20 +299,26 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authH
 
 	activeUserSet := false
 	if err := keyring.Set(ServiceName, ActiveUserKey, userKey); err != nil {
-		fmt.Printf("Warning: Failed to set '%s' as active user in keyring: %v\n", userKey, err)
-		fmt.Printf("Credentials for '%s' were stored successfully.\n", userKey)
+		if !quiet {
+			fmt.Printf("Warning: Failed to set '%s' as active user in keyring: %v\n", userKey, err)
+			fmt.Printf("Credentials for '%s' were stored successfully.\n", userKey)
+		}
 	} else {
 		activeUserSet = true
 	}
 
-	if activeUserSet {
-		fmt.Println("Authentication successful. Credentials stored and set as active.")
-	} else {
-		fmt.Println("Authentication successful. Credentials stored.")
+	if !quiet {
+		if activeUserSet {
+			fmt.Println("Authentication successful. Credentials stored and set as active.")
+		} else {
+			fmt.Println("Authentication successful. Credentials stored.")
+		}
 	}
 
 	if err := AddKnownUserKey(userKey); err != nil {
-		fmt.Printf("Warning: Failed to update list of known users: %v\n", err)
+		if !quiet {
+			fmt.Printf("Warning: Failed to update list of known users: %v\n", err)
+		}
 	}
 
 	if verbose {
@@ -347,6 +355,85 @@ type deviceAuthorizationResponse struct {
 	VerificationURIComplete string `json:"verification_uri_complete"`
 	ExpiresIn               int64  `json:"expires_in"`
 	Interval                int64  `json:"interval"`
+}
+
+// DeviceAuthSession holds the state of an initiated device authorization flow.
+// Callers use this to display the verification URL/code and to poll for completion.
+type DeviceAuthSession struct {
+	VerificationURI string
+	UserCode        string
+	DeviceCode      string
+	TokenURL        string
+	ClientID        string
+	AuthHostname    string
+	APIHostname     string
+	Interval        int64
+	ExpiresIn       int64
+}
+
+// StartDeviceAuth initiates a device authorization request against the given
+// auth hostname and returns a session the caller can display to the user while
+// polling for completion.
+func StartDeviceAuth(ctx context.Context, authHostname, apiHostname, clientID string) (*DeviceAuthSession, error) {
+	if apiHostname == "" {
+		derived, err := DeriveAPIHostname(authHostname)
+		if err != nil {
+			return nil, err
+		}
+		apiHostname = derived
+	}
+
+	providerURL := fmt.Sprintf("https://%s", authHostname)
+	_, err := oidc.NewProvider(ctx, providerURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover OIDC provider at %s: %w", providerURL, err)
+	}
+
+	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
+
+	base := strings.TrimRight(providerURL, "/")
+	deviceEndpoint := base + "/oauth/v2/device_authorization"
+	tokenURL := base + "/oauth/v2/token"
+
+	deviceResp, err := requestDeviceAuthorization(ctx, deviceEndpoint, clientID, scopes)
+	if err != nil {
+		return nil, err
+	}
+
+	verificationURI := base + "/ui/v2/login/device"
+	if deviceResp.UserCode != "" {
+		verificationURI += "?user_code=" + url.QueryEscape(deviceResp.UserCode)
+	}
+
+	return &DeviceAuthSession{
+		VerificationURI: verificationURI,
+		UserCode:        deviceResp.UserCode,
+		DeviceCode:      deviceResp.DeviceCode,
+		TokenURL:        tokenURL,
+		ClientID:        clientID,
+		AuthHostname:    authHostname,
+		APIHostname:     apiHostname,
+		Interval:        deviceResp.Interval,
+		ExpiresIn:       deviceResp.ExpiresIn,
+	}, nil
+}
+
+// FinishDeviceAuth polls for the device token and completes the login by storing
+// credentials in the keyring. It returns the LoginResult on success.
+func FinishDeviceAuth(ctx context.Context, session *DeviceAuthSession, quiet bool) (*LoginResult, error) {
+	token, err := pollDeviceToken(ctx, session.TokenURL, session.ClientID, session.DeviceCode, session.Interval, session.ExpiresIn)
+	if err != nil {
+		return nil, err
+	}
+
+	providerURL := fmt.Sprintf("https://%s", session.AuthHostname)
+	provider, err := oidc.NewProvider(ctx, providerURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-discover OIDC provider: %w", err)
+	}
+
+	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
+	return completeLogin(ctx, provider, session.ClientID, session.AuthHostname, session.APIHostname, scopes, token, false, quiet)
 }
 
 type deviceTokenResponse struct {

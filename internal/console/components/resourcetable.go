@@ -73,6 +73,7 @@ type ResourceTableModel struct {
 	// FB-005: in-pane error card state.
 	loadErr     error
 	errSeverity data.ErrorSeverity
+	notLoggedIn bool // true when loadErr is the "no active user" sentinel
 
 	// Landing-screen inputs (FB-015). These power welcomePanel() when
 	// typeName == "". Zero-values yield a safe degraded rendering.
@@ -147,16 +148,20 @@ func (m ResourceTableModel) View() string {
 	case m.loadState == data.LoadStateLoading:
 		content = m.spinner.View() + fmt.Sprintf(" Loading %s...", m.typeName)
 	case m.loadState == data.LoadStateError && m.loadErr != nil:
-		innerW := max(1, m.tableWidth-3)
-		innerH := max(1, m.tableHeight-2)
-		card := RenderErrorBlock(ErrorBlock{
-			Title:    sanitizedTitleForError(m.loadErr, "Could not load "+m.typeName),
-			Detail:   SanitizeErrMsg(m.loadErr),
-			Actions:  actionsForSeverity(m.errSeverity, "back to navigation"),
-			Severity: m.errSeverity,
-			Width:    innerW,
-		})
-		content = lipgloss.Place(innerW, innerH, lipgloss.Center, lipgloss.Center, card)
+		if m.notLoggedIn {
+			return m.renderNotLoggedInPanel(max(1, m.tableWidth), max(1, m.tableHeight))
+		} else {
+			innerW := max(1, m.tableWidth-3)
+			innerH := max(1, m.tableHeight-2)
+			card := RenderErrorBlock(ErrorBlock{
+				Title:    sanitizedTitleForError(m.loadErr, "Could not load "+m.typeName),
+				Detail:   SanitizeErrMsg(m.loadErr),
+				Actions:  actionsForSeverity(m.errSeverity, "back to navigation"),
+				Severity: m.errSeverity,
+				Width:    innerW,
+			})
+			content = lipgloss.Place(innerW, innerH, lipgloss.Center, lipgloss.Center, card)
+		}
 	case m.typeName == "" || m.forceDashboard:
 		content = m.welcomePanel()
 	case len(m.filteredRows) == 0 && m.filter != "":
@@ -176,6 +181,9 @@ func (m ResourceTableModel) View() string {
 		content = m.table.View()
 	}
 
+	if m.notLoggedIn {
+		return lipgloss.NewStyle().Background(styles.Surface).Render(styles.SurfaceFill(content, m.tableWidth, m.tableHeight))
+	}
 	return styles.PaneBorder(m.focused).Render(styles.SurfaceFill(content, m.tableWidth, m.tableHeight))
 }
 
@@ -913,6 +921,12 @@ func (m *ResourceTableModel) SetLoadErr(err error, sev data.ErrorSeverity) {
 	m.errSeverity = sev
 }
 
+// SetNotLoggedIn marks whether the current load failure is due to the user
+// not being logged in, so the error card shows login-specific messaging.
+func (m *ResourceTableModel) SetNotLoggedIn(v bool) {
+	m.notLoggedIn = v
+}
+
 func (m *ResourceTableModel) SetHoveredType(rt data.ResourceType) {
 	m.hoveredType = rt
 }
@@ -1159,4 +1173,113 @@ func (m ResourceTableModel) Cursor() int { return m.table.Cursor() }
 
 // SetCursor moves the table cursor to idx, clamped to valid range.
 func (m *ResourceTableModel) SetCursor(idx int) { m.table.SetCursor(idx) }
+
+// renderNotLoggedInPanel renders a warm welcome / login-prompt panel for
+// first-time visitors who have not yet authenticated.
+func (m ResourceTableModel) renderNotLoggedInPanel(contentW, contentH int) string {
+	accent := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Accent).Bold(true)
+	muted := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted)
+	secondary := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Secondary)
+	success := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Success).Bold(true)
+
+	var blocks []string
+
+	blocks = append(blocks, accent.Render("Welcome to Datum Cloud"))
+
+	if contentW >= 54 {
+		blocks = append(blocks, secondary.Render("Connect infrastructure. Ship faster. Sleep better."))
+	}
+
+	if art := renderServicesArt(contentW, accent, muted, secondary); art != "" && contentH >= 14 {
+		blocks = append(blocks, art)
+	}
+
+	loginLine := success.Render("▸") + muted.Render("  ") + accent.Render("[l]") + muted.Render("  ") + secondary.Render("authenticate via device code")
+	blocks = append(blocks, loginLine)
+	blocks = append(blocks, accent.Render("[q]")+muted.Render("  quit"))
+
+	inner := lipgloss.JoinVertical(lipgloss.Center, blocks...)
+
+	// Center vertically but bias upward by half the header height (4 rows) so
+	// the block appears at the visual screen center rather than content-area center.
+	innerLines := lipgloss.Height(inner)
+	slack := max(0, contentH-innerLines)
+	vPos := lipgloss.Center
+	if slack > 0 {
+		topPad := max(0, slack/2-4)
+		vPos = lipgloss.Position(float64(topPad) / float64(slack))
+	}
+
+	return lipgloss.NewStyle().Background(styles.Surface).Render(
+		lipgloss.Place(contentW, contentH, lipgloss.Center, vPos, inner,
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.Surface)),
+		),
+	)
+}
+
+// renderServicesArt returns a four-tier services box reflecting Datum's product
+// framing: Deliver, Build, Connect, Manage. Returns "" when contentW is too narrow.
+func renderServicesArt(contentW int, accent, muted, secondary lipgloss.Style) string {
+	// innerW is the content width inside the box borders.
+	// The box itself is innerW+2 cells wide (border on each side).
+	const innerW = 58
+	if contentW < innerW+4 { // need a small margin for centering
+		return ""
+	}
+
+	type tier struct {
+		name, subtitle string
+		services       string
+	}
+	tiers := []tier{
+		{
+			"DELIVER", "route users and traffic",
+			"DNS · DDoS · GLB (GeoMap) · NLB TCP/UDP · ALB",
+		},
+		{
+			"BUILD", "run apps and AI workloads",
+			"Compute · Inference · Envoy · AI Gateway · Storage · DBs",
+		},
+		{
+			"CONNECT", "private networking and reachability",
+			"VPC · Private DNS · Tunnels · Cloud Connect · ASN",
+		},
+		{
+			"MANAGE", "observe, secure, and operate",
+			"Observability · Accounts · Organization · Secrets · Billing",
+		},
+	}
+
+	// svcInnerW: content width for service lines ("  " prefix + text).
+	const svcInnerW = innerW - 2
+
+	var rows []string
+	for i, t := range tiers {
+		// Header row: ┌─/├─ NAME ─── subtitle ─...─ ┐/┤
+		lc, rc := "├", "┤"
+		if i == 0 {
+			lc, rc = "┌", "┐"
+		}
+		// Compute fill: inner = "─ NAME ─── subtitle " + fill
+		headerText := "─ " + t.name + " ─── " + t.subtitle + " "
+		fill := strings.Repeat("─", max(0, innerW-len([]rune(headerText))))
+		header := muted.Render(lc+"─ ") +
+			accent.Render(t.name) +
+			muted.Render(" ─── ") +
+			secondary.Render(t.subtitle) +
+			muted.Render(" "+fill+rc)
+		rows = append(rows, header)
+
+		// Service line: "│  services text   │"
+		svc := t.services
+		pad := strings.Repeat(" ", max(0, svcInnerW-len([]rune(svc))))
+		svcLine := muted.Render("│") + secondary.Render("  "+svc+pad) + muted.Render("│")
+		rows = append(rows, svcLine)
+	}
+	// Bottom border
+	rows = append(rows, muted.Render("└"+strings.Repeat("─", innerW)+"┘"))
+
+	return strings.Join(rows, "\n")
+}
+
 
