@@ -23,6 +23,7 @@ type StatusBarModel struct {
 	hintToken   int           // bumped on each postHint and early-clear; matched in HintClearMsg
 	Mode        StatusMode
 	Pane        string
+	NotLoggedIn bool // overrides hints with login-prompt shortcut
 }
 
 // PostHint sets a new transient hint and bumps the hint token. Returns the new
@@ -71,6 +72,10 @@ func (m StatusBarModel) View() string {
 		hints = "[j/k] move  [Enter] select  [Esc] close"
 	default:
 		modeLabel = "NORMAL"
+		if m.NotLoggedIn {
+			hints = "[l] login  [q] quit"
+			break
+		}
 		switch m.Pane {
 		case "NAV":
 			hints = "[j/k] move  [Enter] select  [r] refresh  [c] ctx  [?] help  [q] quit"
@@ -85,11 +90,18 @@ func (m StatusBarModel) View() string {
 		}
 	}
 
-	label := lipgloss.NewStyle().Bold(true).Foreground(styles.Primary).Render(modeLabel)
-	left := label + " │ " + hints
+	var left string
+	if m.NotLoggedIn {
+		left = hints
+	} else {
+		label := lipgloss.NewStyle().Bold(true).Foreground(styles.Primary).Render(modeLabel)
+		left = label + " │ " + hints
+	}
 
 	var right string
 	switch {
+	case m.NotLoggedIn:
+		right = lipgloss.NewStyle().Foreground(styles.Accent).Bold(true).Render("▸ press [l] to log in and get started")
 	case m.Err != nil:
 		g := errorGlyph(m.ErrSeverity)
 		color := errorColor(m.ErrSeverity)

@@ -30,6 +30,11 @@ var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"Please login first using: `datumctl auth login`",
 )
 
+// IsNoActiveUser reports whether err wraps ErrNoActiveUser.
+func IsNoActiveUser(err error) bool {
+	return errors.Is(err, ErrNoActiveUser)
+}
+
 // ServiceAccountState holds fields needed to re-mint a JWT when the access token expires.
 // Only populated when CredentialType == "service_account".
 type ServiceAccountState struct {

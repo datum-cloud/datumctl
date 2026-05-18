@@ -702,7 +702,6 @@ func (m ResourceTableModel) renderHeaderBand(contentW int) string {
 	}
 }
 
-
 func (m ResourceTableModel) renderQuotaRow(r data.ConstrainedRow, width int, textOnly bool) string {
 	barStyle, suffixStyle, suffix := QuotaBarStyling(r.PercentInt)
 
@@ -1142,7 +1141,6 @@ func (m *ResourceTableModel) applyFilter() {
 	}
 }
 
-
 func (m ResourceTableModel) SelectedRow() (data.ResourceRow, bool) {
 	if len(m.filteredRows) == 0 {
 		return data.ResourceRow{}, false
@@ -1159,4 +1157,3 @@ func (m ResourceTableModel) Cursor() int { return m.table.Cursor() }
 
 // SetCursor moves the table cursor to idx, clamped to valid range.
 func (m *ResourceTableModel) SetCursor(idx int) { m.table.SetCursor(idx) }
-

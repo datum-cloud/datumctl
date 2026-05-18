@@ -18,7 +18,16 @@ func Run(ctx context.Context, factory *client.DatumCloudFactory, readOnly bool) 
 	}
 	consoleCtx := consolectx.FromConfig(cfg)
 	consoleCtx.ReadOnly = readOnly
-	model := NewAppModel(ctx, factory, consoleCtx)
+
+	// Derive the auth hostname from the active session so the in-TUI login
+	// overlay contacts the same endpoint the user previously authenticated
+	// against (e.g. staging). Fall back to the canonical production hostname.
+	authHostname := "auth.datum.net"
+	if s := cfg.ActiveSessionEntry(); s != nil && s.Endpoint.AuthHostname != "" {
+		authHostname = s.Endpoint.AuthHostname
+	}
+
+	model := NewAppModel(ctx, factory, consoleCtx, authHostname)
 	p := tea.NewProgram(model)
 	_, err = p.Run()
 	return err

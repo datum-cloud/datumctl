@@ -23,11 +23,12 @@ type treeEntry struct {
 }
 
 type CtxSwitcherModel struct {
-	entries []treeEntry
-	cursor  int
-	cfg     *datumconfig.ConfigV1Beta1
-	width   int
-	height  int
+	entries      []treeEntry
+	cursor       int
+	cfg          *datumconfig.ConfigV1Beta1
+	width        int
+	height       int
+	welcomeName  string // when set, renders a personalized post-login header
 }
 
 const ctxModalWidth = 60
@@ -38,6 +39,19 @@ func NewCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, width, height int) CtxS
 		m.entries = buildTree(cfg)
 		m.cursor = firstSelectableIdx(m.entries)
 	}
+	return m
+}
+
+// NewPostLoginCtxSwitcherModel creates a context switcher with a personalized
+// welcome header shown immediately after the user authenticates.
+func NewPostLoginCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, width, height int, userName string) CtxSwitcherModel {
+	m := NewCtxSwitcherModel(cfg, width, height)
+	// Use first name only for warmth
+	firstName := userName
+	if i := strings.Index(userName, " "); i > 0 {
+		firstName = userName[:i]
+	}
+	m.welcomeName = firstName
 	return m
 }
 
@@ -144,8 +158,16 @@ func (m CtxSwitcherModel) View() string {
 	normalStyle := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Secondary)
 	currentStyle := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Success)
 	muted := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted).Italic(true)
+	accent := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Accent).Bold(true)
+	secondary := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Secondary)
 
 	var lines []string
+
+	if m.welcomeName != "" {
+		lines = append(lines, accent.Render("Welcome, "+m.welcomeName+"!"))
+		lines = append(lines, secondary.Render("Choose where you'd like to work."))
+		lines = append(lines, "")
+	}
 
 	if m.cfg == nil || len(m.cfg.Contexts) == 0 {
 		empty := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted).

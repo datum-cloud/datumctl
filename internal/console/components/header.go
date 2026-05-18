@@ -35,27 +35,30 @@ func (m HeaderModel) View() string {
 
 	sep := strings.Repeat("─", contentW)
 
-	infoLeft := "user: " + m.Ctx.UserEmail
-	if m.Ctx.OrgName != "" {
-		infoLeft += "   org: " + m.Ctx.OrgName
-	}
-	if m.Ctx.ProjectName != "" {
-		infoLeft += "   project: " + m.Ctx.ProjectName
-	}
-
-	infoLine := infoLeft
-	if m.Ctx.ReadOnly {
-		badge := lipgloss.NewStyle().
-			Foreground(styles.Warning).
-			Bold(true).
-			Render("READ-ONLY")
-		leftW := lipgloss.Width(infoLeft)
-		badgeW := lipgloss.Width(badge)
-		pad := contentW - leftW - badgeW
-		if pad < 1 {
-			pad = 1
+	var infoLine string
+	if m.Ctx.UserEmail != "" {
+		infoLeft := "user: " + m.Ctx.UserEmail
+		if m.Ctx.OrgName != "" {
+			infoLeft += "   org: " + m.Ctx.OrgName
 		}
-		infoLine = infoLeft + fmt.Sprintf("%*s", pad, "") + badge
+		if m.Ctx.ProjectName != "" {
+			infoLeft += "   project: " + m.Ctx.ProjectName
+		}
+
+		infoLine = infoLeft
+		if m.Ctx.ReadOnly {
+			badge := lipgloss.NewStyle().
+				Foreground(styles.Warning).
+				Bold(true).
+				Render("READ-ONLY")
+			leftW := lipgloss.Width(infoLeft)
+			badgeW := lipgloss.Width(badge)
+			pad := contentW - leftW - badgeW
+			if pad < 1 {
+				pad = 1
+			}
+			infoLine = infoLeft + fmt.Sprintf("%*s", pad, "") + badge
+		}
 	}
 
 	ns := ""

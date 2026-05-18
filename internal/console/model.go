@@ -4,21 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/pkg/browser"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/client"
-	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/console/components"
 	tuictx "go.datum.net/datumctl/internal/console/context"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/layout"
 	"go.datum.net/datumctl/internal/console/styles"
+	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/discovery"
 )
 
 type PaneID int
@@ -41,6 +45,7 @@ const (
 	CtxSwitcherOverlay
 	HelpOverlayID
 	DeleteConfirmationOverlay // FB-017 — delete with confirmation dialog
+	LoginOverlayID            // in-TUI device auth flow
 )
 
 // DashboardOrigin stashes the pane and welcome-dashboard state at the moment
@@ -71,6 +76,56 @@ func dashboardOriginLabel(origin DashboardOrigin) string {
 		return "activity dashboard"
 	default:
 		return ""
+	}
+}
+
+// deviceAuthStartedMsg is sent when the device authorization request succeeds
+// and the session is ready for the user to visit the URL.
+type deviceAuthStartedMsg struct {
+	session *authutil.DeviceAuthSession
+}
+
+// deviceAuthFinishedMsg is sent when polling completes (success or failure).
+type deviceAuthFinishedMsg struct {
+	result *authutil.LoginResult
+	cfg    *datumconfig.ConfigV1Beta1 // fresh config after login; nil on error
+	err    error
+}
+
+// startDeviceAuthCmd initiates the device flow in the background.
+func startDeviceAuthCmd(ctx context.Context, hostname, clientID string) tea.Cmd {
+	return func() tea.Msg {
+		session, err := authutil.StartDeviceAuth(ctx, hostname, "", clientID)
+		if err != nil {
+			return deviceAuthFinishedMsg{err: err}
+		}
+		return deviceAuthStartedMsg{session: session}
+	}
+}
+
+// finishDeviceAuthCmd polls for the token and completes the login.
+func finishDeviceAuthCmd(ctx context.Context, session *authutil.DeviceAuthSession) tea.Cmd {
+	return func() tea.Msg {
+		result, err := authutil.FinishDeviceAuth(ctx, session, io.Discard)
+		if err != nil {
+			return deviceAuthFinishedMsg{err: err}
+		}
+		cfg, cfgErr := datumconfig.LoadAuto()
+		if cfgErr != nil {
+			return deviceAuthFinishedMsg{result: result, err: cfgErr}
+		}
+		s := authutil.BuildSession(result, session.AuthHostname)
+		cfg.UpsertSession(s)
+		cfg.ActiveSession = s.Name
+		tknSrc, tErr := authutil.GetTokenSourceForUser(ctx, result.UserKey)
+		if tErr == nil {
+			orgs, projects, _ := discovery.FetchOrgsAndProjects(ctx, result.APIHostname, tknSrc, result.Subject)
+			discovery.UpdateConfigCache(cfg, s.Name, orgs, projects)
+		}
+		if cfgErr = datumconfig.SaveV1Beta1(cfg); cfgErr != nil {
+			return deviceAuthFinishedMsg{result: result, err: cfgErr}
+		}
+		return deviceAuthFinishedMsg{result: result, cfg: cfg}
 	}
 }
 
@@ -137,6 +192,7 @@ type AppModel struct {
 	lastEntryViaQuickJump  bool // FB-072: set when quick-jump dispatches TablePane; cleared on sidebar interaction
 	bucketsFetchedAt    time.Time // FB-043: time of last successful bucket fetch; zero until first success
 	loadErr             error     // last error from LoadErrorMsg; used for in-pane card
+	notLoggedIn         bool      // true when loadErr is ErrNoActiveUser; triggers login-specific UX
 	lastFailedFetchKind string // "tableList" | "describe"; determines redispatchLastFetch target
 	statusErrToken      int    // bumped per LoadErrorMsg to expire stale ClearStatusErrCmd ticks
 
@@ -147,6 +203,11 @@ type AppModel struct {
 	ac                      *data.ActivityClient
 	hc                      *data.HistoryClient
 	ctx                     context.Context
+	authHostname            string // auth server hostname for in-TUI device flow
+
+	// login overlay state (in-TUI device auth flow).
+	loginOverlay  components.LoginOverlayModel
+	welcomeScreen components.WelcomeScreenModel
 
 	// FB-017 delete confirmation state.
 	deleteConfirmation   components.DeleteConfirmationModel
@@ -160,7 +221,7 @@ type AppModel struct {
 	activityOriginPane DashboardOrigin // FB-048/FB-087: stash before opening ActivityDashboard
 }
 
-func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx tuictx.TUIContext) AppModel {
+func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx tuictx.TUIContext, authHostname string) AppModel {
 	krc := data.NewKubeResourceClient(factory)
 	rrc := data.NewKubeResourceRegistrationClient(factory)
 	var rc data.ResourceClient = krc
@@ -168,14 +229,15 @@ func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx 
 	ac := data.NewActivityClient(factory)
 	hc := data.NewHistoryClient(factory)
 	m := AppModel{
-		ctx:         ctx,
-		factory:     factory,
-		rc:          rc,
-		bc:          bc,
-		rrc:         rrc,
-		ac:          ac,
-		hc:          hc,
-		tuiCtx:      tuiCtx,
+		ctx:          ctx,
+		authHostname: authHostname,
+		factory:      factory,
+		rc:           rc,
+		bc:           bc,
+		rrc:          rrc,
+		ac:           ac,
+		hc:           hc,
+		tuiCtx:       tuiCtx,
 		header:      components.NewHeaderModel(tuiCtx),
 		sidebar:     components.NewNavSidebarModel(styles.SidebarWidth, 20),
 		table:       components.NewResourceTableModel(40, 20),
@@ -186,10 +248,11 @@ func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx 
 		activityDashboard: components.NewActivityDashboardModel(40, 20, tuiCtx.ProjectName),
 		history:     components.NewHistoryViewModel(80, 20),
 		diff:        components.NewDiffViewModel(80, 20),
-		ctxOverlay:  components.NewCtxSwitcherModel(tuiCtx.Config, 80, 24),
-		filterBar:   components.NewFilterBarModel(),
-		helpOverlay: components.NewHelpOverlayModel(),
-		activePane:  NavPane,
+		ctxOverlay:    components.NewCtxSwitcherModel(tuiCtx.Config, 80, 24),
+		filterBar:     components.NewFilterBarModel(),
+		helpOverlay:   components.NewHelpOverlayModel(),
+		welcomeScreen: components.NewWelcomeScreenModel(),
+		activePane:    NavPane,
 	}
 	m.updatePaneFocus()
 	return m
@@ -238,6 +301,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case data.ResourceTypesLoadedMsg:
 		m.resourceTypes = msg.Types
 		m.loadState = data.LoadStateIdle
+		m.notLoggedIn = false
+		m.statusBar.NotLoggedIn = false
 		m.statusBar.Err = nil
 		m = m.recalcLayout() // re-sizes sidebar to terminal width with types now known
 
@@ -542,8 +607,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusBar.ErrSeverity = msg.Severity
 		m.statusErrToken++
 		cmds = append(cmds, data.ClearStatusErrCmd(m.statusErrToken, 10*time.Second))
+		m.notLoggedIn = authutil.IsNoActiveUser(msg.Err)
+		m.statusBar.NotLoggedIn = m.notLoggedIn
 		m.table.SetLoadErr(msg.Err, msg.Severity)
 		m.table.SetLoadState(data.LoadStateError)
+		if m.notLoggedIn {
+			m.updatePaneFocus()
+		}
 		if m.activePane == DetailPane {
 			// Ensure Esc from describe-error card returns to TABLE (not NavPane zero-value).
 			if m.detailReturnPane == NavPane {
@@ -566,6 +636,37 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quota.SetLoading(false)
 			m.quota.SetLoadErr(msg.Err)
 		}
+
+	case deviceAuthStartedMsg:
+		m.loginOverlay.State = components.LoginOverlayPending
+		m.loginOverlay.VerificationURI = msg.session.VerificationURI
+		m.loginOverlay.UserCode = msg.session.UserCode
+		return m, finishDeviceAuthCmd(m.ctx, msg.session)
+
+	case deviceAuthFinishedMsg:
+		if msg.err != nil {
+			m.loginOverlay.State = components.LoginOverlayFailed
+			m.loginOverlay.ErrMsg = components.SanitizeErrMsg(msg.err)
+			return m, nil
+		}
+		// Refresh TUI context from the freshly-saved config so the header shows
+		// user email, org, and project immediately after authentication.
+		if msg.cfg != nil {
+			m.tuiCtx = tuictx.FromConfig(msg.cfg)
+			m.header = components.NewHeaderModel(m.tuiCtx)
+			m.ctxOverlay = components.NewPostLoginCtxSwitcherModel(msg.cfg, m.width, m.height, msg.result.UserName)
+		}
+		m.notLoggedIn = false
+		m.statusBar.NotLoggedIn = false
+		m.statusBar.Err = nil
+		m.table.SetLoadErr(nil, data.ErrorSeverityWarning)
+		// Open the context picker so the user can choose their org/project.
+		// Also start loading resource types so the console is ready if the user
+		// dismisses the picker without selecting a context.
+		m.overlay = CtxSwitcherOverlay
+		m.statusBar.Mode = components.ModeOverlay
+		m.updatePaneFocus()
+		return m, data.LoadResourceTypesCmd(m.ctx, m.rc)
 
 	case data.ClearStatusErrMsg:
 		if msg.Token == m.statusErrToken {
@@ -747,6 +848,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 	m.activityDashboard, cmd = m.activityDashboard.Update(msg)
 	cmds = append(cmds, cmd)
+	if m.overlay == LoginOverlayID {
+		m.loginOverlay.SpinnerFrame = m.table.SpinnerFrame()
+	}
 	if m.refreshing {
 		frame := m.table.SpinnerFrame()
 		if m.activePane == QuotaDashboardPane {
@@ -933,6 +1037,9 @@ func (m *AppModel) updatePaneFocus() {
 		m.statusBar.PostHint("Quota dashboard cancelled") // FB-096: acknowledge nav-cancel
 		m.quotaOriginPane = DashboardOrigin{}             // FB-095: clear stale origin on nav-cancel
 	}
+	if m.notLoggedIn {
+		m.tuiCtx.ActivePaneLabel = ""
+	}
 	m.header.Ctx = m.tuiCtx
 }
 
@@ -950,15 +1057,47 @@ func (m AppModel) handleOverlayKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea
 
 	switch msg.String() {
 	case "esc":
-		// Esc universally dismisses all overlays. For delete-confirmation in InFlight
-		// state the API call continues; a late-arriving success still invalidates cache.
+		// For the login overlay: only allow dismissal when authentication has failed.
+		// While initializing or pending, the user must wait (or the polling will return
+		// a failure message that enables dismissal).
+		if m.overlay == LoginOverlayID {
+			if m.loginOverlay.State == components.LoginOverlayFailed {
+				m.overlay = NoOverlay
+				m.statusBar.Mode = components.ModeNormal
+			}
+			return m, nil
+		}
+		// Esc universally dismisses all other overlays. For delete-confirmation in
+		// InFlight state the API call continues; a late-arriving success still
+		// invalidates cache.
 		m.overlay = NoOverlay
 		m.statusBar.Mode = components.ModeNormal
 		return m, nil
+	case "l":
+		// Allow retrying from the failed login overlay state.
+		if m.overlay == LoginOverlayID && m.loginOverlay.State == components.LoginOverlayFailed {
+			clientID, err := authutil.ResolveClientID("", m.authHostname)
+			if err != nil {
+				return m, m.postHint("Could not resolve client ID: " + err.Error())
+			}
+			m.loginOverlay = components.NewLoginOverlayModel(m.authHostname)
+			m.loginOverlay.Width = m.width
+			m.loginOverlay.Height = m.height
+			return m, startDeviceAuthCmd(m.ctx, m.authHostname, clientID)
+		}
+	case "b":
+		// Open the verification URL in the system browser when the device code is showing.
+		if m.overlay == LoginOverlayID && m.loginOverlay.State == components.LoginOverlayPending {
+			url := m.loginOverlay.VerificationURI
+			return m, func() tea.Msg {
+				_ = browser.OpenURL(url)
+				return nil
+			}
+		}
 	case "?":
 		// `?` closes CtxSwitcher/Help, but NOT DeleteConfirmation — the operator must
 		// make an explicit Y/N/Esc decision on a pending delete.
-		if m.overlay != DeleteConfirmationOverlay {
+		if m.overlay != DeleteConfirmationOverlay && m.overlay != LoginOverlayID {
 			m.overlay = NoOverlay
 			m.statusBar.Mode = components.ModeNormal
 			return m, nil
@@ -1316,9 +1455,26 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 		m.overlay = CtxSwitcherOverlay
 		m.statusBar.Mode = components.ModeOverlay
 		return m, nil
+	case "l":
+		if m.notLoggedIn || (m.overlay == LoginOverlayID && m.loginOverlay.State == components.LoginOverlayFailed) {
+			clientID, err := authutil.ResolveClientID("", m.authHostname)
+			if err != nil {
+				return m, m.postHint("Could not resolve client ID: " + err.Error())
+			}
+			m.overlay = LoginOverlayID
+			m.loginOverlay = components.NewLoginOverlayModel(m.authHostname)
+			m.loginOverlay.Width = m.width
+			m.loginOverlay.Height = m.height
+			m.statusBar.Mode = components.ModeOverlay
+			return m, startDeviceAuthCmd(m.ctx, m.authHostname, clientID)
+		}
 	case "r":
 		// FB-005 §4: error-state branch MUST run before the normal-state refresh branch.
 		if m.loadState == data.LoadStateError {
+			if m.notLoggedIn {
+				m.statusBar.Err = nil
+				return m, m.postHint("Not logged in — press [l] to login")
+			}
 			sev := components.ErrorSeverityOf(m.loadErr, m.rc)
 			if sev == data.ErrorSeverityError {
 				// P1: clear statusBar.Err so hint wins the statusbar switch (Err branch
@@ -2238,6 +2394,9 @@ func (m AppModel) activeConsumer() (kind, name string) {
 
 func (m AppModel) recalcLayout() AppModel {
 	sidebarWidth := layout.SidebarWidth(m.width)
+	if m.notLoggedIn {
+		sidebarWidth = 0
+	}
 
 	filterVisible := m.filterBar.Focused()
 	mainH := layout.MainAreaWithFilter(m.height, filterVisible)
@@ -2248,9 +2407,15 @@ func (m AppModel) recalcLayout() AppModel {
 	// fits exactly within the allocated pane footprint.
 	sidebarInnerW, sidebarInnerH := styles.PaneInnerSize(sidebarWidth, mainH)
 	tableInnerW, tableInnerH := styles.PaneInnerSize(tableW, mainH)
+	if m.notLoggedIn {
+		// No PaneBorder chrome when showing the welcome screen — give the full width.
+		tableInnerW = tableW
+	}
 
 	m.header.Width = m.width
 	m.statusBar.Width = m.width
+	m.welcomeScreen.Width = m.width
+	m.welcomeScreen.Height = max(1, m.height-layout.FooterHeight)
 
 	newSidebar := components.NewNavSidebarModel(sidebarInnerW, sidebarInnerH)
 	newSidebar.SetItems(m.resourceTypes)
@@ -2305,6 +2470,31 @@ func (m AppModel) recalcLayout() AppModel {
 }
 
 func (m AppModel) View() tea.View {
+	// Unauthenticated users get a dedicated full-screen welcome page — skip the
+	// normal header/sidebar/table chrome entirely.
+	if m.notLoggedIn {
+		m.welcomeScreen.Height = m.height
+		base := styles.SurfaceFill(m.welcomeScreen.View(), m.width, m.height)
+
+		var content string
+		switch m.overlay {
+		case LoginOverlayID:
+			// Place the login overlay centered over the welcome screen so users
+			// can see the welcome content behind the auth dialog.
+			content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+				m.loginOverlay.View(),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
+			)
+		default:
+			content = lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, base,
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.Surface)),
+			)
+		}
+		v := tea.NewView(content)
+		v.AltScreen = true
+		return v
+	}
+
 	header := m.header.View()
 
 	var mainContent string
@@ -2341,10 +2531,14 @@ func (m AppModel) View() tea.View {
 		)
 	default:
 		rightCol := m.tableView()
-		mainContent = lipgloss.JoinHorizontal(lipgloss.Top,
-			m.sidebar.View(),
-			rightCol,
-		)
+		if m.notLoggedIn {
+			mainContent = rightCol
+		} else {
+			mainContent = lipgloss.JoinHorizontal(lipgloss.Top,
+				m.sidebar.View(),
+				rightCol,
+			)
+		}
 	}
 
 	status := m.statusBar.View()
@@ -2378,6 +2572,11 @@ func (m AppModel) View() tea.View {
 		)
 	case DeleteConfirmationOverlay:
 		content = m.deleteConfirmation.View(m.width, m.height)
+	case LoginOverlayID:
+		content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+			m.loginOverlay.View(),
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(styles.OverlayBackdrop)),
+		)
 	default:
 		// Paint any slack area outside the composed layout with the Surface color
 		// so the console reads as dark mode regardless of the terminal background.
