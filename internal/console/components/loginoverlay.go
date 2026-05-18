@@ -8,6 +8,14 @@ import (
 	"go.datum.net/datumctl/internal/console/styles"
 )
 
+// loginSuccessGlyph and loginFailGlyph are the consistent status indicators
+// used in the login overlay. Keeping them as named constants ensures every
+// state line references the same character rather than scattered literals.
+const (
+	loginSuccessGlyph = "✓"
+	loginFailGlyph    = "✗"
+)
+
 // LoginOverlayState tracks which phase the device auth flow is in.
 type LoginOverlayState int
 
@@ -25,14 +33,18 @@ type LoginOverlayModel struct {
 	Height int
 
 	State           LoginOverlayState
+	AuthHostname    string // hostname shown in the initializing state line
 	VerificationURI string
 	UserCode        string
 	ErrMsg          string
 	SpinnerFrame    string
 }
 
-func NewLoginOverlayModel() LoginOverlayModel {
-	return LoginOverlayModel{State: LoginOverlayInitializing}
+func NewLoginOverlayModel(authHostname string) LoginOverlayModel {
+	return LoginOverlayModel{
+		State:        LoginOverlayInitializing,
+		AuthHostname: authHostname,
+	}
 }
 
 func (m LoginOverlayModel) View() string {
@@ -47,9 +59,14 @@ func (m LoginOverlayModel) View() string {
 	lines = append(lines, accent.Render("Log in to Datum Cloud"))
 	lines = append(lines, "")
 
+	host := m.AuthHostname
+	if host == "" {
+		host = "auth.datum.net"
+	}
+
 	switch m.State {
 	case LoginOverlayInitializing:
-		lines = append(lines, muted.Render(m.SpinnerFrame+" Connecting to auth.datum.net..."))
+		lines = append(lines, muted.Render(m.SpinnerFrame+" Connecting to "+host+"..."))
 
 	case LoginOverlayPending:
 		lines = append(lines, secondary.Render("Open this URL in your browser:"))
@@ -65,12 +82,12 @@ func (m LoginOverlayModel) View() string {
 		lines = append(lines, muted.Render("[b] open in browser"))
 
 	case LoginOverlayComplete:
-		lines = append(lines, success.Render("✓ Authentication successful"))
+		lines = append(lines, success.Render(loginSuccessGlyph+" Authentication successful"))
 		lines = append(lines, "")
 		lines = append(lines, muted.Render("Loading your resources..."))
 
 	case LoginOverlayFailed:
-		lines = append(lines, errStyle.Render("✗ Authentication failed"))
+		lines = append(lines, errStyle.Render(loginFailGlyph+" Authentication failed"))
 		lines = append(lines, "")
 		lines = append(lines, muted.Render(m.ErrMsg))
 		lines = append(lines, "")
