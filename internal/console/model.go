@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -105,7 +106,7 @@ func startDeviceAuthCmd(ctx context.Context, hostname, clientID string) tea.Cmd 
 // finishDeviceAuthCmd polls for the token and completes the login.
 func finishDeviceAuthCmd(ctx context.Context, session *authutil.DeviceAuthSession) tea.Cmd {
 	return func() tea.Msg {
-		result, err := authutil.FinishDeviceAuth(ctx, session, true)
+		result, err := authutil.FinishDeviceAuth(ctx, session, io.Discard)
 		if err != nil {
 			return deviceAuthFinishedMsg{err: err}
 		}

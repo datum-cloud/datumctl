@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -110,7 +111,7 @@ func RunInteractiveLogin(ctx context.Context, authHostname, apiHostname, clientI
 		}
 	}
 
-	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose, false)
+	return completeLogin(ctx, provider, clientID, authHostname, finalAPIHostname, scopes, token, verbose, os.Stdout)
 }
 
 // runPKCEFlow executes the OAuth2 PKCE authorization code flow and returns the
@@ -239,7 +240,7 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 // completeLogin verifies the ID token, stores credentials in the keyring, sets
 // the active user, registers the user in the known-users list, and returns a
 // LoginResult.
-func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authHostname, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose, quiet bool) (*LoginResult, error) {
+func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authHostname, finalAPIHostname string, scopes []string, token *oauth2.Token, verbose bool, out io.Writer) (*LoginResult, error) {
 	idTokenString, ok := token.Extra("id_token").(string)
 	if !ok {
 		return nil, fmt.Errorf("id_token not found in token response")
@@ -267,9 +268,7 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authH
 		return nil, fmt.Errorf("could not extract email claim from ID token, which is required for user identification")
 	}
 
-	if !quiet {
-		fmt.Printf("\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
-	}
+	fmt.Fprintf(out, "\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
 
 	// Use email as the keyring key for interactive logins, matching the
 	// behaviour of the original cmd/auth/login.go implementation.
@@ -299,26 +298,20 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authH
 
 	activeUserSet := false
 	if err := keyring.Set(ServiceName, ActiveUserKey, userKey); err != nil {
-		if !quiet {
-			fmt.Printf("Warning: Failed to set '%s' as active user in keyring: %v\n", userKey, err)
-			fmt.Printf("Credentials for '%s' were stored successfully.\n", userKey)
-		}
+		fmt.Fprintf(out, "Warning: Failed to set '%s' as active user in keyring: %v\n", userKey, err)
+		fmt.Fprintf(out, "Credentials for '%s' were stored successfully.\n", userKey)
 	} else {
 		activeUserSet = true
 	}
 
-	if !quiet {
-		if activeUserSet {
-			fmt.Println("Authentication successful. Credentials stored and set as active.")
-		} else {
-			fmt.Println("Authentication successful. Credentials stored.")
-		}
+	if activeUserSet {
+		fmt.Fprintln(out, "Authentication successful. Credentials stored and set as active.")
+	} else {
+		fmt.Fprintln(out, "Authentication successful. Credentials stored.")
 	}
 
 	if err := AddKnownUserKey(userKey); err != nil {
-		if !quiet {
-			fmt.Printf("Warning: Failed to update list of known users: %v\n", err)
-		}
+		fmt.Fprintf(out, "Warning: Failed to update list of known users: %v\n", err)
 	}
 
 	if verbose {
@@ -420,7 +413,7 @@ func StartDeviceAuth(ctx context.Context, authHostname, apiHostname, clientID st
 
 // FinishDeviceAuth polls for the device token and completes the login by storing
 // credentials in the keyring. It returns the LoginResult on success.
-func FinishDeviceAuth(ctx context.Context, session *DeviceAuthSession, quiet bool) (*LoginResult, error) {
+func FinishDeviceAuth(ctx context.Context, session *DeviceAuthSession, out io.Writer) (*LoginResult, error) {
 	token, err := pollDeviceToken(ctx, session.TokenURL, session.ClientID, session.DeviceCode, session.Interval, session.ExpiresIn)
 	if err != nil {
 		return nil, err
@@ -433,7 +426,7 @@ func FinishDeviceAuth(ctx context.Context, session *DeviceAuthSession, quiet boo
 	}
 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email", oidc.ScopeOfflineAccess}
-	return completeLogin(ctx, provider, session.ClientID, session.AuthHostname, session.APIHostname, scopes, token, false, quiet)
+	return completeLogin(ctx, provider, session.ClientID, session.AuthHostname, session.APIHostname, scopes, token, false, out)
 }
 
 type deviceTokenResponse struct {
