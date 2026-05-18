@@ -120,7 +120,7 @@ environments where the hostname cannot be derived from stored credentials).`,
 			}
 
 			cfg.Clusters[clusterName] = &api.Cluster{
-				Server: fmt.Sprintf("https://%s%s", apiHostname, path), // Use derived API hostname
+				Server: fmt.Sprintf("%s%s", apiHostname, path), // Use derived API hostname
 			}
 
 			cfg.Contexts[clusterName] = &api.Context{
@@ -138,9 +138,9 @@ environments where the hostname cannot be derived from stored credentials).`,
 			}
 			cfg.AuthInfos["datum-user"] = &api.AuthInfo{
 				Exec: &api.ExecConfig{
-					InstallHint: execPluginInstallHint,
-					Command:     executablePath, // Use absolute path
-					Args:        execArgs,
+					InstallHint:        execPluginInstallHint,
+					Command:            executablePath, // Use absolute path
+					Args:               execArgs,
 					APIVersion:         "client.authentication.k8s.io/v1",
 					ProvideClusterInfo: false,
 					InteractiveMode:    "IfAvailable",
