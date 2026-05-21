@@ -29,8 +29,10 @@ for the current user. Use --refresh to update the context cache from the API.`,
 				}
 			} else {
 				cfg, err := datumconfig.LoadAuto()
-				if err == nil && discovery.IsCacheStale(cfg, discovery.DefaultStaleness) {
-					fmt.Fprintln(os.Stderr, "Hint: context cache may be stale. Run 'datumctl ctx --refresh' to update.")
+				if err == nil && discovery.IsCacheStale(cfg, discovery.AutoRefreshStaleness) {
+					if err := runRefresh(cmd); err != nil {
+						fmt.Fprintln(os.Stderr, "Warning: could not refresh context cache:", err)
+					}
 				}
 			}
 			return runList(cmd, args)

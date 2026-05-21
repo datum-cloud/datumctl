@@ -3,7 +3,6 @@ package data
 import (
 	"strings"
 	"testing"
-	"time"
 
 	activityv1alpha1 "go.miloapis.com/activity/pkg/apis/activity/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -159,39 +158,21 @@ func TestSanitizeSummary_Empty(t *testing.T) {
 // for ListRecentProjectActivity contains the 'human' changeSource clause.
 func TestBuildProjectActivityFilter_ContainsHumanFilter(t *testing.T) {
 	t.Parallel()
-	windowStart := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
-	got := buildProjectActivityFilter(windowStart)
+	got := buildProjectActivityFilter()
 	if !strings.Contains(got, "spec.changeSource == 'human'") {
 		t.Errorf("AC#16: filter missing changeSource clause, got: %s", got)
 	}
 }
 
-// TestBuildProjectActivityFilter_ContainsTimestampClause verifies AC#17: the CEL filter
-// contains a spec.timestamp clause bounding the time window.
-func TestBuildProjectActivityFilter_ContainsTimestampClause(t *testing.T) {
-	t.Parallel()
-	windowStart := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
-	got := buildProjectActivityFilter(windowStart)
-	if !strings.Contains(got, "spec.timestamp > timestamp(") {
-		t.Errorf("AC#17: filter missing timestamp clause, got: %s", got)
-	}
-}
-
-// TestBuildProjectActivityFilter_ExactCELString verifies AC#18: the exact CEL string
-// format — starts with the changeSource clause, includes the RFC3339 timestamp.
+// TestBuildProjectActivityFilter_ExactCELString verifies AC#18: the CEL filter is exactly
+// the changeSource clause — time window is enforced by StartTime/EndTime on the query,
+// not by a spec.timestamp clause (spec.timestamp is not a valid CEL field).
 func TestBuildProjectActivityFilter_ExactCELString(t *testing.T) {
 	t.Parallel()
-	windowStart := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
-	got := buildProjectActivityFilter(windowStart)
-
-	wantPrefix := "spec.changeSource == 'human' && spec.timestamp > timestamp("
-	if !strings.HasPrefix(got, wantPrefix) {
-		t.Errorf("AC#18: filter prefix mismatch:\ngot:  %s\nwant: starts with %s", got, wantPrefix)
-	}
-	// RFC3339 timestamp of the window start must appear in the filter.
-	wantTS := windowStart.UTC().Format("2006-01-02T15:04:05Z07:00")
-	if !strings.Contains(got, wantTS) {
-		t.Errorf("AC#18: filter missing RFC3339 timestamp %q, got: %s", wantTS, got)
+	got := buildProjectActivityFilter()
+	want := "spec.changeSource == 'human'"
+	if got != want {
+		t.Errorf("AC#18: filter mismatch:\ngot:  %s\nwant: %s", got, want)
 	}
 }
 

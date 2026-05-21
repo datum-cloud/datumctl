@@ -204,7 +204,7 @@ func (m ActivityDashboardModel) renderInner() string {
 
 	case len(m.rows) == 0:
 		lines = append(lines, "")
-		lines = append(lines, center(muted.Render("No recent human activity in the last 24 hours."), contentW))
+		lines = append(lines, center(muted.Render("No recent human activity in the last 7 days."), contentW))
 		lines = append(lines, "")
 
 	default:
@@ -248,7 +248,7 @@ func (m ActivityDashboardModel) renderHeader(bold, muted lipgloss.Style) string 
 	if m.orgScope {
 		return title
 	}
-	suffix := " — last 24 hours"
+	suffix := " — last 7 days"
 	if len(m.rows) > 0 && !m.loading {
 		suffix += muted.Render(fmt.Sprintf(" · %d events", len(m.rows)))
 	}

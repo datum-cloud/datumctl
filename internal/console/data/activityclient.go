@@ -208,7 +208,7 @@ func (c *ActivityClient) ListRecentProjectActivity(
 
 	windowEnd := time.Now()
 	windowStart := windowEnd.Add(-window)
-	filter := buildProjectActivityFilter(windowStart)
+	filter := buildProjectActivityFilter()
 
 	query := &activityv1alpha1.ActivityQuery{
 		Spec: activityv1alpha1.ActivityQuerySpec{
@@ -255,9 +255,9 @@ func (c *ActivityClient) IsUnauthorized(err error) bool {
 }
 
 // buildProjectActivityFilter returns the CEL filter used by ListRecentProjectActivity.
-// The filter pins changeSource to 'human' and restricts to events after windowStart.
-func buildProjectActivityFilter(windowStart time.Time) string {
-	return fmt.Sprintf("spec.changeSource == 'human' && spec.timestamp > timestamp(%q)", windowStart.UTC().Format(time.RFC3339))
+// The time window is enforced by StartTime/EndTime on the query; this filter only pins changeSource.
+func buildProjectActivityFilter() string {
+	return "spec.changeSource == 'human'"
 }
 
 // buildActivityFilter returns a CEL filter expression for an ActivityQuery.
