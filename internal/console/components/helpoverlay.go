@@ -55,6 +55,7 @@ func (m HelpOverlayModel) View() string {
 		row.Render("[3]  quota dashboard"),
 		row.Render("[t]  quota table"),
 		row.Render("[4]  activity dashboard"),
+		row.Render("[a]  AI chat"),
 	)
 
 	global := lipgloss.JoinVertical(lipgloss.Left,

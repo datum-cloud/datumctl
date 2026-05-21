@@ -85,6 +85,12 @@ func (m StatusBarModel) View() string {
 			hints = "[j/k] move  [Enter] open  [/] filter  [d] describe  [r] refresh  [c] ctx"
 		case "QUOTA":
 			hints = "[↑↓] move  [t] table  [s] group  [r] refresh  [3] back  [?] help  [q] quit"
+		case "CHAT":
+			hints = "[Enter] send  [Alt+Enter] newline  [x] cancel  [Ctrl+E] export  [PgUp/Dn] scroll  [Tab] sidebar  [Esc] back"
+		case "CHAT_HISTORY":
+			hints = "[j/k] move  [Enter] load  [c] copy  [Shift+N] new  [Shift+D] delete  [Tab] back  [q] quit"
+		case "CHAT_CONFIRM":
+			hints = "[y] approve  [n] cancel"
 		default:
 			hints = "[j/k] move  [Enter] select  [/] filter  [d] describe  [c] ctx  [r] refresh  [?] help  [q] quit"
 		}

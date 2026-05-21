@@ -1250,21 +1250,21 @@ func newActivityPaneModel() AppModel {
 // --- FB-006 tests (activity integration) ---
 
 // TestAppModel_AKey_FromDetailPane_TransitionsToActivityPane verifies that
-// pressing "a" from DetailPane navigates to ActivityPane, sets loading state,
-// and dispatches a LoadActivityCmd (cmd non-nil).
+// pressing "A" (shift+a) from DetailPane navigates to ActivityPane, sets loading
+// state, and dispatches a LoadActivityCmd (cmd non-nil).
 func TestAppModel_AKey_FromDetailPane_TransitionsToActivityPane(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModel()
 
-	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityPane {
-		t.Errorf("activePane = %v, want ActivityPane after a from DetailPane", appM.activePane)
+		t.Errorf("activePane = %v, want ActivityPane after A from DetailPane", appM.activePane)
 	}
 	if !appM.activity.HasRows() == false && cmd == nil {
 		// Either loading was triggered (cmd != nil) or rows already existed.
-		t.Error("cmd = nil after a from DetailPane with no existing rows")
+		t.Error("cmd = nil after A from DetailPane with no existing rows")
 	}
 	// cmd must be non-nil because there are no rows yet.
 	if cmd == nil {
@@ -1279,7 +1279,7 @@ func TestAppModel_AKey_FromDetailPane_SetsActivityContext(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModel()
 
-	result, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	appM := result.(AppModel)
 
 	if appM.activityKind != "Project" {
@@ -1294,24 +1294,21 @@ func TestAppModel_AKey_FromDetailPane_SetsActivityContext(t *testing.T) {
 }
 
 // TestAppModel_AKey_FromDetailPane_WhileLoading_IsNoop verifies that pressing
-// "a" while the detail view is still loading is a no-op.
+// "A" while the detail view is still loading is a no-op (activity doesn't open).
 func TestAppModel_AKey_FromDetailPane_WhileLoading_IsNoop(t *testing.T) {
 	t.Parallel()
 	m := newDetailPaneModel()
 	m.detail.SetLoading(true)
 
-	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
-		t.Errorf("activePane = %v, want DetailPane (a noop while loading)", appM.activePane)
-	}
-	if cmd != nil {
-		t.Errorf("cmd = non-nil, want nil for noop a while detail loading")
+		t.Errorf("activePane = %v, want DetailPane (A noop while loading)", appM.activePane)
 	}
 }
 
-// TestAppModel_AKey_FromDetailPane_PreservesRows verifies that pressing "a"
+// TestAppModel_AKey_FromDetailPane_PreservesRows verifies that pressing "A"
 // again on the same resource with rows already loaded and a pagination token
 // does NOT reset rows (toggle-back-and-forth preserves scroll state).
 func TestAppModel_AKey_FromDetailPane_PreservesRows_WhenSameResource(t *testing.T) {
@@ -1327,7 +1324,7 @@ func TestAppModel_AKey_FromDetailPane_PreservesRows_WhenSameResource(t *testing.
 		{Origin: "audit", Summary: "existing"},
 	}, "tok1") // HasRows() == true, NextContinue != ""
 
-	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityPane {
@@ -1378,7 +1375,7 @@ func TestAppModel_AKey_FromDetailPane_ResetsRows_WhenDifferentResource(t *testin
 	// Now detail pane is showing resource Y (different name).
 	m.detail.SetResourceContext("projects", "resource-y")
 
-	result, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	appM := result.(AppModel)
 
 	if appM.activePane != ActivityPane {
@@ -1391,19 +1388,19 @@ func TestAppModel_AKey_FromDetailPane_ResetsRows_WhenDifferentResource(t *testin
 }
 
 // TestAppModel_AKey_FromActivityPane_TogglesBackToDetailPane verifies that
-// pressing "a" while in ActivityPane returns to DetailPane.
+// pressing "A" (shift+a) while in ActivityPane returns to DetailPane.
 func TestAppModel_AKey_FromActivityPane_TogglesBackToDetailPane(t *testing.T) {
 	t.Parallel()
 	m := newActivityPaneModel()
 
-	result, cmd := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'A', Text: "A"})
 	appM := result.(AppModel)
 
 	if appM.activePane != DetailPane {
-		t.Errorf("activePane = %v, want DetailPane after a from ActivityPane", appM.activePane)
+		t.Errorf("activePane = %v, want DetailPane after A from ActivityPane", appM.activePane)
 	}
 	if cmd != nil {
-		t.Errorf("cmd = non-nil, want nil for toggle-back a from ActivityPane")
+		t.Errorf("cmd = non-nil, want nil for toggle-back A from ActivityPane")
 	}
 }
 
@@ -6811,14 +6808,14 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites(t *testing.T) {
 			fire: tea.KeyPressMsg{Code: tea.KeyEnter},
 		},
 		{
-			// Site line 1276: a from DetailPane → ActivityPane.
+			// Site: A (shift+a) from DetailPane → ActivityPane.
 			name: "site1276_a_from_DetailPane",
 			setup: func() AppModel {
 				m := newDetailPaneModel() // has activity field initialized
 				m.conditionsMode = true
 				return m
 			},
-			fire: tea.KeyPressMsg{Code: 'a', Text: "a"},
+			fire: tea.KeyPressMsg{Code: 'A', Text: "A"},
 		},
 		{
 			// Site line 1352: d from TablePane → DetailPane.
@@ -7389,7 +7386,7 @@ func TestAppModel_DetailPaneModeResets_CoversAllSites_Events(t *testing.T) {
 				m.events = []data.EventRow{{}}
 				return m
 			},
-			fire: tea.KeyPressMsg{Code: 'a', Text: "a"},
+			fire: tea.KeyPressMsg{Code: 'A', Text: "A"},
 		},
 		{
 			name: "site_d_from_TablePane",

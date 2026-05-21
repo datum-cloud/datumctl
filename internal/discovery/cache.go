@@ -12,6 +12,9 @@ import (
 // DefaultStaleness is the cache age after which a warning is shown.
 const DefaultStaleness = 24 * time.Hour
 
+// AutoRefreshStaleness is the cache age that triggers an automatic background refresh.
+const AutoRefreshStaleness = 1 * time.Hour
+
 // UpdateConfigCache is a convenience wrapper that performs a full refresh for
 // a session: merges discovery into the cache, regenerates the session's
 // contexts, and garbage-collects stale entries.
