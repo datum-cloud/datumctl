@@ -46,8 +46,9 @@ type AgentOptions struct {
 
 // Agent runs the agentic loop.
 type Agent struct {
-	opts    AgentOptions
-	history []llm.Message
+	opts        AgentOptions
+	history     []llm.Message
+	toolEventCh chan<- string // nil between turns; set via SetToolEventCh
 }
 
 // NewAgent creates an Agent from the given options.
@@ -127,6 +128,55 @@ func (a *Agent) ClearHistory() {
 	a.history = nil
 }
 
+// SetHistory replaces the agent's conversation history. Used by the TUI to
+// restore a saved conversation when the chat pane is re-opened.
+func (a *Agent) SetHistory(msgs []llm.Message) {
+	a.history = msgs
+}
+
+// SetGate replaces the confirmation gate. Called before each turn so the TUI
+// context (cancel channel, etc.) stays current.
+func (a *Agent) SetGate(gate ConfirmGate) {
+	a.opts.Gate = gate
+}
+
+// SetToolEventCh sets the channel to which tool-call names are broadcast during
+// a turn. Set to nil between turns.
+func (a *Agent) SetToolEventCh(ch chan<- string) {
+	a.toolEventCh = ch
+}
+
+// RunTurnStream executes one turn and streams LLM token chunks to chunkCh as
+// they arrive. Returns TurnResult when the turn is complete.
+func (a *Agent) RunTurnStream(ctx context.Context, userMessage string, chunkCh chan<- string) TurnResult {
+	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: userMessage})
+
+	var buf strings.Builder
+	savedOut := a.opts.Out
+	a.opts.Out = &teeWriter{buf: &buf, ch: chunkCh}
+	err := a.runOnce(ctx)
+	a.opts.Out = savedOut
+
+	return TurnResult{Response: buf.String(), Err: err}
+}
+
+// teeWriter writes to both a buffer and a string channel (for streaming).
+type teeWriter struct {
+	buf *strings.Builder
+	ch  chan<- string
+}
+
+func (w *teeWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p) //nolint:errcheck
+	if w.ch != nil {
+		select {
+		case w.ch <- string(p):
+		default:
+		}
+	}
+	return len(p), nil
+}
+
 // runOnce executes one question→tool-calls→answer cycle, up to MaxIterations.
 func (a *Agent) runOnce(ctx context.Context) error {
 	toolDefs := a.opts.Registry.Defs()
@@ -186,6 +236,12 @@ func (w *spinnerClearWriter) Write(p []byte) (int, error) {
 
 // executeToolCall finds the tool, handles confirmation, and runs it.
 func (a *Agent) executeToolCall(ctx context.Context, tc llm.ToolCall) (string, bool) {
+	if a.toolEventCh != nil {
+		select {
+		case a.toolEventCh <- tc.ToolName:
+		default:
+		}
+	}
 	tool, ok := a.opts.Registry.Find(tc.ToolName)
 	if !ok {
 		return fmt.Sprintf("unknown tool %q", tc.ToolName), true

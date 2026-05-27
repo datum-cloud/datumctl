@@ -195,3 +195,13 @@ func TestFB121_AC4_AntiRegression_SiblingsUnchanged(t *testing.T) {
 }
 
 // ==================== End FB-121 ====================
+
+func TestHelpOverlay_AIChatHint(t *testing.T) {
+	m := NewHelpOverlayModel()
+	m.Width = 120
+	m.Height = 40
+	got := m.View()
+	if !strings.Contains(stripANSI(got), "[a]  AI chat") {
+		t.Errorf("expected '[a]  AI chat' in help overlay, got:\n%s", stripANSI(got))
+	}
+}

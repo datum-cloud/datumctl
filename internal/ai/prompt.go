@@ -4,7 +4,9 @@ import "fmt"
 
 // BuildSystemPrompt constructs the system prompt for the agentic loop,
 // injecting the current organization, project, namespace, and platform-wide context.
-func BuildSystemPrompt(org, project, namespace string, platformWide bool) string {
+// viewContext is an optional extra sentence describing what the user is currently viewing
+// in the TUI (e.g. "CURRENT VIEW: The user is browsing a list of Project resources.").
+func BuildSystemPrompt(org, project, namespace string, platformWide bool, viewContext ...string) string {
 	var contextSection, toolsSection string
 
 	switch {
@@ -70,6 +72,11 @@ MUTATION CONFIRMATION:
 - To find their project ID: datumctl get projects --organization <org-id>`
 	}
 
+	viewSection := ""
+	if len(viewContext) > 0 && viewContext[0] != "" {
+		viewSection = "\n" + viewContext[0] + "\n"
+	}
+
 	return fmt.Sprintf(`You are Patch, an AI assistant for Datum Cloud, a connectivity infrastructure platform.
 Your name is Patch. When greeting a user for the first time, introduce yourself by name.
 You help users manage Datum Cloud resources from their terminal.
@@ -80,7 +87,7 @@ NO secrets, NO daemonsets, NO statefulsets, NO replicasets, NO ingresses.
 Do not suggest or attempt to create any of these resource types.
 
 %s
-
+%s
 %s
 
 RESPONSE STYLE:
@@ -88,5 +95,5 @@ RESPONSE STYLE:
 - When listing resources, prefer a table or structured summary over raw YAML.
 - When something fails, explain what went wrong and suggest a corrective action.
 - Do not repeat full YAML blobs in your response unless the user explicitly asks.`,
-		contextSection, toolsSection)
+		contextSection, viewSection, toolsSection)
 }

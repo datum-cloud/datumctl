@@ -200,16 +200,37 @@ func actionsForSeverity(sev data.ErrorSeverity, backLabel string) []ActionHint {
 	return []ActionHint{{Key: "Esc", Label: backLabel}}
 }
 
+// actionsForError returns the canonical action row for the given error. 401
+// errors get a [l] log in hint; all others delegate to actionsForSeverity.
+func actionsForError(err error, sev data.ErrorSeverity, backLabel string) []ActionHint {
+	if k8serrors.IsUnauthorized(err) {
+		return []ActionHint{{Key: "l", Label: "log in"}, {Key: "Esc", Label: backLabel}}
+	}
+	return actionsForSeverity(sev, backLabel)
+}
+
 // SanitizedTitleForError is the exported form of sanitizedTitleForError for
 // model-layer consumers (package tui) that cannot access unexported helpers.
 func SanitizedTitleForError(err error, fallback string) string {
 	return sanitizedTitleForError(err, fallback)
 }
 
+// TitleAndDetailForError is the exported form of titleAndDetailForError for
+// model-layer consumers.
+func TitleAndDetailForError(err error, fallbackTitle string) (title, detail string) {
+	return titleAndDetailForError(err, fallbackTitle)
+}
+
 // ActionsForSeverity is the exported form of actionsForSeverity for
 // model-layer consumers (package tui) that cannot access unexported helpers.
 func ActionsForSeverity(sev data.ErrorSeverity, backLabel string) []ActionHint {
 	return actionsForSeverity(sev, backLabel)
+}
+
+// ActionsForError is the exported form of actionsForError for model-layer
+// consumers. 401 errors get a [l] log in hint; others delegate to severity.
+func ActionsForError(err error, sev data.ErrorSeverity, backLabel string) []ActionHint {
+	return actionsForError(err, sev, backLabel)
 }
 
 func errorGlyph(sev data.ErrorSeverity) string {
