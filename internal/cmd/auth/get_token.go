@@ -23,7 +23,7 @@ const (
 // getTokenCmd retrieves tokens based on the --output flag.
 var getTokenCmd = &cobra.Command{
 	Use:   "get-token",
-	Short: "Print the active user's access token (advanced / kubectl integration)",
+	Short: "Print an access token (kubectl and plugin credential helper)",
 	Long: `Print the current access token for the active Datum Cloud user.
 
 Most datumctl users do not need this command — datumctl handles
@@ -37,6 +37,11 @@ This command exists for two advanced use cases:
 
   2. Scripting or direct API calls: use --output=token to get a raw bearer
      token to pass to curl or other HTTP clients.
+
+  3. Plugin credential helper: datumctl plugins use this command to obtain
+     a fresh access token. Plugins call it as:
+       $DATUM_CREDENTIALS_HELPER auth get-token --session $DATUM_SESSION
+     When DATUM_SESSION is empty, omit the --session flag.
 
 If the stored token is expired, datumctl automatically uses the stored
 refresh token to obtain a new one before printing.
