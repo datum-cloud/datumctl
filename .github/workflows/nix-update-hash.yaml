@@ -38,11 +38,13 @@ jobs:
         run: |
           git diff --exit-code flake.nix || echo "changed=true" >> $GITHUB_OUTPUT
 
-      - name: Commit and push changes
+      - name: Create Pull Request
         if: steps.git-check.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add flake.nix
-          git commit -m "chore(nix): update vendorHash for go deps"
-          git push
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(nix): update vendorHash for go deps"
+          branch: "nix/update-vendorhash"
+          branch-suffix: timestamp
+          title: "chore(nix): update vendorHash for go deps"
+          body: "Automated vendorHash update for Go module dependency changes."
