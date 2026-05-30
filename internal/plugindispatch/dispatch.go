@@ -3,6 +3,7 @@
 package plugindispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,16 +19,47 @@ import (
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
+// osExit is a package-level indirection over os.Exit so tests can capture the
+// exit code without terminating the test process.
+var osExit = os.Exit
+
 // Exec replaces the current process with the plugin binary. Sets DATUM_*
-// environment variables before exec. On success this function does not return.
-// Returns an error only if the exec setup fails.
+// environment variables before exec. On success this function does not return
+// (Unix: process image is replaced; Windows: never reached because the child
+// exit code is propagated via osExit).
+// Returns an error only if the exec setup fails or the plugin could not be
+// launched at all (e.g. binary not found, permission denied).
 func Exec(binaryPath string, args []string, factory *client.DatumCloudFactory) error {
 	env, err := BuildEnv(factory)
 	if err != nil {
 		return fmt.Errorf("build plugin environment: %w", err)
 	}
 	merged := overlayEnv(os.Environ(), env)
-	return execPlatform(binaryPath, args, merged)
+	if execErr := execPlatform(binaryPath, args, merged); execErr != nil {
+		// On Windows, kubectl's DefaultPluginHandler returns the child's
+		// *exec.ExitError rather than calling os.Exit itself. Propagate the
+		// exit code so datumctl's exit status matches the plugin's.
+		if code, ok := exitCodeFromErr(execErr); ok {
+			osExit(code)
+		}
+		return execErr
+	}
+	return nil
+}
+
+// exitCodeFromErr extracts an exit code from err if err (or any error in its
+// chain) implements ExitCode() int — the interface satisfied by *exec.ExitError.
+// Using an interface rather than a concrete type makes the helper testable with
+// synthetic error values without importing os/exec in the test.
+func exitCodeFromErr(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	var coder interface{ ExitCode() int }
+	if errors.As(err, &coder) {
+		return coder.ExitCode(), true
+	}
+	return 0, false
 }
 
 // PluginAPIVersion is the current plugin API version declared by this host.
