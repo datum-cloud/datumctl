@@ -2,8 +2,13 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -33,9 +38,12 @@ import (
 	"go.datum.net/datumctl/internal/cmd/docs"
 	"go.datum.net/datumctl/internal/cmd/login"
 	"go.datum.net/datumctl/internal/cmd/logout"
+	plugincmd "go.datum.net/datumctl/internal/cmd/plugin"
 	"go.datum.net/datumctl/internal/cmd/whoami"
 	"go.datum.net/datumctl/internal/datumconfig"
 	customerrors "go.datum.net/datumctl/internal/errors"
+	"go.datum.net/datumctl/internal/plugindispatch"
+	"go.datum.net/datumctl/internal/pluginstore"
 	"go.datum.net/datumctl/internal/updatecheck"
 )
 
@@ -57,6 +65,31 @@ func hidePersistentFlags(cmd *cobra.Command, flags ...string) {
 }
 
 func RootCmd() *cobra.Command {
+	// Resolve plugins directory early so ForwardCompletion can use it.
+	// Failures are non-fatal here — if we can't find the dir, completion
+	// forwarding simply won't work but built-in commands are unaffected.
+	earlyPluginsDir, _ := pluginstore.PluginsDir("")
+
+	// Create factory before ForwardCompletion so DATUM_* environment variables
+	// can be injected into plugin processes during shell completion. This allows
+	// completion handlers that call the Datum API (e.g. listing workload names)
+	// to authenticate successfully.
+	ctx := context.Background()
+	factory, err := client.NewDatumFactory(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// ForwardCompletion and ForwardHelp must run before cobra.Execute() because
+	// Cobra intercepts both __complete and --help before RunE fires, and plugin
+	// names are not registered as Cobra subcommands.
+	if err := plugindispatch.ForwardCompletion(earlyPluginsDir, factory); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: completion forwarding error: %v\n", err)
+	}
+	if err := plugindispatch.ForwardHelp(earlyPluginsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: help forwarding error: %v\n", err)
+	}
+
 	rootCmd := &cobra.Command{
 		Use:   "datumctl",
 		Short: "The official CLI for Datum Cloud",
@@ -71,7 +104,9 @@ Get started:
   datumctl login
   datumctl get organizations
   datumctl get dnszones`,
-		Run: runLanding,
+		// ArbitraryArgs allows unknown subcommand names to reach RunE so the
+		// plugin dispatch logic can handle them before Cobra rejects them.
+		Args: cobra.ArbitraryArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			format, _ := cmd.Flags().GetString("error-format")
 			switch format {
@@ -86,7 +121,103 @@ Get started:
 			handleUpdateCheck(cmd)
 			return nil
 		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				runLanding(cmd, args)
+				return nil
+			}
+			name := args[0]
+
+			// Built-in commands should have been dispatched by Cobra already.
+			// If we reach here with a built-in name it means something is wrong.
+			if plugindispatch.IsBuiltIn(cmd, name) {
+				return customerrors.NewUserError(fmt.Sprintf("unknown command %q; run 'datumctl --help' for available commands", name))
+			}
+
+			// Resolve plugins directory (respects DATUMCTL_PLUGINS_DIR env var or default).
+			pluginsDir, _ := pluginstore.PluginsDir("")
+
+			binaryPath, managed, findErr := plugindispatch.FindPlugin(name, pluginsDir)
+			if findErr != nil {
+				if err := suggestAndInstallPlugin(cmd, name, pluginsDir, args, factory); err != nil {
+					return err
+				}
+				return customerrors.NewUserError(fmt.Sprintf("unknown command %q; run 'datumctl --help' for available commands", name))
+			}
+
+			// Resolve symlinks exactly once. The resolved path is used for the
+			// trust check, the hash check, and the Exec call, preventing a TOCTOU
+			// attack where a symlink is flipped between the trust check and exec.
+			if abs, absErr := filepath.EvalSymlinks(binaryPath); absErr == nil {
+				binaryPath = abs
+			}
+
+			if !managed {
+				// Check DATUMCTL_TRUSTED_PLUGINS env var.
+				trusted := isTrustedByEnv(name)
+				if !trusted {
+					// Check plugins.json trusted entries (path + SHA256 hash).
+					manifest, loadErr := pluginstore.Load(pluginsDir)
+					if loadErr == nil {
+						trusted = isTrustedByManifest(manifest, name, binaryPath)
+					}
+				}
+				if !trusted {
+					// Block execution — do not fall through to Exec. An unmanaged
+					// binary on PATH that has not been explicitly trusted could
+					// exfiltrate credentials via DATUM_CREDENTIALS_HELPER.
+					return customerrors.NewUserError(fmt.Sprintf(
+						"'datumctl-%s' is an unmanaged plugin that has not been trusted.\n"+
+							"  To allow it: datumctl plugin trust %s\n"+
+							"  To install as a managed plugin: datumctl plugin install datum-cloud/datumctl-%s",
+						name, name, name))
+				}
+			}
+
+			// Invocation-time checks for managed plugins.
+			if managed {
+				// Integrity: re-verify SHA256 in case the binary changed since
+				// ForwardPlugin ran (or ForwardPlugin was skipped due to an error).
+				if integrityErr := plugindispatch.VerifyManagedPluginIntegrity(earlyPluginsDir, name, binaryPath); integrityErr != nil {
+					return customerrors.NewUserError(integrityErr.Error())
+				}
+
+				manifest, loadErr := pluginstore.Load(pluginsDir)
+				if loadErr == nil && manifest.Plugins != nil {
+					if entry, ok := manifest.Plugins[name]; ok && entry.Manifest != nil {
+						currentVersion := componentversion.Get().GitVersion
+						if warn, compatErr := plugindispatch.CheckCompatibilityAtInvocation(entry.Manifest, currentVersion, plugindispatch.PluginAPIVersion); compatErr != nil {
+							return customerrors.NewUserError(compatErr.Error())
+						} else if warn != "" {
+							fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", warn)
+						}
+					}
+				}
+			}
+
+			return plugindispatch.Exec(binaryPath, args[1:], factory)
+		},
 	}
+	// Surface installed and PATH plugins as tab-completion candidates for the
+	// root command so "datumctl com<TAB>" resolves to plugin names alongside
+	// built-in subcommands.
+	rootCmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		pluginsDir, _ := pluginstore.PluginsDir("")
+		plugindispatch.LoadMissingManifests(pluginsDir)
+		descriptions := map[string]string{}
+		if m, err := pluginstore.Load(pluginsDir); err == nil {
+			for name, entry := range m.Plugins {
+				if entry.Manifest != nil && entry.Manifest.Description != "" {
+					descriptions[name] = entry.Manifest.Description
+				}
+			}
+		}
+		return plugindispatch.ListPluginNames(pluginsDir, descriptions), cobra.ShellCompDirectiveNoFileComp
+	}
+
 	// kubectl version expects this flag to exist; add it here to avoid nil deref.
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
 	rootCmd.PersistentFlags().String("error-format", customerrors.FormatHuman,
@@ -97,11 +228,6 @@ Get started:
 		ErrOut: rootCmd.ErrOrStderr(),
 	}
 
-	ctx := context.Background()
-	factory, err := client.NewDatumFactory(ctx)
-	if err != nil {
-		panic(err)
-	}
 	factory.AddFlags(rootCmd.PersistentFlags())
 	factory.AddFlagMutualExclusions(rootCmd)
 
@@ -592,7 +718,69 @@ Specify the resource type and name to view its history.`
 	consoleCmd.GroupID = "other"
 	rootCmd.AddCommand(consoleCmd)
 
+	pluginCommand := plugincmd.Command(factory)
+	pluginCommand.GroupID = "other"
+	rootCmd.AddCommand(pluginCommand)
+
+	// ForwardPlugin must run after the full command tree is built so IsBuiltIn
+	// can distinguish plugin names from registered subcommands. For managed
+	// plugins, this replaces the process before cobra can parse (and discard)
+	// flags that belong to the plugin's own subcommands.
+	// ForwardPlugin replaces the process for managed plugins before cobra
+	// parses flags. If it fails (e.g. integrity check), execution falls
+	// through to cobra and the RunE path re-enforces the same checks.
+	_ = plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory)
+
 	return rootCmd
+}
+
+// isTrustedByEnv checks the DATUMCTL_TRUSTED_PLUGINS comma-separated env var.
+func isTrustedByEnv(name string) bool {
+	env := os.Getenv("DATUMCTL_TRUSTED_PLUGINS")
+	if env == "" {
+		return false
+	}
+	for _, trusted := range strings.Split(env, ",") {
+		if strings.TrimSpace(trusted) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// isTrustedByManifest checks plugins.json trusted entries for the given plugin.
+// The resolved binary path must match the stored trusted path, and the SHA256
+// hash of the binary on disk must match the hash recorded at trust time.
+// binaryPath must already be symlink-resolved (filepath.EvalSymlinks applied)
+// so that path comparison is stable and no second symlink resolution occurs.
+func isTrustedByManifest(manifest *pluginstore.Manifest, name, binaryPath string) bool {
+	if manifest == nil || manifest.Trusted == nil {
+		return false
+	}
+	entry, ok := manifest.Trusted[name]
+	if !ok {
+		return false
+	}
+	// Path check: binaryPath is already symlink-resolved by the caller.
+	if entry.Path != binaryPath {
+		return false
+	}
+	// Hash check: re-read and re-hash the binary to detect replacement since
+	// trust was granted. If SHA256 is empty (legacy entry), fail closed.
+	if entry.SHA256 == "" {
+		return false
+	}
+	f, err := os.Open(binaryPath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	currentDigest := hex.EncodeToString(h.Sum(nil))
+	return entry.SHA256 == currentDigest
 }
 
 // activeUpdateChecker holds the in-flight update check between when it is
