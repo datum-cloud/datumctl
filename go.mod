@@ -2,7 +2,7 @@ module go.datum.net/datumctl
 
 go 1.25.8
 
-toolchain go1.26.3
+toolchain go1.26.4
 
 require (
 	charm.land/bubbles/v2 v2.1.0
