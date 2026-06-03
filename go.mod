@@ -11,6 +11,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-logr/logr v1.4.3
 	github.com/google/uuid v1.6.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -19,7 +20,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/zalando/go-keyring v0.2.8
 	go.miloapis.com/activity v0.7.0
-	go.miloapis.com/milo v0.25.0
+	go.miloapis.com/milo v0.27.0
 	golang.org/x/mod v0.35.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.43.0
@@ -28,6 +29,7 @@ require (
 	k8s.io/cli-runtime v0.35.3
 	k8s.io/client-go v0.35.3
 	k8s.io/component-base v0.35.3
+	k8s.io/klog/v2 v2.130.1
 	k8s.io/kubectl v0.35.3
 	sigs.k8s.io/controller-runtime v0.23.3
 	sigs.k8s.io/yaml v1.6.0
@@ -63,7 +65,6 @@ require (
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-openapi/jsonpointer v0.22.4 // indirect
 	github.com/go-openapi/jsonreference v0.21.4 // indirect
 	github.com/go-openapi/swag v0.25.4 // indirect
@@ -127,7 +128,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/apiserver v0.35.3 // indirect
 	k8s.io/component-helpers v0.35.3 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260330154417-16be699c7b31 // indirect
 	k8s.io/metrics v0.35.3 // indirect
 	k8s.io/utils v0.0.0-20260319190234-28399d86e0b5 // indirect
