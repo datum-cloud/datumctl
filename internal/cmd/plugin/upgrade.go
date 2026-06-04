@@ -54,7 +54,7 @@ compatibility validation.`,
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: index refresh failed (%v), using cached index\n", refreshErr)
 			default:
 				// No cache at all.
-				return customerrors.NewUserError(fmt.Sprintf("could not fetch plugin index: %v", refreshErr))
+				return indexFetchUserError(refreshErr)
 			}
 
 			var newEntry *pluginstore.InstalledPlugin
