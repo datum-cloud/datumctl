@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	activity "go.miloapis.com/activity/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/transport"
 	componentversion "k8s.io/component-base/version"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
@@ -108,6 +110,11 @@ Get started:
 		// plugin dispatch logic can handle them before Cobra rejects them.
 		Args: cobra.ArbitraryArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Make the -v flag dump HTTP requests from bare net/http callers,
+			// as client-go already does for kubectl-backed commands. No-op
+			// below -v 6.
+			http.DefaultTransport = transport.DebugWrappers(http.DefaultTransport)
+
 			format, _ := cmd.Flags().GetString("error-format")
 			switch format {
 			case customerrors.FormatHuman, customerrors.FormatJSON, customerrors.FormatYAML:

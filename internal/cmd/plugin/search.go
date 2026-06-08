@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
@@ -33,7 +32,7 @@ Run 'datumctl plugin install <name>' to install a plugin listed here.`,
 				idx, err = pluginstore.RefreshIndex(cmd.Context())
 				if err != nil {
 					if idx == nil {
-						return customerrors.NewUserError("could not fetch plugin index: " + err.Error())
+						return indexFetchUserError(err)
 					}
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: index refresh failed (%v), showing cached results\n", err)
 				}

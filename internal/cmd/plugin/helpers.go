@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,8 +24,23 @@ import (
 
 	"golang.org/x/mod/semver"
 
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
+
+// indexFetchUserError converts a RefreshIndex failure into a user-facing error,
+// attaching actionable guidance when the cause is recognizable (e.g. a GitHub
+// token in the environment being rejected by the index host).
+func indexFetchUserError(err error) error {
+	msg := "could not fetch the plugin index: " + err.Error()
+	var fe *pluginstore.IndexFetchError
+	if errors.As(err, &fe) {
+		if hint := fe.Hint(); hint != "" {
+			return customerrors.NewUserErrorWithHint(msg, hint)
+		}
+	}
+	return customerrors.NewUserError(msg)
+}
 
 const (
 	pluginDownloadTimeout = 60 * time.Second
