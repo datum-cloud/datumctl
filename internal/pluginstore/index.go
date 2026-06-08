@@ -133,7 +133,8 @@ func RefreshIndex(ctx context.Context) (*CachedIndex, error) {
 	}
 
 	// Attach GitHub token if available.
-	if token := githubToken(); token != "" {
+	token, tokenSource := githubTokenWithSource()
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("User-Agent", "datumctl-plugin-index")
@@ -145,7 +146,12 @@ func RefreshIndex(ctx context.Context) (*CachedIndex, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return degradedFallback(fmt.Errorf("fetch plugin index: HTTP %s", resp.Status))
+		return degradedFallback(&IndexFetchError{
+			URL:         IndexURL,
+			StatusCode:  resp.StatusCode,
+			Status:      resp.Status,
+			TokenSource: tokenSource,
+		})
 	}
 
 	raw, err := io.ReadAll(resp.Body)
@@ -202,10 +208,45 @@ func degradedFallback(origErr error) (*CachedIndex, error) {
 	return cached, origErr
 }
 
-// githubToken returns a GitHub personal access token from the environment.
-func githubToken() string {
+// githubTokenWithSource returns a GitHub personal access token from the
+// environment along with the name of the variable it came from (empty when no
+// token is set).
+func githubTokenWithSource() (token, source string) {
 	if t := os.Getenv("DATUMCTL_GITHUB_TOKEN"); t != "" {
-		return t
+		return t, "DATUMCTL_GITHUB_TOKEN"
 	}
-	return os.Getenv("GITHUB_TOKEN")
+	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+		return t, "GITHUB_TOKEN"
+	}
+	return "", ""
+}
+
+// IndexFetchError is returned by RefreshIndex when the index host responds with
+// a non-OK HTTP status. It carries enough context for the command layer to
+// render actionable guidance via Hint.
+type IndexFetchError struct {
+	URL         string
+	StatusCode  int
+	Status      string // HTTP status text, e.g. "404 Not Found"
+	TokenSource string // env var the Authorization token came from, "" if none
+}
+
+func (e *IndexFetchError) Error() string {
+	return fmt.Sprintf("the plugin index host returned HTTP %s", e.Status)
+}
+
+// Hint returns actionable guidance for resolving the failure, or "" when none
+// applies. The common case: a GitHub token in the environment is sent to the
+// public index host, which rejects it with a 401/403/404.
+func (e *IndexFetchError) Hint() string {
+	switch e.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+		if e.TokenSource != "" {
+			return fmt.Sprintf(
+				"A GitHub token from $%s is being sent to the index host, which is the likely cause. "+
+					"The public plugin index needs no authentication; unset that variable and retry.",
+				e.TokenSource)
+		}
+	}
+	return ""
 }
