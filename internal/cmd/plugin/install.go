@@ -76,7 +76,7 @@ The plugin binary is written to the managed plugins directory
 			// Curated index path.
 			idx, idxErr := loadOrRefreshIndex(cmd)
 			if idxErr != nil {
-				return customerrors.NewUserError("could not fetch plugin index: " + idxErr.Error())
+				return indexFetchUserError(idxErr)
 			}
 			entry, pluginName, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, arg, "", currentVersion, idx)
 			if installErr != nil {
