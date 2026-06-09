@@ -38,6 +38,7 @@ import (
 	"go.datum.net/datumctl/internal/cmd/create"
 	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
 	"go.datum.net/datumctl/internal/cmd/docs"
+	"go.datum.net/datumctl/internal/cmd/inventory"
 	"go.datum.net/datumctl/internal/cmd/login"
 	"go.datum.net/datumctl/internal/cmd/logout"
 	plugincmd "go.datum.net/datumctl/internal/cmd/plugin"
@@ -282,6 +283,10 @@ Get started:
 	autoUpdateCmd := autoupdatecmd.Command()
 	autoUpdateCmd.GroupID = "other"
 	rootCmd.AddCommand(autoUpdateCmd)
+
+	inventoryCmd := inventory.Command(factory)
+	inventoryCmd.GroupID = "resource"
+	rootCmd.AddCommand(inventoryCmd)
 
 	authCommand := auth.Command()
 	whoami := kubeauth.NewCmdWhoAmI(factory, ioStreams)
