@@ -20,6 +20,9 @@ install `datumctl` via our official tap:
 # Tap the Datum Cloud formula repository (only needs to be done once)
 brew tap datum-cloud/homebrew-tap
 
+# Trust the datumctl formula
+brew trust --formula datum-cloud/homebrew-tap/datumctl
+
 # Install datumctl
 brew install datumctl
 
