@@ -49,7 +49,7 @@ nfpms:
   - vendor: Datum Technology, Inc
     homepage: https://www.datum.net/
     maintainer: support@datum.net
-    license: Apache 2.0
+    license: Apache-2.0
     provides:
     - datumctl
     recommends:
@@ -92,7 +92,7 @@ brews:
   directory: Formula
   homepage: "https://www.datum.net/"
   description: "A network cloud, built on open source."
-  license: "Apache 2.0"
+  license: "Apache-2.0"
   repository:
     owner: datum-cloud
     name: homebrew-tap
