@@ -13,7 +13,7 @@ import (
 )
 
 func updateKubeconfigCmd() *cobra.Command {
-	var kubeconfig, projectName, organizationName, hostname string
+	var kubeconfig, projectName, organizationName, hostname, execInteractiveMode string
 
 	cmd := &cobra.Command{
 		Use:   "update-kubeconfig",
@@ -47,8 +47,20 @@ environments where the hostname cannot be derived from stored credentials).`,
   datumctl auth update-kubeconfig --project my-project-id
 
   # Write to a custom kubeconfig file
-  datumctl auth update-kubeconfig --organization my-org-id --kubeconfig ~/.kube/datum-config`,
+  datumctl auth update-kubeconfig --organization my-org-id --kubeconfig ~/.kube/datum-config
+
+  # Non-interactive exec credential (CI / scripts)
+  datumctl auth update-kubeconfig --project my-project-id --exec-interactive-mode Never`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			interactiveMode := api.ExecInteractiveMode(execInteractiveMode)
+			switch interactiveMode {
+			case api.NeverExecInteractiveMode, api.IfAvailableExecInteractiveMode, api.AlwaysExecInteractiveMode:
+			default:
+				return fmt.Errorf("invalid --exec-interactive-mode %q: must be one of %s, %s, %s",
+					execInteractiveMode,
+					api.NeverExecInteractiveMode, api.IfAvailableExecInteractiveMode, api.AlwaysExecInteractiveMode)
+			}
+
 			// Determine kubeconfig path
 			var kubeconfigPath string
 			if kubeconfig != "" {
@@ -143,7 +155,7 @@ environments where the hostname cannot be derived from stored credentials).`,
 					Args:               execArgs,
 					APIVersion:         "client.authentication.k8s.io/v1",
 					ProvideClusterInfo: false,
-					InteractiveMode:    "IfAvailable",
+					InteractiveMode:    interactiveMode,
 				},
 			}
 
@@ -166,6 +178,9 @@ environments where the hostname cannot be derived from stored credentials).`,
 	cmd.Flags().StringVar(&projectName, "project", "", "Configure kubectl to access a specific project's control plane instead of the core control plane.")
 	cmd.Flags().StringVar(&organizationName, "organization", "", "The organization name that is being connected to.")
 	cmd.Flags().StringVar(&hostname, "hostname", "", "Override the hostname for the API server")
+	cmd.Flags().StringVar(&execInteractiveMode, "exec-interactive-mode", string(api.IfAvailableExecInteractiveMode),
+		fmt.Sprintf("Interactive mode for the kubeconfig exec credential plugin (%s, %s, %s). Use %s for non-interactive contexts such as CI.",
+			api.NeverExecInteractiveMode, api.IfAvailableExecInteractiveMode, api.AlwaysExecInteractiveMode, api.NeverExecInteractiveMode))
 
 	cmd.MarkFlagsOneRequired("project", "organization")
 	cmd.MarkFlagsMutuallyExclusive("project", "organization")
