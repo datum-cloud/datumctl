@@ -247,6 +247,8 @@ github.com/zalando/go-keyring v0.2.8 h1:6sD/Ucpl7jNq10rM2pgqTs0sZ9V3qMrqfIIy5YPc
 github.com/zalando/go-keyring v0.2.8/go.mod h1:tsMo+VpRq5NGyKfxoBVjCuMrG47yj8cmakZDO5QGii0=
 go.miloapis.com/activity v0.7.0 h1:Nmc5XzA4oEMTko5/ciJAeERVk18FaSnRpTBo0Sm89YU=
 go.miloapis.com/activity v0.7.0/go.mod h1:Sh2Irbq6siJcfq17nLjHvm4JHN/2Csc5YCHB+ycz20c=
+go.miloapis.com/activity v0.7.1 h1:e2c4xVISMA10QQJwPv8pT8U1T1xS3eTGhy8FJHXOKvY=
+go.miloapis.com/activity v0.7.1/go.mod h1:Sh2Irbq6siJcfq17nLjHvm4JHN/2Csc5YCHB+ycz20c=
 go.miloapis.com/milo v0.27.0 h1:lbUZJhWBgFmvdINyt6oonWEAW2bwuoW9CVa9D1mCYSI=
 go.miloapis.com/milo v0.27.0/go.mod h1:p9O2kk194mvoL8rhqjwb+LWB+GIyY4vQqiTowwibVWo=
 go.miloapis.com/milo v0.28.1 h1:30bQS4EwadbOBsn3UC8qSBENN1koQgsQpcvqPjXfmlI=
