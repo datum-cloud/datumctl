@@ -100,8 +100,8 @@ func (c *Catalog) Trust() string {
 	return TrustThirdParty
 }
 
-// DefaultCatalog returns the synthesized official catalog. Its source tracks
-// IndexURL, so DATUMCTL_PLUGIN_INDEX_URL continues to override it.
+// OfficialCatalog returns the synthesized official "datum" catalog. Its source
+// tracks IndexURL, so DATUMCTL_PLUGIN_INDEX_URL continues to override it.
 func OfficialCatalog() Catalog {
 	return Catalog{
 		Name:        OfficialCatalogName,

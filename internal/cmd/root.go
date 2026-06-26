@@ -747,7 +747,7 @@ func isTrustedByEnv(name string) bool {
 	if env == "" {
 		return false
 	}
-	for _, trusted := range strings.Split(env, ",") {
+	for trusted := range strings.SplitSeq(env, ",") {
 		if strings.TrimSpace(trusted) == name {
 			return true
 		}
