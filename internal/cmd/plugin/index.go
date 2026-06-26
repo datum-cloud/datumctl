@@ -2,9 +2,11 @@ package plugin
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -15,6 +17,11 @@ import (
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
+// indexListRefreshTimeout bounds the best-effort metadata refresh that
+// `plugin index list` performs per catalog so an offline catalog cannot stall
+// the listing.
+const indexListRefreshTimeout = 3 * time.Second
+
 // indexCmd is the 'plugin index' command group for managing plugin catalogs.
 func indexCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -24,13 +31,13 @@ func indexCmd() *cobra.Command {
 			Manage the plugin catalogs datumctl searches and installs from.
 
 			A catalog (called an index in command syntax) is a published list of
-			datumctl plugins. Datum's curated "default" catalog is always present and
+			datumctl plugins. Datum's curated "datum" catalog is always present and
 			trusted with no setup. You can register additional catalogs — a company's
 			internal catalog or a community one — and their plugins then appear in
 			search, browse, and install alongside Datum's.
 
-			Every catalog carries a trust badge: "official" for Datum's curated default,
-			"third-party" for any catalog you add.`),
+			Every catalog carries a trust badge: "official" for Datum's curated datum
+			catalog, "third-party" for any catalog you add.`),
 		Example: templates.Examples(`
 			# Register a community catalog from a GitHub repository
 			datumctl plugin index add community datum-community/datumctl-plugins
@@ -166,7 +173,7 @@ func indexListCmd() *cobra.Command {
 		Short: "List registered plugin catalogs",
 		Long: templates.LongDesc(`
 			List every registered plugin catalog with its type, plugin count, trust
-			badge, and description. The default catalog is always shown first.`),
+			badge, and description. The official datum catalog is always shown first.`),
 		Example: templates.Examples(`
 			# List registered catalogs
 			datumctl plugin index list`),
@@ -181,16 +188,42 @@ func indexListCmd() *cobra.Command {
 				return fmt.Errorf("load catalog registry: %w", err)
 			}
 
+			// Resolve each catalog's index so plugin counts populate consistently.
+			// Already-fresh caches are used as-is; stale or uncached catalogs are
+			// refreshed concurrently with a short per-catalog timeout. This is
+			// best-effort — an offline catalog degrades to a "—" marker and never
+			// fails the listing.
+			indexes := make([]*pluginstore.CachedIndex, len(reg.Catalogs))
+			var wg sync.WaitGroup
+			for i := range reg.Catalogs {
+				cat := reg.Catalogs[i]
+				cached, _ := pluginstore.LoadCatalogIndex(pluginsDir, cat.Name)
+				if !pluginstore.IsStale(cached) {
+					indexes[i] = cached
+					continue
+				}
+				wg.Add(1)
+				go func(i int, cat pluginstore.Catalog) {
+					defer wg.Done()
+					ctx, cancel := context.WithTimeout(cmd.Context(), indexListRefreshTimeout)
+					defer cancel()
+					// RefreshCatalog degrades to a stale cache on failure, so a
+					// non-nil result is still usable for a count.
+					if idx, _ := pluginstore.RefreshCatalog(ctx, pluginsDir, cat); idx != nil {
+						indexes[i] = idx
+					}
+				}(i, cat)
+			}
+			wg.Wait()
+
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
 			fmt.Fprintln(w, "NAME\tTYPE\tPLUGINS\tTRUST\tDESCRIPTION")
 			for i := range reg.Catalogs {
 				cat := &reg.Catalogs[i]
-				count := "?"
 				desc := catalogDescription(cat)
-				if idx, _ := pluginstore.LoadCatalogIndex(pluginsDir, cat.Name); idx != nil {
-					if !idx.RefreshedAt.IsZero() {
-						count = fmt.Sprintf("%d", len(idx.Plugins))
-					}
+				count := "—"
+				if idx := indexes[i]; idx != nil && !idx.RefreshedAt.IsZero() {
+					count = fmt.Sprintf("%d", len(idx.Plugins))
 					if desc == "" && idx.Header.Description != "" {
 						desc = idx.Header.Description
 					}
@@ -219,8 +252,8 @@ func indexRemoveCmd() *cobra.Command {
 		ValidArgsFunction: registeredCatalogNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if name == pluginstore.DefaultCatalogName {
-				return customerrors.NewUserError("the default catalog cannot be removed")
+			if pluginstore.CanonicalCatalogName(name) == pluginstore.OfficialCatalogName {
+				return customerrors.NewUserError("the official datum catalog cannot be removed")
 			}
 			pluginsDir, err := resolvePluginsDir(cmd)
 			if err != nil {
@@ -401,7 +434,7 @@ func catalogDescription(cat *pluginstore.Catalog) string {
 	if cat.Description != "" {
 		return cat.Description
 	}
-	if cat.Name == pluginstore.DefaultCatalogName {
+	if cat.Name == pluginstore.OfficialCatalogName {
 		return "Datum-curated plugins"
 	}
 	return ""

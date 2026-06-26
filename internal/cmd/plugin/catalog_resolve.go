@@ -91,24 +91,26 @@ func collisionError(name string, matches []catalogMatch) error {
 }
 
 // installBadge returns the trust badge for a plugin installed from the given
-// catalog. Only the reserved default catalog is "official".
+// catalog. Only the reserved official catalog (under its canonical "datum" name
+// or the legacy "default" alias) is "official".
 func installBadge(catalog string) string {
-	if catalog == pluginstore.DefaultCatalogName {
+	if pluginstore.CanonicalCatalogName(catalog) == pluginstore.OfficialCatalogName {
 		return pluginstore.TrustOfficial
 	}
 	return pluginstore.TrustThirdParty
 }
 
 // installedCatalogLabel returns the INDEX and TRUST columns for an installed
-// plugin record, accounting for legacy records that predate the catalog field.
+// plugin record, accounting for legacy records that predate the catalog field
+// and the pre-rename "default" catalog name.
 func installedCatalogLabel(entry *pluginstore.InstalledPlugin) (index, trust string) {
 	if entry.Catalog != "" {
-		return entry.Catalog, installBadge(entry.Catalog)
+		return pluginstore.CanonicalCatalogName(entry.Catalog), installBadge(entry.Catalog)
 	}
 	// Legacy records: a slash in Source means a direct GitHub install; otherwise
-	// it was installed from the curated default catalog.
+	// it was installed from the curated official catalog.
 	if strings.Contains(entry.Source, "/") {
 		return "(direct)", pluginstore.TrustThirdParty
 	}
-	return pluginstore.DefaultCatalogName, pluginstore.TrustOfficial
+	return pluginstore.OfficialCatalogName, pluginstore.TrustOfficial
 }

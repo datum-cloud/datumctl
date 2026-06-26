@@ -18,6 +18,7 @@ func TestValidateCatalogName(t *testing.T) {
 		{"valid simple", "acme", false},
 		{"valid hyphen", "acme-internal", false},
 		{"valid digit start", "1catalog", false},
+		{"reserved datum", "datum", true},
 		{"reserved default", "default", true},
 		{"reserved official", "official", true},
 		{"empty", "", true},
@@ -127,6 +128,79 @@ func TestResolveCatalogSource(t *testing.T) {
 	})
 }
 
+func TestCanonicalCatalogName_aliasResolvesToDatum(t *testing.T) {
+	if OfficialCatalogName != "datum" {
+		t.Fatalf("official catalog should be named datum, got %q", OfficialCatalogName)
+	}
+	if CanonicalCatalogName("default") != "datum" {
+		t.Fatal(`"default" must canonicalize to "datum"`)
+	}
+	if CanonicalCatalogName("datum") != "datum" || CanonicalCatalogName("acme") != "acme" {
+		t.Fatal("non-alias names must pass through unchanged")
+	}
+
+	dir := t.TempDir()
+	reg, err := LoadRegistry(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both the canonical name and the legacy alias resolve to the same official
+	// catalog, named "datum".
+	byDatum := reg.Find("datum")
+	byDefault := reg.Find("default")
+	if byDatum == nil || byDefault == nil {
+		t.Fatalf("both datum and default must resolve, got %v / %v", byDatum, byDefault)
+	}
+	if byDatum.Name != "datum" || byDefault.Name != "datum" {
+		t.Fatalf("alias should resolve to datum, got %q / %q", byDatum.Name, byDefault.Name)
+	}
+}
+
+func TestLoadCatalogIndex_defaultAliasSharesDatumCache(t *testing.T) {
+	dir := t.TempDir()
+	idx := &CachedIndex{RefreshedAt: time.Now(), Plugins: []Plugin{{Spec: PluginSpec{Version: "v1.0.0"}}}}
+	// Save under the legacy "default" name; it must land in the datum cache.
+	if err := SaveCatalogIndex(dir, "default", idx); err != nil {
+		t.Fatal(err)
+	}
+	cachePath, _ := CatalogIndexPath(dir, "datum")
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("default save should write the datum cache: %v", err)
+	}
+	// Read back under either name.
+	for _, name := range []string{"datum", "default"} {
+		got, err := LoadCatalogIndex(dir, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Plugins) != 1 {
+			t.Fatalf("reading %q should return the shared cache, got %+v", name, got)
+		}
+	}
+}
+
+func TestLoadCatalogIndex_readsPreRenameDefaultDir(t *testing.T) {
+	dir := t.TempDir()
+	// Simulate a pre-rename cache written under indexes/default/index.json by an
+	// older datumctl, with no datum cache present.
+	legacyDir := filepath.Join(dir, "indexes", "default")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	idx := &CachedIndex{RefreshedAt: time.Now(), Plugins: []Plugin{{Spec: PluginSpec{Version: "v7.7.7"}}}}
+	data, _ := json.Marshal(idx)
+	if err := os.WriteFile(filepath.Join(legacyDir, "index.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadCatalogIndex(dir, "datum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Plugins) != 1 || got.Plugins[0].Spec.Version != "v7.7.7" {
+		t.Fatalf("pre-rename default cache not read: %+v", got)
+	}
+}
+
 func TestRegistry_LoadSaveRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 
@@ -135,7 +209,7 @@ func TestRegistry_LoadSaveRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Default must be present and first.
-	if len(reg.Catalogs) != 1 || reg.Catalogs[0].Name != DefaultCatalogName {
+	if len(reg.Catalogs) != 1 || reg.Catalogs[0].Name != OfficialCatalogName {
 		t.Fatalf("expected only default catalog, got %+v", reg.Catalogs)
 	}
 	if !reg.Catalogs[0].IsOfficial() || reg.Catalogs[0].Trust() != TrustOfficial {
@@ -162,7 +236,7 @@ func TestRegistry_LoadSaveRoundtrip(t *testing.T) {
 	if reg2.Find("default") == nil {
 		t.Fatal("default missing after reload")
 	}
-	if reg2.Catalogs[0].Name != DefaultCatalogName {
+	if reg2.Catalogs[0].Name != OfficialCatalogName {
 		t.Fatalf("default should be first, got %q", reg2.Catalogs[0].Name)
 	}
 	if got := reg2.Custom(); len(got) != 1 || got[0].Name != "acme" {
@@ -254,7 +328,7 @@ func TestCatalogIndex_SaveLoadAndLegacyFallback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, legacyIndexFileName), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	def, err := LoadCatalogIndex(dir, DefaultCatalogName)
+	def, err := LoadCatalogIndex(dir, OfficialCatalogName)
 	if err != nil {
 		t.Fatal(err)
 	}

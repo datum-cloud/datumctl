@@ -18,10 +18,10 @@ func searchCmd() *cobra.Command {
 		Short: "Search for available datumctl plugins",
 		Long: `Search every registered plugin catalog for available datumctl plugins.
 
-Results span the default catalog and any catalogs you have added, with a column
-showing which catalog each plugin came from and a trust badge ("official" for
-Datum's curated default, "third-party" for catalogs you added). An optional
-query filters by name or description; use --index to scope to one catalog.
+Results span the official datum catalog and any catalogs you have added, with a
+column showing which catalog each plugin came from and a trust badge ("official"
+for Datum's curated datum catalog, "third-party" for catalogs you added). An
+optional query filters by name or description; use --index to scope to one catalog.
 
 Run 'datumctl plugin install <name>' to install a plugin listed here.`,
 		Example: `  # List all available plugins across catalogs

@@ -11,10 +11,26 @@ import (
 	"time"
 )
 
-// DefaultCatalogName is the reserved name of Datum's curated, official catalog.
+// OfficialCatalogName is the reserved name of Datum's curated, official catalog.
 // It is always present, trusted with no user action, and the only catalog that
 // carries the "official" trust badge.
-const DefaultCatalogName = "default"
+const OfficialCatalogName = "datum"
+
+// legacyOfficialAlias is the pre-rename name of the official catalog. It is kept
+// as a hidden alias so existing config and install records, and the
+// "default/<plugin>" addressing form, continue to resolve to the official
+// catalog after the rename to "datum".
+const legacyOfficialAlias = "default"
+
+// CanonicalCatalogName maps the legacy "default" alias to the official catalog
+// name "datum"; every other name passes through unchanged. Apply it wherever a
+// user- or record-supplied catalog name is resolved or displayed.
+func CanonicalCatalogName(name string) string {
+	if name == legacyOfficialAlias {
+		return OfficialCatalogName
+	}
+	return name
+}
 
 // Catalog type values recorded in indexes.json and shown in `plugin index list`.
 const (
@@ -34,8 +50,9 @@ const indexesFileName = "indexes.json"
 // reservedCatalogNames cannot be registered by users; they are reserved so a
 // third-party catalog cannot present itself as the official one.
 var reservedCatalogNames = map[string]bool{
-	DefaultCatalogName: true,
-	"official":         true,
+	OfficialCatalogName: true, // "datum"
+	legacyOfficialAlias: true, // "default"
+	"official":          true,
 }
 
 // reCatalogName matches a valid catalog name. The same character class is used
@@ -85,9 +102,9 @@ func (c *Catalog) Trust() string {
 
 // DefaultCatalog returns the synthesized official catalog. Its source tracks
 // IndexURL, so DATUMCTL_PLUGIN_INDEX_URL continues to override it.
-func DefaultCatalog() Catalog {
+func OfficialCatalog() Catalog {
 	return Catalog{
-		Name:        DefaultCatalogName,
+		Name:        OfficialCatalogName,
 		Source:      IndexURL,
 		Type:        CatalogTypeOfficial,
 		Description: "Datum-curated plugins",
@@ -101,8 +118,10 @@ type Registry struct {
 	Catalogs []Catalog `json:"catalogs"`
 }
 
-// Find returns the catalog with the given name, or nil.
+// Find returns the catalog with the given name, or nil. The legacy "default"
+// alias resolves to the official "datum" catalog.
 func (r *Registry) Find(name string) *Catalog {
+	name = CanonicalCatalogName(name)
 	for i := range r.Catalogs {
 		if r.Catalogs[i].Name == name {
 			return &r.Catalogs[i]
@@ -116,7 +135,7 @@ func (r *Registry) Find(name string) *Catalog {
 func (r *Registry) Custom() []Catalog {
 	var out []Catalog
 	for _, c := range r.Catalogs {
-		if c.Name == DefaultCatalogName || c.Managed {
+		if CanonicalCatalogName(c.Name) == OfficialCatalogName || c.Managed {
 			continue
 		}
 		out = append(out, c)
@@ -130,8 +149,10 @@ func IndexesPath(pluginsDir string) string {
 }
 
 // CatalogCacheDir returns <pluginsDir>/indexes/<name>/, validating name as a
-// safe single path component (defense in depth against path traversal).
+// safe single path component (defense in depth against path traversal). The
+// legacy "default" alias is canonicalized to "datum" so it shares one cache.
 func CatalogCacheDir(pluginsDir, name string) (string, error) {
+	name = CanonicalCatalogName(name)
 	if !reCatalogName.MatchString(name) {
 		return "", fmt.Errorf("invalid catalog name %q", name)
 	}
@@ -206,13 +227,14 @@ func LoadRegistry(pluginsDir string) (*Registry, error) {
 		reg.Catalogs = append(reg.Catalogs, c)
 	}
 
-	add(DefaultCatalog())
+	add(OfficialCatalog())
 	for _, c := range managed.SeededCatalogs() {
 		add(c)
 	}
 	for _, c := range persisted {
-		if c.Name == DefaultCatalogName {
-			// Ignore any stale persisted default; it is always synthesized.
+		if CanonicalCatalogName(c.Name) == OfficialCatalogName {
+			// Ignore any stale persisted official catalog (under either "datum" or
+			// the legacy "default" name); it is always synthesized.
 			continue
 		}
 		add(c)

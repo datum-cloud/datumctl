@@ -17,7 +17,7 @@ func browseEntryFor(catalog pluginstore.Catalog, name, version, short, long, hom
 
 func TestBrowseOptions_labelsAndIndexValues(t *testing.T) {
 	entries := []browseEntry{
-		browseEntryFor(pluginstore.DefaultCatalog(), "dns", "v1.2.3", "Manage DNS zones", "", ""),
+		browseEntryFor(pluginstore.OfficialCatalog(), "dns", "v1.2.3", "Manage DNS zones", "", ""),
 		browseEntryFor(pluginstore.Catalog{Name: "acme", Type: pluginstore.CatalogTypeCustom}, "deploy", "v2.1.0", "ACME deploy", "", ""),
 	}
 	opts := browseOptions(entries)

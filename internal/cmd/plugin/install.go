@@ -27,10 +27,10 @@ With no arguments, restores all plugins recorded in plugins.json to their
 recorded versions. Use this to reproduce a plugin set on a new machine.
 
 With a plugin name argument, installs from a registered catalog:
-  - name             resolves against the default catalog first, then any other
-                     registered catalog; a name found in more than one catalog
-                     prints the options instead of guessing
-  - catalog/name     installs from a specific registered catalog
+  - name             resolves against the official datum catalog first, then any
+                     other registered catalog; a name found in more than one
+                     catalog prints the options instead of guessing
+  - catalog/name     installs from a specific registered catalog (e.g. datum/dns)
 
 With an owner/repo argument, installs directly from a GitHub Release:
   - owner/repo         installs the latest release
@@ -38,7 +38,7 @@ With an owner/repo argument, installs directly from a GitHub Release:
 
 The plugin binary is written to the managed plugins directory
 (~/.datumctl/plugins/ by default).`,
-		Example: `  # Install the dns plugin from the default catalog
+		Example: `  # Install the dns plugin from the official datum catalog
   datumctl plugin install dns
 
   # Install from a specific catalog
@@ -132,12 +132,14 @@ func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 	if err != nil {
 		return indexFetchUserError(err)
 	}
-	entry, name, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, pluginName, "", currentVersion, idx)
+	idxEntry, name, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, pluginName, "", currentVersion, idx)
 	if installErr != nil {
 		return customerrors.NewUserError(fmt.Sprintf("install plugin %s/%s: %v", catalogName, pluginName, installErr))
 	}
-	entry.Catalog = catalogName
-	return saveAndReport(cmd, pluginsDir, name, entry, binaryPath)
+	// Record the catalog's canonical name (cat.Name), so "default/<plugin>"
+	// is stored as "datum".
+	idxEntry.Catalog = cat.Name
+	return saveAndReport(cmd, pluginsDir, name, idxEntry, binaryPath)
 }
 
 // installBareName resolves a bare plugin name across all catalogs (default
@@ -244,10 +246,11 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 		}
 
 		// Catalog source. An empty Catalog on a non-slash source is a legacy
-		// curated install, which restores from the default catalog.
-		catalogName := entry.Catalog
+		// curated install, which restores from the official catalog. A recorded
+		// legacy "default" name is canonicalized to "datum".
+		catalogName := pluginstore.CanonicalCatalogName(entry.Catalog)
 		if catalogName == "" {
-			catalogName = pluginstore.DefaultCatalogName
+			catalogName = pluginstore.OfficialCatalogName
 		}
 		idx, idxErr := getIndex(catalogName)
 		if idxErr != nil {

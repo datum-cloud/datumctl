@@ -127,11 +127,10 @@ func TestIndexAdd_emptyStdinDeclines(t *testing.T) {
 func TestIndexAdd_reservedNameRejected(t *testing.T) {
 	pluginsDir := t.TempDir()
 	src := writeLocalCatalog(t, testCatalogManifest)
-	if _, err := runIndex(t, pluginsDir, "", "add", "default", src, "--yes"); err == nil {
-		t.Fatal("expected reserved-name error")
-	}
-	if _, err := runIndex(t, pluginsDir, "", "add", "official", src, "--yes"); err == nil {
-		t.Fatal("expected reserved-name error for 'official'")
+	for _, name := range []string{"datum", "default", "official"} {
+		if _, err := runIndex(t, pluginsDir, "", "add", name, src, "--yes"); err == nil {
+			t.Fatalf("expected reserved-name error for %q", name)
+		}
 	}
 }
 
@@ -168,8 +167,10 @@ func TestIndexAdd_allowListPermitsByName(t *testing.T) {
 	}
 }
 
-func TestIndexList_showsDefaultAndAdded(t *testing.T) {
+func TestIndexList_showsDatumAndAdded(t *testing.T) {
 	pluginsDir := t.TempDir()
+	// Seed the official datum catalog cache so list does not hit the network.
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
 	src := writeLocalCatalog(t, testCatalogManifest)
 	if _, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes"); err != nil {
 		t.Fatal(err)
@@ -178,22 +179,102 @@ func TestIndexList_showsDefaultAndAdded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "default") || !strings.Contains(out, "official") {
-		t.Fatalf("default/official badge missing: %s", out)
+	if !strings.Contains(out, "datum") || !strings.Contains(out, "official") {
+		t.Fatalf("datum/official badge missing: %s", out)
 	}
 	if !strings.Contains(out, "acme") || !strings.Contains(out, "third-party") {
 		t.Fatalf("acme/third-party badge missing: %s", out)
 	}
-	// default must be listed first.
-	if i, j := strings.Index(out, "default"), strings.Index(out, "acme"); i < 0 || j < 0 || i > j {
-		t.Fatalf("default should be first: %s", out)
+	// datum must be listed first.
+	if i, j := strings.Index(out, "datum"), strings.Index(out, "acme"); i < 0 || j < 0 || i > j {
+		t.Fatalf("datum should be first: %s", out)
 	}
 }
 
-func TestIndexRemove_defaultRejected(t *testing.T) {
+func TestIndexList_populatesCountForUncachedCatalog(t *testing.T) {
 	pluginsDir := t.TempDir()
+	// Seed the datum cache so the official catalog needs no network.
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+
+	// Register a catalog directly (no `add`, so it has NO cache yet) pointing at
+	// a reachable local manifest with one plugin.
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: "acme", Source: src, Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatalf("list must not fail: %v", err)
+	}
+	// acme has exactly one plugin in testCatalogManifest; the count must populate
+	// via the best-effort refresh (not "?" or "—").
+	if !strings.Contains(out, "acme") {
+		t.Fatalf("acme missing: %s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "acme") {
+			if strings.Contains(line, "—") || strings.Contains(line, "?") {
+				t.Fatalf("acme count should have populated, got: %q", line)
+			}
+			if !strings.Contains(line, "1") {
+				t.Fatalf("acme count should be 1, got: %q", line)
+			}
+		}
+	}
+}
+
+func TestIndexList_unreachableCatalogShowsDashAndExitsZero(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+
+	// Register a catalog whose local source does not exist -> refresh fails fast,
+	// no cache -> count renders as "—" and the command still exits 0.
+	missing := filepath.Join(t.TempDir(), "does-not-exist", "index.yaml")
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: "offline", Source: missing, Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatalf("list must not hard-fail on an offline catalog: %v", err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "offline") && !strings.Contains(line, "—") {
+			t.Fatalf("offline catalog should show the — marker, got: %q", line)
+		}
+	}
+	if strings.Contains(out, "\t?") || strings.Contains(out, " ? ") {
+		t.Fatalf("the legacy ? marker must not appear: %s", out)
+	}
+}
+
+func TestSearch_indexAliasDefaultScopesToDatum(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+
+	// --index default must resolve to the official datum catalog.
+	out, err := execPluginCmd(t, pluginsDir, searchCmd(), "--index", "default")
+	if err != nil {
+		t.Fatalf("search --index default should resolve via alias: %v", err)
+	}
+	if !strings.Contains(out, "dns") || !strings.Contains(out, "datum") {
+		t.Fatalf("alias scope should show the datum catalog's plugins:\n%s", out)
+	}
+}
+
+func TestIndexRemove_datumRejected(t *testing.T) {
+	pluginsDir := t.TempDir()
+	// Both the canonical name and the legacy alias are rejected.
+	if _, err := runIndex(t, pluginsDir, "", "remove", "datum"); err == nil {
+		t.Fatal("removing datum must be rejected")
+	}
 	if _, err := runIndex(t, pluginsDir, "", "remove", "default"); err == nil {
-		t.Fatal("removing default must be rejected")
+		t.Fatal("removing the legacy default alias must be rejected")
 	}
 }
 

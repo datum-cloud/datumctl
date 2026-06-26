@@ -42,11 +42,15 @@ func execPluginCmd(t *testing.T, pluginsDir string, cmd *cobra.Command, args ...
 }
 
 func TestInstallBadge(t *testing.T) {
-	if installBadge(pluginstore.DefaultCatalogName) != pluginstore.TrustOfficial {
-		t.Fatal("default catalog must be official")
+	if installBadge(pluginstore.OfficialCatalogName) != pluginstore.TrustOfficial {
+		t.Fatal("datum catalog must be official")
+	}
+	// The legacy "default" alias is also official.
+	if installBadge("default") != pluginstore.TrustOfficial {
+		t.Fatal("legacy default alias must be official")
 	}
 	if installBadge("acme") != pluginstore.TrustThirdParty {
-		t.Fatal("non-default catalog must be third-party")
+		t.Fatal("non-official catalog must be third-party")
 	}
 }
 
@@ -57,10 +61,12 @@ func TestInstalledCatalogLabel(t *testing.T) {
 		wantIndex string
 		wantTrust string
 	}{
-		{"catalog default", pluginstore.InstalledPlugin{Catalog: "default"}, "default", "official"},
+		{"catalog datum", pluginstore.InstalledPlugin{Catalog: "datum"}, "datum", "official"},
+		// A record written under the legacy "default" name displays as "datum".
+		{"legacy default alias", pluginstore.InstalledPlugin{Catalog: "default"}, "datum", "official"},
 		{"catalog acme", pluginstore.InstalledPlugin{Catalog: "acme"}, "acme", "third-party"},
 		{"legacy github direct", pluginstore.InstalledPlugin{Source: "github.com/o/r"}, "(direct)", "third-party"},
-		{"legacy curated", pluginstore.InstalledPlugin{Source: "dns"}, "default", "official"},
+		{"legacy curated", pluginstore.InstalledPlugin{Source: "dns"}, "datum", "official"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -81,8 +87,8 @@ func TestResolveBareName_uniqueAndCollision(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	// default + acme both contain "deploy"; beta contains "solo".
-	seedFreshCache(t, pluginsDir, "default", testPlugin("deploy", "v1.0.0", "Datum guided deploy"))
+	// datum + acme both contain "deploy"; beta contains "solo".
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("deploy", "v1.0.0", "Datum guided deploy"))
 	seedFreshCache(t, pluginsDir, "acme", testPlugin("deploy", "v2.1.0", "ACME guided deploy"))
 	seedFreshCache(t, pluginsDir, "beta", testPlugin("solo", "v0.1.0", "Solo plugin"))
 
@@ -95,17 +101,17 @@ func TestResolveBareName_uniqueAndCollision(t *testing.T) {
 	var errOut bytes.Buffer
 	cmd.SetErr(&errOut)
 
-	// Collision: deploy is in default and acme.
+	// Collision: deploy is in datum and acme; the official datum catalog is first.
 	matches := resolveBareName(cmd, pluginsDir, reg, "deploy")
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches for deploy, got %d", len(matches))
 	}
-	if matches[0].catalog.Name != "default" {
-		t.Fatalf("default should be first match, got %q", matches[0].catalog.Name)
+	if matches[0].catalog.Name != "datum" {
+		t.Fatalf("datum should be first match, got %q", matches[0].catalog.Name)
 	}
 	collision := collisionError("deploy", matches).Error()
 	if !strings.Contains(collision, "multiple catalogs") ||
-		!strings.Contains(collision, "default/deploy") ||
+		!strings.Contains(collision, "datum/deploy") ||
 		!strings.Contains(collision, "acme/deploy") ||
 		!strings.Contains(collision, "(official)") ||
 		!strings.Contains(collision, "(third-party)") {
@@ -131,7 +137,7 @@ func TestSearch_acrossCatalogsAndScope(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	seedFreshCache(t, pluginsDir, "default", testPlugin("dns", "v1.2.3", "Manage Datum Cloud DNS zones"))
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage Datum Cloud DNS zones"))
 	seedFreshCache(t, pluginsDir, "community", testPlugin("zonex", "v2.1.0", "Bulk zone import/export"))
 
 	// Unscoped search shows both catalogs with trust badges.
@@ -139,7 +145,7 @@ func TestSearch_acrossCatalogsAndScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search failed: %v (out=%s)", err, out)
 	}
-	for _, want := range []string{"NAME", "INDEX", "TRUST", "dns", "default", "official", "zonex", "community", "third-party"} {
+	for _, want := range []string{"NAME", "INDEX", "TRUST", "dns", "datum", "official", "zonex", "community", "third-party"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("search output missing %q:\n%s", want, out)
 		}

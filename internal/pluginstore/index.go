@@ -59,17 +59,26 @@ func IndexPath() (string, error) {
 
 // LoadCatalogIndex reads the cached index for a named catalog. A missing or
 // unparseable cache yields a zero-value CachedIndex (which IsStale reports true
-// for) and no error. For the default catalog, the legacy plugin-index.json is
-// read when the new per-catalog cache is absent.
+// for) and no error. For the official catalog, older cache locations are read
+// when the current per-catalog cache is absent: the pre-rename "default" cache
+// directory and the legacy single-catalog plugin-index.json.
 func LoadCatalogIndex(pluginsDir, name string) (*CachedIndex, error) {
+	name = CanonicalCatalogName(name)
 	path, err := CatalogIndexPath(pluginsDir, name)
 	if err != nil {
 		return nil, err
 	}
 	data, readErr := os.ReadFile(path)
-	if os.IsNotExist(readErr) && name == DefaultCatalogName {
-		// Fall back to the legacy single-catalog cache after an upgrade.
-		data, readErr = os.ReadFile(filepath.Join(pluginsDir, legacyIndexFileName))
+	if os.IsNotExist(readErr) && name == OfficialCatalogName {
+		// Fall back to the pre-rename cache dir, then the legacy single cache.
+		for _, legacy := range []string{
+			filepath.Join(pluginsDir, "indexes", legacyOfficialAlias, "index.json"),
+			filepath.Join(pluginsDir, legacyIndexFileName),
+		} {
+			if data, readErr = os.ReadFile(legacy); !os.IsNotExist(readErr) {
+				break
+			}
+		}
 	}
 	if os.IsNotExist(readErr) {
 		return &CachedIndex{}, nil
@@ -112,7 +121,7 @@ func LoadIndex() (*CachedIndex, error) {
 	if err != nil {
 		return nil, err
 	}
-	return LoadCatalogIndex(dir, DefaultCatalogName)
+	return LoadCatalogIndex(dir, OfficialCatalogName)
 }
 
 // SaveIndex writes the default-catalog index. Backward-compatible wrapper.
@@ -121,7 +130,7 @@ func SaveIndex(idx *CachedIndex) error {
 	if err != nil {
 		return err
 	}
-	return SaveCatalogIndex(dir, DefaultCatalogName, idx)
+	return SaveCatalogIndex(dir, OfficialCatalogName, idx)
 }
 
 // IsStale reports whether the index is missing or older than the TTL.
@@ -155,7 +164,7 @@ func RefreshIndex(ctx context.Context) (*CachedIndex, error) {
 	if err != nil {
 		return nil, err
 	}
-	return RefreshCatalog(ctx, dir, DefaultCatalog())
+	return RefreshCatalog(ctx, dir, OfficialCatalog())
 }
 
 // RefreshCatalog fetches a catalog's manifest (from an HTTPS URL, a GitHub
@@ -168,7 +177,7 @@ func RefreshIndex(ctx context.Context) (*CachedIndex, error) {
 func RefreshCatalog(ctx context.Context, pluginsDir string, cat Catalog) (*CachedIndex, error) {
 	// The default catalog respects the init-time DATUMCTL_PLUGIN_INDEX_URL scheme
 	// check before any network request.
-	if cat.Name == DefaultCatalogName && indexURLSchemeError != nil {
+	if cat.Name == OfficialCatalogName && indexURLSchemeError != nil {
 		return nil, indexURLSchemeError
 	}
 

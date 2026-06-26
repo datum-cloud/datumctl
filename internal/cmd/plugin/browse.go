@@ -29,9 +29,9 @@ func browseCmd() *cobra.Command {
 		Long: `Open an interactive browser over every registered plugin catalog.
 
 Type to filter, inspect a plugin's description, version, source catalog, and
-trust badge ("official" for Datum's curated default, "third-party" for catalogs
-you added), and install the selected plugin in place. Use --index to scope the
-browser to a single catalog.`,
+trust badge ("official" for Datum's curated datum catalog, "third-party" for
+catalogs you added), and install the selected plugin in place. Use --index to
+scope the browser to a single catalog.`,
 		Example: `  # Browse all catalogs
   datumctl plugin browse
 
