@@ -312,8 +312,10 @@ func installPlugin(ctx context.Context, pluginsDir, pluginName, version, current
 		return nil, pluginName, "", fmt.Errorf("download plugin: %w", err)
 	}
 
-	// Extract the binary.
-	binaryName := "datumctl-" + pluginName
+	// Extract the binary, then write it under its GENERIC name (e.g. "ipam").
+	// Catalog/managed plugins are not datumctl-branded on disk; the install
+	// record in plugins.json — not a filename prefix — marks them as plugins.
+	binaryName := pluginName
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
@@ -357,35 +359,48 @@ func installPlugin(ctx context.Context, pluginsDir, pluginName, version, current
 }
 
 // extractFromArchive extracts the plugin binary from the archive bytes.
-// If platform.Files is non-empty, the first matching FileOperation is used.
-// Otherwise the binary is auto-detected by matching datumctl-<pluginName>[.exe].
+// If platform.Files is non-empty, the first FileOperation's From path is used
+// verbatim (this is how a catalog points at a generically named binary such as
+// "ipam"). Otherwise the binary is auto-detected, accepting EITHER the generic
+// name "<pluginName>[.exe]" or the legacy "datumctl-<pluginName>[.exe]".
 func extractFromArchive(archiveBytes []byte, platform *pluginstore.Platform, pluginName, archiveURI string) ([]byte, error) {
 	isTarGz := strings.HasSuffix(archiveURI, ".tar.gz") || strings.HasSuffix(archiveURI, ".tgz")
 	isZip := strings.HasSuffix(archiveURI, ".zip")
 
+	var candidates []string
 	if len(platform.Files) > 0 {
-		// Use the first FileOperation that specifies the binary.
-		op := platform.Files[0]
-		if isTarGz {
-			return extractBinaryFromTarGz(newBytesReader(archiveBytes), op.From)
-		} else if isZip {
-			return extractBinaryFromZip(archiveBytes, op.From)
+		// Explicit binary directive from the catalog manifest.
+		candidates = []string{platform.Files[0].From}
+	} else {
+		// Auto-detect: generic name first, then the legacy datumctl- prefix.
+		suffix := ""
+		if runtime.GOOS == "windows" {
+			suffix = ".exe"
 		}
+		candidates = []string{pluginName + suffix, "datumctl-" + pluginName + suffix}
+	}
+
+	if !isTarGz && !isZip {
 		return nil, fmt.Errorf("unsupported archive format for URI: %s", archiveURI)
 	}
 
-	// Auto-detect: find the file named datumctl-<pluginName>[.exe].
-	binName := "datumctl-" + pluginName
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
+	var lastErr error
+	for _, name := range candidates {
+		var (
+			b   []byte
+			err error
+		)
+		if isTarGz {
+			b, err = extractBinaryFromTarGz(newBytesReader(archiveBytes), name)
+		} else {
+			b, err = extractBinaryFromZip(archiveBytes, name)
+		}
+		if err == nil {
+			return b, nil
+		}
+		lastErr = err
 	}
-
-	if isTarGz {
-		return extractBinaryFromTarGz(newBytesReader(archiveBytes), binName)
-	} else if isZip {
-		return extractBinaryFromZip(archiveBytes, binName)
-	}
-	return nil, fmt.Errorf("unsupported archive format for URI: %s", archiveURI)
+	return nil, fmt.Errorf("no plugin binary found in archive (tried %v): %w", candidates, lastErr)
 }
 
 // installPluginFromGitHub is the third-party GitHub Release install path.
@@ -431,7 +446,8 @@ func installPluginFromGitHub(ctx context.Context, pluginsDir, owner, repo, versi
 		}
 	}
 
-	binaryName := "datumctl-" + pluginName
+	// Write under the generic name; the install record marks it as a plugin.
+	binaryName := pluginName
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}

@@ -387,10 +387,15 @@ func main() {
 		t.Errorf("entry.Source = %q, want %q", entry.Source, "testplugin")
 	}
 
-	// Verify binary exists on disk.
-	binPath := filepath.Join(dir, "datumctl-testplugin")
+	// Verify the binary is written under its GENERIC name (not datumctl-prefixed),
+	// even though the archive entry uses the legacy datumctl- name (which the
+	// extractor still accepts).
+	binPath := filepath.Join(dir, "testplugin")
 	if _, err := os.Stat(binPath); err != nil {
 		t.Errorf("expected binary at %s: %v", binPath, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "datumctl-testplugin")); err == nil {
+		t.Errorf("binary should NOT be written under the datumctl- prefix")
 	}
 }
 
@@ -484,8 +489,9 @@ func main() {
 		t.Errorf("entry.SHA256 = %s, want binary SHA256 %s", entry.SHA256, binarySHA)
 	}
 
-	// Cross-check: the on-disk binary should hash to the stored value.
-	onDiskData, err := os.ReadFile(filepath.Join(dir, "datumctl-hashtest"))
+	// Cross-check: the on-disk binary (written under its generic name) should
+	// hash to the stored value.
+	onDiskData, err := os.ReadFile(filepath.Join(dir, "hashtest"))
 	if err != nil {
 		t.Fatalf("read installed binary: %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -68,13 +69,17 @@ const PluginAPIVersion = 1
 // FindPlugin resolves a plugin name to an absolute binary path.
 // Managed dir is searched first, then PATH.
 // Returns (path, isManaged, error).
+//
+// Managed (catalog/index-installed) plugins are stored under their GENERIC name
+// (e.g. "ipam"), so the managed lookup resolves "<pluginsDir>/<name>" first and
+// falls back to a legacy "<pluginsDir>/datumctl-<name>" file for plugins
+// installed before generic naming. The PATH fallback deliberately remains
+// "datumctl-<name>" ONLY: a generic name is trusted as a plugin solely from the
+// integrity-checked managed directory, never from a bare PATH binary.
 func FindPlugin(name, pluginsDir string) (path string, managed bool, err error) {
-	binaryName := "datumctl-" + name
-
-	// Search managed dir first.
+	// Search managed dir first, generic name then legacy datumctl- prefix.
 	if pluginsDir != "" {
-		managedPath := filepath.Join(pluginsDir, binaryName)
-		if info, statErr := os.Stat(managedPath); statErr == nil && !info.IsDir() {
+		if managedPath, ok := findManagedBinary(pluginsDir, name); ok {
 			abs, absErr := filepath.Abs(managedPath)
 			if absErr != nil {
 				return "", false, fmt.Errorf("resolve managed plugin path: %w", absErr)
@@ -83,12 +88,35 @@ func FindPlugin(name, pluginsDir string) (path string, managed bool, err error) 
 		}
 	}
 
-	// Fall back to PATH.
-	found, lookErr := exec.LookPath(binaryName)
+	// Fall back to PATH — only the datumctl-<name> prefix marks a bare PATH
+	// binary as a datumctl plugin. Generic names are never resolved from PATH.
+	found, lookErr := exec.LookPath("datumctl-" + name)
 	if lookErr != nil {
 		return "", false, fmt.Errorf("plugin %q not found in managed directory or PATH", name)
 	}
 	return found, false, nil
+}
+
+// findManagedBinary returns the path to a managed plugin binary, trying the
+// generic name first and a legacy datumctl-<name> file second (with a .exe
+// variant on Windows). The returned path is reported only when it is a regular
+// file, so a directory such as the per-catalog cache cannot shadow a plugin.
+func findManagedBinary(pluginsDir, name string) (string, bool) {
+	candidates := []string{name}
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, name+".exe")
+	}
+	candidates = append(candidates, "datumctl-"+name)
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, "datumctl-"+name+".exe")
+	}
+	for _, c := range candidates {
+		p := filepath.Join(pluginsDir, c)
+		if info, statErr := os.Stat(p); statErr == nil && !info.IsDir() {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // BuildEnv constructs the plugin ENV overlay as a []string suitable for
@@ -155,15 +183,17 @@ func ListPluginNames(pluginsDir string, descriptions map[string]string) []string
 		}
 	}
 
-	// Managed dir first.
+	// Managed plugins are recorded in plugins.json, not detectable by a filename
+	// prefix (they are stored under their generic name), so the install record is
+	// the source of truth for managed names.
 	if pluginsDir != "" {
-		entries, _ := os.ReadDir(pluginsDir)
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			if n, ok := strings.CutPrefix(e.Name(), "datumctl-"); ok {
-				candidate(n, descriptions[n])
+		if m, loadErr := pluginstore.Load(pluginsDir); loadErr == nil {
+			for n, entry := range m.Plugins {
+				desc := descriptions[n]
+				if desc == "" && entry != nil && entry.Manifest != nil {
+					desc = entry.Manifest.Description
+				}
+				candidate(n, desc)
 			}
 		}
 	}

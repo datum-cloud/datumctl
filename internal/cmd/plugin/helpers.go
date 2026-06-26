@@ -216,23 +216,35 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 		return nil, "", fmt.Errorf("SHA256 mismatch for %s: expected %s, got %s", assetName, expectedSHA, gotSHA)
 	}
 
-	// Extract the binary from the archive.
-	// The binary name inside the archive is the plugin name without the archive extension.
-	// e.g. for "datumctl-dns_Linux_x86_64.tar.gz", the binary is "datumctl-dns"
+	// Extract the binary from the archive. The in-archive binary may be named
+	// with the legacy datumctl- prefix ("datumctl-dns") or generically ("ipam"
+	// for milo-os services), so try the prefixed name first then the generic one.
+	// e.g. for "datumctl-dns_Linux_x86_64.tar.gz", the binary is "datumctl-dns".
 	pluginBinName := binaryNameFromAsset(assetName)
-	var extracted []byte
-	if strings.HasSuffix(assetName, ".tar.gz") {
-		extracted, err = extractBinaryFromTarGz(bytes.NewReader(archiveBytes), pluginBinName)
-	} else if strings.HasSuffix(assetName, ".zip") {
-		extracted, err = extractBinaryFromZip(archiveBytes, pluginBinName)
-	} else {
-		return nil, "", fmt.Errorf("unsupported archive format: %s", assetName)
-	}
-	if err != nil {
-		return nil, "", fmt.Errorf("extract binary from archive: %w", err)
+	candidates := []string{pluginBinName}
+	if generic := strings.TrimPrefix(pluginBinName, "datumctl-"); generic != pluginBinName {
+		candidates = append(candidates, generic)
 	}
 
-	return extracted, gotSHA, nil
+	isTarGz := strings.HasSuffix(assetName, ".tar.gz")
+	isZip := strings.HasSuffix(assetName, ".zip")
+	if !isTarGz && !isZip {
+		return nil, "", fmt.Errorf("unsupported archive format: %s", assetName)
+	}
+
+	var extracted []byte
+	var extractErr error
+	for _, name := range candidates {
+		if isTarGz {
+			extracted, extractErr = extractBinaryFromTarGz(bytes.NewReader(archiveBytes), name)
+		} else {
+			extracted, extractErr = extractBinaryFromZip(archiveBytes, name)
+		}
+		if extractErr == nil {
+			return extracted, gotSHA, nil
+		}
+	}
+	return nil, "", fmt.Errorf("extract binary from archive (tried %v): %w", candidates, extractErr)
 }
 
 

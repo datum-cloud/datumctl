@@ -39,14 +39,18 @@ is removed from plugins.json.`,
 				return customerrors.NewUserError(fmt.Sprintf("plugin %q is not installed", name))
 			}
 
-			// Remove the binary.
-			binaryName := "datumctl-" + name
+			// Remove the binary. Catalog/managed plugins are stored under their
+			// generic name; older installs used the datumctl- prefix. Remove both
+			// forms (with a .exe variant on Windows) so no orphan is left behind.
+			suffix := ""
 			if runtime.GOOS == "windows" {
-				binaryName += ".exe"
+				suffix = ".exe"
 			}
-			binaryPath := filepath.Join(pluginsDir, binaryName)
-			if err := os.Remove(binaryPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove plugin binary: %w", err)
+			for _, binaryName := range []string{name + suffix, "datumctl-" + name + suffix} {
+				binaryPath := filepath.Join(pluginsDir, binaryName)
+				if err := os.Remove(binaryPath); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("remove plugin binary: %w", err)
+				}
 			}
 
 			// Remove from manifest.
