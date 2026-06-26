@@ -55,6 +55,27 @@ func TestFindPlugin_genericNameNeverFromPath(t *testing.T) {
 	}
 }
 
+// TestFindPlugin_miloPrefixOnPath verifies a milo-<name> binary on PATH is
+// recognized as a plugin (the milo-os portable plugin convention), while a bare
+// generic name on PATH still is not (covered by the test above).
+func TestFindPlugin_miloPrefixOnPath(t *testing.T) {
+	emptyManaged := t.TempDir()
+	pathDir := t.TempDir()
+	t.Setenv("PATH", pathDir)
+
+	writeFakeBinary(t, pathDir, "milo-ipam")
+	gotPath, managed, err := FindPlugin("ipam", emptyManaged)
+	if err != nil {
+		t.Fatalf("FindPlugin: %v", err)
+	}
+	if managed {
+		t.Error("PATH binary should be reported unmanaged")
+	}
+	if filepath.Base(gotPath) != "milo-ipam" {
+		t.Errorf("path %q should be the milo-prefixed PATH binary", gotPath)
+	}
+}
+
 // TestFindPlugin_legacyManagedNameStillFound verifies back-compat: a plugin
 // installed before generic naming (datumctl-<name> in the managed dir) is still
 // found and reported as managed.
@@ -104,5 +125,28 @@ func TestListPluginNames_fromInstallRecord(t *testing.T) {
 	}
 	if strings.Contains(joined, "stray") {
 		t.Errorf("non-recorded files must not be listed: %q", names)
+	}
+}
+
+// TestListPluginNames_pathScanBothPrefixes verifies the PATH scan recognizes
+// both milo-<name> and datumctl-<name> binaries.
+func TestListPluginNames_pathScanBothPrefixes(t *testing.T) {
+	emptyManaged := t.TempDir()
+	pathDir := t.TempDir()
+	t.Setenv("PATH", pathDir)
+
+	writeFakeBinary(t, pathDir, "milo-ipam")
+	writeFakeBinary(t, pathDir, "datumctl-dns")
+	writeFakeBinary(t, pathDir, "not-a-plugin")
+
+	joined := strings.Join(ListPluginNames(emptyManaged, nil), "\n")
+	if !strings.Contains(joined, "ipam") {
+		t.Errorf("milo-ipam should surface command 'ipam': %q", joined)
+	}
+	if !strings.Contains(joined, "dns") {
+		t.Errorf("datumctl-dns should surface command 'dns': %q", joined)
+	}
+	if strings.Contains(joined, "not-a-plugin") {
+		t.Errorf("non-prefixed binaries must not be listed: %q", joined)
 	}
 }

@@ -18,16 +18,19 @@ func Command(factory *client.DatumCloudFactory) *cobra.Command {
 		Short: "Manage datumctl plugins",
 		Long: `Manage datumctl plugins — install, list, upgrade, remove, and trust plugins.
 
-Plugins are independent binaries named 'datumctl-<name>' that extend the CLI
-with additional commands. Run them as 'datumctl <name>'.
+Plugins are independent binaries that extend the CLI with additional commands.
+A plugin on your PATH is recognized by its prefix: 'milo-<command>' for portable
+milo-os platform plugins (e.g. milo-ipam) and 'datumctl-<command>' for
+datumctl-native plugins. Either way you run it as 'datumctl <command>'.
 
 Managed plugins are installed via 'datumctl plugin install' and recorded in
-plugins.json (~/.datumctl/plugins/plugins.json by default).
-Datumctl automatically verifies their SHA256 at install time.
+plugins.json (~/.datumctl/plugins/plugins.json by default). They are stored
+under their plain command name in the managed directory; datumctl automatically
+verifies their SHA256 at install time.
 
-Unmanaged plugins (binaries found on PATH but not installed via this command)
-are blocked from running until explicitly trusted. Use 'datumctl plugin trust'
-to allow an unmanaged plugin, or 'datumctl plugin install' to manage it.`,
+Unmanaged plugins (prefixed binaries found on PATH but not installed via this
+command) are blocked from running until explicitly trusted. Use 'datumctl plugin
+trust' to allow an unmanaged plugin, or 'datumctl plugin install' to manage it.`,
 		Example: `  # Install the DNS plugin
   datumctl plugin install datum-cloud/datumctl-dns
 

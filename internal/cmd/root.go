@@ -174,10 +174,10 @@ Get started:
 					// binary on PATH that has not been explicitly trusted could
 					// exfiltrate credentials via DATUM_CREDENTIALS_HELPER.
 					return customerrors.NewUserError(fmt.Sprintf(
-						"'datumctl-%s' is an unmanaged plugin that has not been trusted.\n"+
+						"'%s' is an unmanaged plugin that has not been trusted.\n"+
 							"  To allow it: datumctl plugin trust %s\n"+
-							"  To install as a managed plugin: datumctl plugin install datum-cloud/datumctl-%s",
-						name, name, name))
+							"  To install as a managed plugin: datumctl plugin install %s",
+						filepath.Base(binaryPath), name, name))
 				}
 			}
 

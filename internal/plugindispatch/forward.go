@@ -202,7 +202,7 @@ func ForwardHelp(pluginsDir string) error {
 			binaryPath = abs
 		}
 		if !pluginstore.IsTrusted(pluginsDir, name, binaryPath) {
-			return fmt.Errorf("'datumctl-%s' is an unmanaged plugin that has not been trusted; run: datumctl plugin trust %s", name, name)
+			return fmt.Errorf("'%s' is an unmanaged plugin that has not been trusted; run: datumctl plugin trust %s", filepath.Base(binaryPath), name)
 		}
 	}
 

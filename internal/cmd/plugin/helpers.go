@@ -59,7 +59,7 @@ var rePluginName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // pluginAssetName returns the archive filename for the current OS/arch.
 // Follows the same naming convention as updatecheck.archiveName() (capitalised OS, goarch-style arch).
 // Example: "datumctl-dns_Linux_x86_64.tar.gz"
-func pluginAssetName(pluginName, version string) (string, error) {
+func pluginAssetName(pluginName, _ string) (string, error) {
 	var osName string
 	switch runtime.GOOS {
 	case "linux":
@@ -162,7 +162,7 @@ func fetchChecksums(ctx context.Context, owner, repo, tag string) (map[string]st
 	}
 
 	checksums := make(map[string]string)
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -217,14 +217,19 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 	}
 
 	// Extract the binary from the archive. The in-archive binary may be named
-	// with the legacy datumctl- prefix ("datumctl-dns") or generically ("ipam"
-	// for milo-os services), so try the prefixed name first then the generic one.
-	// e.g. for "datumctl-dns_Linux_x86_64.tar.gz", the binary is "datumctl-dns".
+	// with a plugin prefix ("milo-dns", "datumctl-dns") or bare ("dns"). Prefer
+	// the prefixed names and try the bare name last so a bundled service binary
+	// sharing the bare name is never picked. binaryNameFromAsset already carries
+	// the platform extension (e.g. ".exe" on Windows), so prefixes are applied
+	// to that bare name without re-adding a suffix.
+	// e.g. for "datumctl-dns_Linux_x86_64.tar.gz", binaryNameFromAsset → "datumctl-dns".
 	pluginBinName := binaryNameFromAsset(assetName)
-	candidates := []string{pluginBinName}
-	if generic := strings.TrimPrefix(pluginBinName, "datumctl-"); generic != pluginBinName {
-		candidates = append(candidates, generic)
+	bare, _ := strings.CutPrefix(pluginBinName, "datumctl-")
+	candidates := make([]string, 0, len(pluginBinaryPrefixes)+1)
+	for _, prefix := range pluginBinaryPrefixes {
+		candidates = append(candidates, prefix+bare)
 	}
+	candidates = append(candidates, bare)
 
 	isTarGz := strings.HasSuffix(assetName, ".tar.gz")
 	isZip := strings.HasSuffix(assetName, ".zip")

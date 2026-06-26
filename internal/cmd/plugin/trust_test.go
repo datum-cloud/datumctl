@@ -93,6 +93,36 @@ func TestTrustCmd_writesRecord(t *testing.T) {
 	}
 }
 
+// TestTrustCmd_resolvesMiloPrefixOnPath verifies that a milo-<name> plugin on
+// PATH (the milo-os portable plugin convention) can be trusted by its command
+// name, and the recorded path points at the milo- binary.
+func TestTrustCmd_resolvesMiloPrefixOnPath(t *testing.T) {
+	dir := t.TempDir()
+	pathDir := t.TempDir()
+
+	binPath := filepath.Join(pathDir, "milo-ipam")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write binary: %v", err)
+	}
+
+	out, err := executeTrustCmd(t, dir, "ipam", pathDir)
+	if err != nil {
+		t.Fatalf("trust cmd: %v (out=%s)", err, out)
+	}
+
+	manifest, err := pluginstore.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := manifest.Trusted["ipam"]
+	if !ok {
+		t.Fatal("trusted entry 'ipam' not found")
+	}
+	if !strings.Contains(entry.Path, "milo-ipam") {
+		t.Errorf("trusted path %q should reference the milo-ipam binary", entry.Path)
+	}
+}
+
 // TestTrustCmd_sha256ChangesWhenBinaryChanges verifies that trusting the same
 // name after the binary is replaced stores a different hash. This proves the
 // hash reflects the actual file content, not a cached value.

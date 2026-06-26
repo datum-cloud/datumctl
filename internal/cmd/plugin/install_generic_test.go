@@ -1,6 +1,9 @@
 package plugin
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"net/http"
@@ -106,5 +109,104 @@ func main() {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "datumctl-ipam")); err == nil {
 		t.Error("binary must not be written under the datumctl- prefix")
+	}
+}
+
+// makeTarGzMulti builds a .tar.gz containing several named files.
+func makeTarGzMulti(t *testing.T, files map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, content := range files {
+		hdr := &tar.Header{Name: name, Mode: 0o755, Size: int64(len(content)), Typeflag: tar.TypeReg}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("tar header: %v", err)
+		}
+		if _, err := tw.Write(content); err != nil {
+			t.Fatalf("tar write: %v", err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gz close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestInstallPlugin_prefersMiloPrefixOverServiceBinary is the milo- collision
+// fix: an archive that bundles BOTH the bare service binary "ipam" and the
+// plugin "milo-ipam" must install milo-ipam, never the service binary.
+func TestInstallPlugin_prefersMiloPrefixOverServiceBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test builds unix binary helpers; skip on windows")
+	}
+
+	// The plugin responds to --plugin-manifest with name "milo-ipam".
+	pluginBin := buildHelperBinary(t, `
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	for _, a := range os.Args[1:] {
+		if a == "--plugin-manifest" {
+			fmt.Println(`+"`"+`{"name":"milo-ipam","version":"v0.1.0","description":"IPAM plugin","api_version":1}`+"`"+`)
+			return
+		}
+	}
+}
+`)
+	pluginBytes, err := os.ReadFile(pluginBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The service binary shares the bare name "ipam" and emits no manifest.
+	serviceBytes := []byte("#!/bin/sh\necho SERVICE\n")
+
+	// Auto-detect (no files directive) over an archive containing BOTH.
+	archiveBytes := makeTarGzMulti(t, map[string][]byte{
+		"ipam":      serviceBytes,
+		"milo-ipam": pluginBytes,
+	})
+	url := serveArchive(t, archiveBytes)
+
+	idx := &pluginstore.CachedIndex{
+		RefreshedAt: time.Now(),
+		Plugins: []pluginstore.Plugin{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "ipam"},
+				Spec: pluginstore.PluginSpec{
+					ShortDescription: "IPAM plugin",
+					Version:          "v0.1.0",
+					Platforms: []pluginstore.Platform{
+						{URI: url + "/ipam.tar.gz", SHA256: sha256HexOf(archiveBytes)},
+					},
+				},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	entry, _, _, err := installPlugin(context.Background(), dir, "ipam", "", "v9.0.0", idx)
+	if err != nil {
+		t.Fatalf("installPlugin: %v", err)
+	}
+
+	// Decisive: the plugin (milo-ipam) was extracted, not the service binary.
+	if entry.Manifest == nil || entry.Manifest.Name != "milo-ipam" {
+		t.Fatalf("expected the milo-ipam plugin to be installed, got manifest %+v", entry.Manifest)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(dir, "ipam"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256HexOf(onDisk) != sha256HexOf(pluginBytes) {
+		t.Fatal("on-disk binary is not the milo-ipam plugin; the service binary was wrongly installed")
 	}
 }

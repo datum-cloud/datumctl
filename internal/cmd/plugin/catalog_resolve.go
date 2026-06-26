@@ -2,12 +2,35 @@ package plugin
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"go.datum.net/datumctl/internal/pluginstore"
 )
+
+// pluginBinaryPrefixes are the recognized datumctl plugin binary prefixes, in
+// preference order. "milo-" identifies portable milo-os platform plugins;
+// "datumctl-" identifies datumctl-native plugins.
+var pluginBinaryPrefixes = []string{"milo-", "datumctl-"}
+
+// archiveBinaryCandidates returns the in-archive binary names to try when
+// auto-detecting a plugin binary, in preference order: the prefixed plugin
+// names ("milo-<name>", "datumctl-<name>") first, then the bare "<name>" LAST.
+// Trying the bare name last prevents picking up a service binary that shares
+// the bare name when an archive bundles both.
+func archiveBinaryCandidates(pluginName string) []string {
+	suffix := ""
+	if runtime.GOOS == "windows" {
+		suffix = ".exe"
+	}
+	candidates := make([]string, 0, len(pluginBinaryPrefixes)+1)
+	for _, prefix := range pluginBinaryPrefixes {
+		candidates = append(candidates, prefix+pluginName+suffix)
+	}
+	return append(candidates, pluginName+suffix)
+}
 
 // catalogMatch is a plugin found in a particular catalog during bare-name
 // resolution.

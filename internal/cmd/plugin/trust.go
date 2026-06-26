@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	customerrors "go.datum.net/datumctl/internal/errors"
+	"go.datum.net/datumctl/internal/plugindispatch"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
@@ -55,22 +55,12 @@ To revoke trust, use 'datumctl plugin untrust <name>'.`,
 				return err
 			}
 
-			// Resolve the binary path — managed dir first (using os.Stat, not
-			// exec.LookPath which is for PATH resolution only), then PATH.
-			binaryName := "datumctl-" + name
-			var resolvedPath string
-
-			// Check managed dir first.
-			managedPath := filepath.Join(pluginsDir, binaryName)
-			if info, statErr := os.Stat(managedPath); statErr == nil && !info.IsDir() {
-				resolvedPath = managedPath
-			} else {
-				// Try PATH.
-				found, lookErr := exec.LookPath(binaryName)
-				if lookErr != nil {
-					return customerrors.NewUserError(fmt.Sprintf("cannot find 'datumctl-%s' in the managed directory or PATH", name))
-				}
-				resolvedPath = found
+			// Resolve the binary path via the shared plugin resolver, which checks
+			// the managed dir first (generic and legacy names) and then PATH for a
+			// recognized plugin prefix (milo- or datumctl-).
+			resolvedPath, _, findErr := plugindispatch.FindPlugin(name, pluginsDir)
+			if findErr != nil {
+				return customerrors.NewUserError(fmt.Sprintf("cannot find a 'milo-%s' or 'datumctl-%s' plugin in the managed directory or PATH", name, name))
 			}
 
 			// Resolve symlinks exactly once. The resolved path is used for both the

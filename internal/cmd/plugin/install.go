@@ -17,7 +17,7 @@ import (
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
-func installCmd(factory *client.DatumCloudFactory) *cobra.Command {
+func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install [name | owner/repo[@version]]",
 		Short: "Install a datumctl plugin",
@@ -360,9 +360,12 @@ func installPlugin(ctx context.Context, pluginsDir, pluginName, version, current
 
 // extractFromArchive extracts the plugin binary from the archive bytes.
 // If platform.Files is non-empty, the first FileOperation's From path is used
-// verbatim (this is how a catalog points at a generically named binary such as
-// "ipam"). Otherwise the binary is auto-detected, accepting EITHER the generic
-// name "<pluginName>[.exe]" or the legacy "datumctl-<pluginName>[.exe]".
+// verbatim (this is how a catalog points at a specific binary). Otherwise the
+// binary is auto-detected, PREFERRING the prefixed plugin names "milo-<name>"
+// and "datumctl-<name>" over the bare "<name>". The bare name is tried last so
+// that an archive bundling a service binary that shares the bare name (e.g. the
+// milo-os "ipam" service alongside the "milo-ipam" plugin) installs the plugin,
+// never the service binary.
 func extractFromArchive(archiveBytes []byte, platform *pluginstore.Platform, pluginName, archiveURI string) ([]byte, error) {
 	isTarGz := strings.HasSuffix(archiveURI, ".tar.gz") || strings.HasSuffix(archiveURI, ".tgz")
 	isZip := strings.HasSuffix(archiveURI, ".zip")
@@ -372,12 +375,7 @@ func extractFromArchive(archiveBytes []byte, platform *pluginstore.Platform, plu
 		// Explicit binary directive from the catalog manifest.
 		candidates = []string{platform.Files[0].From}
 	} else {
-		// Auto-detect: generic name first, then the legacy datumctl- prefix.
-		suffix := ""
-		if runtime.GOOS == "windows" {
-			suffix = ".exe"
-		}
-		candidates = []string{pluginName + suffix, "datumctl-" + pluginName + suffix}
+		candidates = archiveBinaryCandidates(pluginName)
 	}
 
 	if !isTarGz && !isZip {
