@@ -69,11 +69,13 @@ func LoadManagedConfig() (*ManagedConfig, error) {
 
 // SeededCatalogs converts the managed pre-seeded indexes into Catalog records
 // marked Managed (so they are never persisted and cannot be user-removed).
-// Invalid or reserved-named entries are skipped.
+// Entries with an empty/missing source, a reserved name, or an otherwise
+// invalid catalog name are skipped so a managed config cannot seed a catalog
+// that would shadow a reserved name or fail to cache.
 func (c *ManagedConfig) SeededCatalogs() []Catalog {
 	var out []Catalog
 	for _, mi := range c.Indexes {
-		if mi.Name == DefaultCatalogName || mi.Name == "" || mi.Source == "" {
+		if mi.Source == "" || ValidateCatalogName(mi.Name) != nil {
 			continue
 		}
 		out = append(out, Catalog{
@@ -96,20 +98,42 @@ func (c *ManagedConfig) Enforced() bool {
 // IsAllowed reports whether a catalog with the given name and source may be
 // added under the allow-list. When no allow-list is configured, everything is
 // allowed.
+//
+// Allow-list entries are matched by form:
+//   - Host patterns (entries containing a dot or a "*." wildcard) gate the
+//     source HOST. This is how remote catalogs are authorized, e.g.
+//     "plugins.acme.example" or "*.acme.example". GitHub owner/repo shorthand
+//     sources resolve to the raw.githubusercontent.com host for this match.
+//   - Bare names (no dot) authorize a catalog NAME, but only for local-path
+//     sources. Because the user chooses the local name freely, a bare-name
+//     entry is intentionally NOT sufficient to authorize a remote source — that
+//     would let a trusted name be pointed at an arbitrary host. Remote sources
+//     always require a host-pattern match.
 func (c *ManagedConfig) IsAllowed(name, source string) bool {
 	if !c.Enforced() {
 		return true
 	}
-	host := SourceHost(source)
+	host := SourceHost(source) // "" for local-path sources
 	for _, entry := range c.AllowedIndexes {
-		if entry == name {
-			return true
+		if isHostPattern(entry) {
+			if host != "" && hostMatches(entry, host) {
+				return true
+			}
+			continue
 		}
-		if host != "" && hostMatches(entry, host) {
+		// Bare-name entry: sufficient only for local sources (no host).
+		if entry == name && host == "" {
 			return true
 		}
 	}
 	return false
+}
+
+// isHostPattern reports whether an allow-list entry is a host pattern (rather
+// than a bare catalog name). Catalog names never contain a dot (see
+// reCatalogName), so any entry with a dot or a wildcard is a host pattern.
+func isHostPattern(entry string) bool {
+	return strings.HasPrefix(entry, "*.") || strings.Contains(entry, ".")
 }
 
 // hostMatches reports whether host satisfies an allow-list host pattern. A
