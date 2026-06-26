@@ -45,11 +45,20 @@ Run 'datumctl plugin search' to refresh the plugin index.`,
 				return nil
 			}
 
-			// Load the cached index read-only — no network calls.
-			idx, _ := pluginstore.LoadIndex()
+			// Load cached catalog indexes read-only — no network calls. Memoized
+			// per catalog so each is read at most once.
+			indexCache := map[string]*pluginstore.CachedIndex{}
+			catalogIndex := func(catalogName string) *pluginstore.CachedIndex {
+				if idx, ok := indexCache[catalogName]; ok {
+					return idx
+				}
+				idx, _ := pluginstore.LoadCatalogIndex(pluginsDir, catalogName)
+				indexCache[catalogName] = idx
+				return idx
+			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION\tSTATUS")
+			fmt.Fprintln(w, "NAME\tVERSION\tINDEX\tTRUST\tDESCRIPTION\tSTATUS")
 			var anyUpdates bool
 			for name, entry := range manifest.Plugins {
 				description := ""
@@ -62,15 +71,18 @@ Run 'datumctl plugin search' to refresh the plugin index.`,
 						status = "!"
 					}
 				}
-				if status == "ok" {
-					if indexEntry := pluginstore.FindInIndex(idx, name); indexEntry != nil {
+				indexLabel, trust := installedCatalogLabel(entry)
+				// Update detection only applies to catalog-sourced plugins (the
+				// "(direct)" label marks a direct GitHub install with no catalog).
+				if status == "ok" && indexLabel != "(direct)" {
+					if indexEntry := pluginstore.FindInIndex(catalogIndex(indexLabel), name); indexEntry != nil {
 						if isUpdateAvailable(entry.Version, indexEntry.Spec.Version) {
 							status = "update"
 							anyUpdates = true
 						}
 					}
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, entry.Version, description, status)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, entry.Version, indexLabel, trust, description, status)
 			}
 			if err := w.Flush(); err != nil {
 				return err
