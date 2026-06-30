@@ -365,14 +365,50 @@ func downloadAndVerifyURI(ctx context.Context, uri, sha256hex string) ([]byte, e
 	return archiveBytes, nil
 }
 
+// minimalManifestEnv returns a minimal, scrubbed environment used when executing
+// a freshly-downloaded plugin binary to read its manifest. It is built as an
+// allow-list from scratch (rather than scrubbing the inherited environment) so
+// that sensitive variables — Datum credentials, credential-helper config, cloud
+// provider tokens, etc. — are never exposed to third-party code by default, and
+// so newly-introduced sensitive vars do not leak as they are added over time.
+//
+// Only variables a binary plausibly needs to start up and emit a manifest are
+// forwarded: a PATH to resolve any runtime/loader, a home directory, and the
+// platform temp-dir hints. Each is copied only if present in the host
+// environment.
+func minimalManifestEnv() []string {
+	// allow is the set of variable names that may be forwarded. Keep this list
+	// conservative; anything not named here is intentionally dropped.
+	allow := []string{"PATH", "HOME", "TMPDIR", "TMP", "TEMP"}
+	if runtime.GOOS == "windows" {
+		// Windows resolves the user profile and system DLLs via these.
+		allow = append(allow, "USERPROFILE", "SYSTEMROOT", "SystemRoot", "windir")
+	}
+
+	env := make([]string, 0, len(allow))
+	for _, name := range allow {
+		if v, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+v)
+		}
+	}
+	return env
+}
+
 // readPluginManifest writes binaryPath to a temp file (if needed), runs it with
 // --plugin-manifest, and parses the JSON output. Returns nil, nil if the binary
 // exits non-zero or produces no valid JSON.
+//
+// SECURITY: this executes the (third-party, freshly-downloaded) plugin binary as
+// part of installation. Install is an explicit user action, but to shrink the
+// blast radius of running untrusted code we run it with a minimal, scrubbed
+// environment (see minimalManifestEnv) rather than the user's full environment,
+// so credentials and tokens are not exposed to the binary.
 func readPluginManifest(binaryPath string) (*pluginstore.PluginManifest, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), manifestReadTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binaryPath, "--plugin-manifest")
+	cmd.Env = minimalManifestEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		// Non-zero exit — treat as "no manifest".
