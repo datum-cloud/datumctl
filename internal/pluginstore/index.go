@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,108 @@ import (
 )
 
 const indexStaleTTL = time.Hour
+
+// Read caps for plugin network fetches. SHA256 verification runs over the
+// COMPRESSED, attacker-authored bytes, so it offers no protection against an
+// unbounded download or a decompression bomb — these caps do.
+const (
+	// MaxManifestBytes caps catalog manifest and checksum file reads. Manifests
+	// and checksums.txt files are small; this is generous while still bounding a
+	// hostile or runaway response. (serviceaccount.go uses 1 MiB as precedent;
+	// catalogs can list many plugins, so we allow a few MiB.)
+	MaxManifestBytes int64 = 5 << 20 // 5 MiB
+
+	// MaxArchiveBytes caps a downloaded plugin release archive. Plugin binaries
+	// can be large, but an archive in the hundreds of MiB is not legitimate.
+	MaxArchiveBytes int64 = 256 << 20 // 256 MiB
+
+	// MaxDecompressedFileBytes caps a single decompressed archive entry, so a
+	// gzip/zip bomb cannot expand a small archive into an unbounded write.
+	MaxDecompressedFileBytes int64 = 512 << 20 // 512 MiB
+)
+
+// ReadCapped reads from r up to max bytes and returns an error if the source
+// would exceed that cap. It reads max+1 bytes so an over-cap body is detected
+// rather than silently truncated.
+func ReadCapped(r io.Reader, max int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > max {
+		return nil, fmt.Errorf("response exceeds the maximum allowed size of %d bytes", max)
+	}
+	return data, nil
+}
+
+// SafeCheckRedirect re-validates every HTTP redirect hop: the target must be
+// HTTPS and must not resolve to a private, loopback, link-local, or otherwise
+// non-routable address. It hardens third-party catalog and download fetches
+// against TLS-downgrade and SSRF-via-redirect, where only the initial URL would
+// otherwise be checked. The default 10-redirect limit is preserved.
+func SafeCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	return validateFetchURL(req.URL)
+}
+
+// safeHTTPClient returns an *http.Client that enforces SafeCheckRedirect on
+// every hop. timeout of 0 leaves the client timeout unset (callers relying on a
+// context deadline).
+func safeHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, CheckRedirect: SafeCheckRedirect}
+}
+
+// validateFetchURL ensures u is HTTPS and does not target a blocked address.
+func validateFetchURL(u *url.URL) error {
+	if u == nil {
+		return fmt.Errorf("missing redirect URL")
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refusing redirect to non-HTTPS URL %q: only HTTPS is supported", u.Redacted())
+	}
+	return validateHostNotBlocked(u.Hostname())
+}
+
+// validateHostNotBlocked rejects a host that is, or resolves to, a private,
+// loopback, link-local, unspecified, or multicast address (SSRF guard). An IP
+// literal is checked directly; a hostname is resolved and every returned
+// address must be acceptable.
+func validateHostNotBlocked(host string) error {
+	if host == "" {
+		return fmt.Errorf("refusing to connect to a URL with no host")
+	}
+	var ips []net.IP
+	if ip := net.ParseIP(host); ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		resolved, err := net.LookupIP(host)
+		if err != nil {
+			return fmt.Errorf("resolve host %q: %w", host, err)
+		}
+		ips = resolved
+	}
+	for _, ip := range ips {
+		if isBlockedIP(ip) {
+			return fmt.Errorf("refusing to connect to %q: it resolves to a private or non-routable address (%s)", host, ip)
+		}
+	}
+	return nil
+}
+
+// isBlockedIP reports whether ip is in a range that must never be reached by a
+// plugin fetch: loopback (127.0.0.0/8, ::1), RFC 1918 / ULA private
+// (10/8, 172.16/12, 192.168/16, fc00::/7), link-local (169.254/16, fe80::/10),
+// the unspecified address (0.0.0.0, ::), and multicast.
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() ||
+		ip.IsMulticast()
+}
 
 // IndexURL is the location of the default (official) plugin catalog. Override
 // with DATUMCTL_PLUGIN_INDEX_URL for testing or custom deployments. This only
@@ -100,7 +203,7 @@ func SaveCatalogIndex(pluginsDir, name string, idx *CachedIndex) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(idx, "", "  ")
@@ -191,6 +294,9 @@ func RefreshCatalog(ctx context.Context, pluginsDir string, cat Catalog) (*Cache
 		return degradedCatalogFallback(pluginsDir, cat.Name, err)
 	}
 
+	// raw is already capped to MaxManifestBytes by fetchCatalogManifest, which
+	// bounds the YAML parser's input (sigs.k8s.io/yaml -> yaml.v2 has no
+	// alias-expansion limit, so a small body bound is the cheap guard available).
 	var list PluginList
 	if err := yaml.Unmarshal(raw, &list); err != nil {
 		return degradedCatalogFallback(pluginsDir, cat.Name, fmt.Errorf("parse plugin index: %w", err))
@@ -218,6 +324,11 @@ func fetchCatalogManifest(ctx context.Context, resolved ResolvedSource) ([]byte,
 		data, err := os.ReadFile(resolved.LocalPath)
 		if err != nil {
 			return nil, fmt.Errorf("read local catalog manifest: %w", err)
+		}
+		// Apply the same cap as remote fetches before the bytes reach the YAML
+		// parser (which has no alias-expansion limit).
+		if int64(len(data)) > MaxManifestBytes {
+			return nil, fmt.Errorf("local catalog manifest exceeds the maximum allowed size of %d bytes", MaxManifestBytes)
 		}
 		return data, nil
 	}
@@ -276,7 +387,7 @@ func httpGetManifest(ctx context.Context, rawURL string) (body []byte, status in
 	}
 	req.Header.Set("User-Agent", "datumctl-plugin-index")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := safeHTTPClient(0).Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("fetch plugin index: %w", err)
 	}
@@ -286,7 +397,9 @@ func httpGetManifest(ctx context.Context, rawURL string) (body []byte, status in
 		return nil, resp.StatusCode, nil
 	}
 
-	raw, err := io.ReadAll(resp.Body)
+	// Cap the manifest body: it is unverified, attacker-controllable, and feeds a
+	// YAML parser that lacks alias-expansion limits.
+	raw, err := ReadCapped(resp.Body, MaxManifestBytes)
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("read index response: %w", err)
 	}

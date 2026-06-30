@@ -22,6 +22,11 @@ func FetchAndParseCatalog(ctx context.Context, source string) (*PluginList, erro
 	if err != nil {
 		return nil, err
 	}
+	// fetchCatalogManifest caps raw to MaxManifestBytes; re-assert it here so the
+	// bound on the YAML parser's input is explicit at the unmarshal site.
+	if int64(len(raw)) > MaxManifestBytes {
+		return nil, fmt.Errorf("catalog manifest exceeds the maximum allowed size of %d bytes", MaxManifestBytes)
+	}
 	var list PluginList
 	if err := yaml.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("parse catalog manifest: %w", err)

@@ -104,10 +104,10 @@ func fetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
 
 	client := &http.Client{
 		Timeout: 15 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Follow redirects automatically; net/http handles this.
-			return nil
-		},
+		// Re-validate every redirect hop (HTTPS + non-private target) so a
+		// release-tag redirect cannot downgrade to HTTP or point at an internal
+		// address.
+		CheckRedirect: pluginstore.SafeCheckRedirect,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
@@ -139,7 +139,7 @@ func fetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
 func fetchChecksums(ctx context.Context, owner, repo, tag string) (map[string]string, error) {
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/checksums.txt", owner, repo, tag)
 
-	httpClient := &http.Client{Timeout: 15 * time.Second}
+	httpClient := &http.Client{Timeout: 15 * time.Second, CheckRedirect: pluginstore.SafeCheckRedirect}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func fetchChecksums(ctx context.Context, owner, repo, tag string) (map[string]st
 		return nil, fmt.Errorf("couldn't verify %s/%s@%s — the release doesn't include a checksums file.\nThe plugin author needs to add checksums.txt to the GitHub Release before it can be installed safely", owner, repo, tag)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read checksums.txt: %w", err)
 	}
@@ -187,7 +187,7 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 	}
 
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/%s", owner, repo, tag, assetName)
-	httpClient := &http.Client{Timeout: pluginDownloadTimeout}
+	httpClient := &http.Client{Timeout: pluginDownloadTimeout, CheckRedirect: pluginstore.SafeCheckRedirect}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err
@@ -204,7 +204,7 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 		return nil, "", fmt.Errorf("download %s: HTTP %d", assetName, resp.StatusCode)
 	}
 
-	archiveBytes, err := io.ReadAll(resp.Body)
+	archiveBytes, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxArchiveBytes)
 	if err != nil {
 		return nil, "", fmt.Errorf("read archive: %w", err)
 	}
@@ -252,7 +252,6 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 	return nil, "", fmt.Errorf("extract binary from archive (tried %v): %w", candidates, extractErr)
 }
 
-
 func extractBinaryFromTarGz(r io.Reader, binName string) ([]byte, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -275,7 +274,9 @@ func extractBinaryFromTarGz(r io.Reader, binName string) ([]byte, error) {
 		if filepath.Base(hdr.Name) != binName {
 			continue
 		}
-		data, err := io.ReadAll(tr)
+		// Cap the decompressed read: SHA256 is verified on the compressed bytes,
+		// so a gzip bomb could otherwise expand a small archive without bound.
+		data, err := pluginstore.ReadCapped(tr, pluginstore.MaxDecompressedFileBytes)
 		if err != nil {
 			return nil, fmt.Errorf("extract %s: %w", binName, err)
 		}
@@ -296,7 +297,9 @@ func extractBinaryFromZip(archiveBytes []byte, binName string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open %s in zip: %w", binName, err)
 		}
-		data, copyErr := io.ReadAll(rc)
+		// Cap the decompressed read so a zip bomb cannot expand without bound;
+		// the SHA256 only covers the compressed archive.
+		data, copyErr := pluginstore.ReadCapped(rc, pluginstore.MaxDecompressedFileBytes)
 		rc.Close()
 		if copyErr != nil {
 			return nil, fmt.Errorf("extract %s: %w", binName, copyErr)
@@ -331,7 +334,7 @@ func downloadAndVerifyURI(ctx context.Context, uri, sha256hex string) ([]byte, e
 		return nil, err
 	}
 
-	httpClient := &http.Client{Timeout: pluginDownloadTimeout}
+	httpClient := &http.Client{Timeout: pluginDownloadTimeout, CheckRedirect: pluginstore.SafeCheckRedirect}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, err
@@ -348,7 +351,7 @@ func downloadAndVerifyURI(ctx context.Context, uri, sha256hex string) ([]byte, e
 		return nil, fmt.Errorf("download archive: HTTP %d", resp.StatusCode)
 	}
 
-	archiveBytes, err := io.ReadAll(resp.Body)
+	archiveBytes, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxArchiveBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read archive: %w", err)
 	}
@@ -547,4 +550,3 @@ func sha256HexOf(b []byte) string {
 func newBytesReader(b []byte) *bytes.Reader {
 	return bytes.NewReader(b)
 }
-
