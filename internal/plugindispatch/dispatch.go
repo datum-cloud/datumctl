@@ -232,9 +232,9 @@ func ListPluginNames(pluginsDir string, descriptions map[string]string) []string
 func IsBuiltIn(root *cobra.Command, name string) bool {
 	// Reserved names that are always built-in.
 	reserved := map[string]bool{
-		"help":         true,
-		"completion":   true,
-		"__complete":   true,
+		"help":             true,
+		"completion":       true,
+		"__complete":       true,
 		"__completeNoDesc": true,
 	}
 	if reserved[name] {

@@ -2,14 +2,10 @@ package cmd
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,9 +28,9 @@ import (
 	autoupdatecmd "go.datum.net/datumctl/internal/cmd/autoupdate"
 
 	"go.datum.net/datumctl/internal/client"
+	aicmd "go.datum.net/datumctl/internal/cmd/ai"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/console"
-	aicmd "go.datum.net/datumctl/internal/cmd/ai"
 	"go.datum.net/datumctl/internal/cmd/create"
 	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
 	"go.datum.net/datumctl/internal/cmd/docs"
@@ -160,16 +156,11 @@ Get started:
 			}
 
 			if !managed {
-				// Check DATUMCTL_TRUSTED_PLUGINS env var.
-				trusted := isTrustedByEnv(name)
-				if !trusted {
-					// Check plugins.json trusted entries (path + SHA256 hash).
-					manifest, loadErr := pluginstore.Load(pluginsDir)
-					if loadErr == nil {
-						trusted = isTrustedByManifest(manifest, name, binaryPath)
-					}
-				}
-				if !trusted {
+				// Trust an unmanaged PATH plugin only via the single shared trust
+				// implementation (DATUMCTL_TRUSTED_PLUGINS env var or a plugins.json
+				// trusted entry whose path + SHA256 match). binaryPath is already
+				// symlink-resolved above, satisfying IsTrusted's precondition.
+				if !pluginstore.IsTrusted(pluginsDir, name, binaryPath) {
 					// Block execution — do not fall through to Exec. An unmanaged
 					// binary on PATH that has not been explicitly trusted could
 					// exfiltrate credentials via DATUM_CREDENTIALS_HELPER.
@@ -739,55 +730,6 @@ Specify the resource type and name to view its history.`
 	_ = plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory)
 
 	return rootCmd
-}
-
-// isTrustedByEnv checks the DATUMCTL_TRUSTED_PLUGINS comma-separated env var.
-func isTrustedByEnv(name string) bool {
-	env := os.Getenv("DATUMCTL_TRUSTED_PLUGINS")
-	if env == "" {
-		return false
-	}
-	for trusted := range strings.SplitSeq(env, ",") {
-		if strings.TrimSpace(trusted) == name {
-			return true
-		}
-	}
-	return false
-}
-
-// isTrustedByManifest checks plugins.json trusted entries for the given plugin.
-// The resolved binary path must match the stored trusted path, and the SHA256
-// hash of the binary on disk must match the hash recorded at trust time.
-// binaryPath must already be symlink-resolved (filepath.EvalSymlinks applied)
-// so that path comparison is stable and no second symlink resolution occurs.
-func isTrustedByManifest(manifest *pluginstore.Manifest, name, binaryPath string) bool {
-	if manifest == nil || manifest.Trusted == nil {
-		return false
-	}
-	entry, ok := manifest.Trusted[name]
-	if !ok {
-		return false
-	}
-	// Path check: binaryPath is already symlink-resolved by the caller.
-	if entry.Path != binaryPath {
-		return false
-	}
-	// Hash check: re-read and re-hash the binary to detect replacement since
-	// trust was granted. If SHA256 is empty (legacy entry), fail closed.
-	if entry.SHA256 == "" {
-		return false
-	}
-	f, err := os.Open(binaryPath)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return false
-	}
-	currentDigest := hex.EncodeToString(h.Sum(nil))
-	return entry.SHA256 == currentDigest
 }
 
 // activeUpdateChecker holds the in-flight update check between when it is

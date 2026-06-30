@@ -8,7 +8,8 @@ import (
 // TestForwardCompletion_noop_whenNotComplete verifies that ForwardCompletion
 // returns nil without doing anything when os.Args[1] is not "__complete".
 func TestForwardCompletion_noop_whenNotComplete(t *testing.T) {
-	t.Parallel()
+	// Not parallel — mutates the global os.Args, which races with sibling
+	// os.Args-mutating tests under -race.
 
 	// ForwardCompletion reads os.Args but only acts when os.Args[1] == "__complete".
 	// We save and restore os.Args to isolate the test.
@@ -29,7 +30,8 @@ func TestForwardCompletion_noop_whenNotComplete(t *testing.T) {
 // — we test by passing a managed dir that contains no plugins, so FindPlugin
 // will fail and Cobra is left to handle it.
 func TestForwardCompletion_noop_whenBuiltin(t *testing.T) {
-	t.Parallel()
+	// Not parallel — mutates the global os.Args, which races with sibling
+	// os.Args-mutating tests under -race.
 
 	orig := os.Args
 	// "__complete" + builtin name "get" — FindPlugin("get", emptyDir) will fail,
