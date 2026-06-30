@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/spf13/cobra"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
@@ -16,12 +17,14 @@ func removeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Remove an installed plugin",
-		Long: `Remove a managed plugin binary and its plugins.json entry.
+		Long: templates.LongDesc(`
+			Remove an installed plugin.
 
-The binary is deleted from the managed plugins directory. The plugin entry
-is removed from plugins.json.`,
-		Example: `  # Remove the dns plugin
-  datumctl plugin remove dns`,
+			The plugin binary is deleted and it is no longer listed by
+			'datumctl plugin list'.`),
+		Example: templates.Examples(`
+			# Remove the dns plugin
+			datumctl plugin remove dns`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]

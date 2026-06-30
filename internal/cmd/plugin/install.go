@@ -23,14 +23,16 @@ func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
 		Short: "Install a datumctl plugin",
 		Long: `Install a datumctl plugin from a plugin catalog or a GitHub Release.
 
-With no arguments, restores all plugins recorded in plugins.json to their
-recorded versions. Use this to reproduce a plugin set on a new machine.
+With no arguments, restores all previously installed plugins to their recorded
+versions. Use this to reproduce a plugin set on a new machine.
 
 With a plugin name argument, installs from a registered catalog:
-  - name             resolves against the official datum catalog first, then any
-                     other registered catalog; a name found in more than one
-                     catalog prints the options instead of guessing
-  - catalog/name     installs from a specific registered catalog (e.g. datum/dns)
+  - name                 resolves against the official datum catalog first, then
+                         any other registered catalog; a name found in more than
+                         one catalog prints the options instead of guessing
+  - name@version         installs a specific version of a catalog plugin
+  - catalog/name         installs from a specific registered catalog (e.g. datum/dns)
+  - catalog/name@version installs a specific version from a specific catalog
 
 With an owner/repo argument, installs directly from a GitHub Release:
   - owner/repo         installs the latest release
@@ -50,7 +52,11 @@ The plugin binary is written to the managed plugins directory
   # Install a specific version from GitHub
   datumctl plugin install datum-cloud/datumctl-dns@v1.2.0
 
-  # Restore all plugins from plugins.json
+  # Install a specific version of a catalog plugin
+  datumctl plugin install dns@v1.2.0
+  datumctl plugin install acme/deploy@v2.0.0
+
+  # Restore all previously installed plugins
   datumctl plugin install`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
@@ -87,31 +93,77 @@ The plugin binary is written to the managed plugins directory
 	return cmd
 }
 
-// installArg dispatches a single install argument to the right path based on
-// catalog-aware addressing:
-//   - "owner/repo@version"  -> direct GitHub release (the '@' is unambiguous)
-//   - "catalog/name"        -> catalog-qualified, when the prefix is a
-//     registered catalog name
-//   - "owner/repo"          -> direct GitHub release otherwise
-//   - "name"                -> bare name, resolved across catalogs (default
-//     first); a collision prints the qualified options instead of guessing
-func installArg(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, arg, currentVersion string) error {
-	if strings.Contains(arg, "@") {
-		return installGitHubArg(cmd, pluginsDir, arg, currentVersion)
-	}
-	if strings.Contains(arg, "/") {
-		prefix, rest, _ := strings.Cut(arg, "/")
-		if reg.Find(prefix) != nil {
-			return installFromCatalog(cmd, pluginsDir, reg, prefix, rest, currentVersion)
-		}
-		return installGitHubArg(cmd, pluginsDir, arg, currentVersion)
-	}
-	return installBareName(cmd, pluginsDir, reg, arg, currentVersion)
+// installRouteKind identifies which install path an argument resolves to.
+type installRouteKind int
+
+const (
+	// routeGitHub installs directly from a GitHub release (owner/repo).
+	routeGitHub installRouteKind = iota
+	// routeCatalog installs a named plugin from a specific registered catalog.
+	routeCatalog
+	// routeBare resolves a bare plugin name across all registered catalogs.
+	routeBare
+)
+
+// installRoute is the parsed routing decision for a single install argument.
+// It is produced by routeInstallArg and consumed by installArg; keeping the
+// decision in a pure value makes the routing logic unit-testable without
+// performing real network installs.
+type installRoute struct {
+	kind installRouteKind
+	// ghSource is the "owner/repo" (or "github.com/owner/repo") string to hand
+	// to the GitHub install path; only set for routeGitHub.
+	ghSource string
+	// catalog is the registered catalog name; only set for routeCatalog.
+	catalog string
+	// name is the plugin name (catalog/bare paths); unset for routeGitHub.
+	name string
+	// version is the trailing "@version" requested, or "" for latest. It is
+	// threaded through every route.
+	version string
 }
 
-// installGitHubArg installs directly from a GitHub release (owner/repo[@version]).
-func installGitHubArg(cmd *cobra.Command, pluginsDir, arg, currentVersion string) error {
-	owner, repo, version, parseErr := parseSource(arg)
+// routeInstallArg parses a single install argument into a routing decision.
+// Any trailing "@version" is split off FIRST, then routing is decided on the
+// remaining string so that version-pinning works uniformly across catalogs and
+// GitHub:
+//   - "catalog/name"  -> routeCatalog, when the prefix is a registered catalog
+//   - "owner/repo"    -> routeGitHub otherwise (the slash is owner/repo)
+//   - "name"          -> routeBare, resolved across catalogs (default first)
+//
+// The version is carried on the route so "catalog/name@v2", "name@v2", and
+// "owner/repo@v2" all pin the requested version through their respective paths.
+func routeInstallArg(reg *pluginstore.Registry, arg string) installRoute {
+	rest, version, _ := strings.Cut(arg, "@")
+	if strings.Contains(rest, "/") {
+		prefix, name, _ := strings.Cut(rest, "/")
+		if reg.Find(prefix) != nil {
+			return installRoute{kind: routeCatalog, catalog: prefix, name: name, version: version}
+		}
+		return installRoute{kind: routeGitHub, ghSource: rest, version: version}
+	}
+	return installRoute{kind: routeBare, name: rest, version: version}
+}
+
+// installArg dispatches a single install argument to the right path based on
+// catalog-aware addressing. See routeInstallArg for the routing rules.
+func installArg(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, arg, currentVersion string) error {
+	route := routeInstallArg(reg, arg)
+	switch route.kind {
+	case routeCatalog:
+		return installFromCatalog(cmd, pluginsDir, reg, route.catalog, route.name, route.version, currentVersion)
+	case routeBare:
+		return installBareName(cmd, pluginsDir, reg, route.name, route.version, currentVersion)
+	default:
+		return installGitHubArg(cmd, pluginsDir, route.ghSource, route.version, currentVersion)
+	}
+}
+
+// installGitHubArg installs directly from a GitHub release. ghSource is the
+// "owner/repo" (or "github.com/owner/repo") string with any "@version" already
+// split off; the requested version is passed separately.
+func installGitHubArg(cmd *cobra.Command, pluginsDir, ghSource, version, currentVersion string) error {
+	owner, repo, _, parseErr := parseSource(ghSource)
 	if parseErr != nil {
 		return customerrors.NewUserError(parseErr.Error())
 	}
@@ -122,8 +174,10 @@ func installGitHubArg(cmd *cobra.Command, pluginsDir, arg, currentVersion string
 	return saveAndReport(cmd, pluginsDir, pluginName, entry, binaryPath)
 }
 
-// installFromCatalog installs a named plugin from a specific registered catalog.
-func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, catalogName, pluginName, currentVersion string) error {
+// installFromCatalog installs a named plugin from a specific registered
+// catalog. version pins a specific release, or "" installs the catalog's
+// recommended version.
+func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, catalogName, pluginName, version, currentVersion string) error {
 	cat := reg.Find(catalogName)
 	if cat == nil {
 		return customerrors.NewUserError(fmt.Sprintf("catalog %q is not registered; run 'datumctl plugin index add %s <source>' first", catalogName, catalogName))
@@ -132,7 +186,7 @@ func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 	if err != nil {
 		return indexFetchUserError(err)
 	}
-	idxEntry, name, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, pluginName, "", currentVersion, idx)
+	idxEntry, name, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, pluginName, version, currentVersion, idx)
 	if installErr != nil {
 		return customerrors.NewUserError(fmt.Sprintf("install plugin %s/%s: %v", catalogName, pluginName, installErr))
 	}
@@ -144,13 +198,14 @@ func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 
 // installBareName resolves a bare plugin name across all catalogs (default
 // first) and installs the unique match, or surfaces the options on a collision.
-func installBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name, currentVersion string) error {
+// version pins a specific release, or "" installs the recommended version.
+func installBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name, version, currentVersion string) error {
 	matches := resolveBareName(cmd, pluginsDir, reg, name)
 	switch len(matches) {
 	case 0:
 		return customerrors.NewUserError(fmt.Sprintf("plugin %q not found in any registered catalog; run 'datumctl plugin search %s' to look for it", name, name))
 	case 1:
-		return installFromCatalog(cmd, pluginsDir, reg, matches[0].catalog.Name, name, currentVersion)
+		return installFromCatalog(cmd, pluginsDir, reg, matches[0].catalog.Name, name, version, currentVersion)
 	default:
 		return customerrors.NewUserError(collisionError(name, matches).Error())
 	}
@@ -199,7 +254,7 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 	}
 
 	if len(manifest.Plugins) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No plugins recorded in plugins.json.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No previously installed plugins to restore.")
 		return nil
 	}
 

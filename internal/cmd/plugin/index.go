@@ -130,9 +130,18 @@ func indexAddCmd() *cobra.Command {
 
 			// One-time trust decision for third-party catalogs.
 			if !assumeYes {
-				ok, promptErr := confirmCatalogTrust(cmd, name)
+				answered, ok, promptErr := confirmCatalogTrust(cmd, name)
 				if promptErr != nil {
 					return promptErr
+				}
+				if !answered {
+					// No one answered the prompt (e.g. non-interactive shell, EOF).
+					// Fail loudly (non-zero) rather than silently succeeding without
+					// adding the catalog, so a CI script that forgot --yes is not misled.
+					return customerrors.NewUserErrorWithHint(
+						fmt.Sprintf("adding third-party catalog %q requires confirmation", name),
+						"Re-run with --yes to confirm without a prompt (for scripts/CI).",
+					)
 				}
 				if !ok {
 					fmt.Fprintln(cmd.OutOrStdout(), "Aborted. No catalog was added.")
@@ -389,9 +398,12 @@ func indexValidateCmd() *cobra.Command {
 }
 
 // confirmCatalogTrust shows the one-time third-party trust explanation and reads
-// a y/N answer from stdin.
-func confirmCatalogTrust(cmd *cobra.Command, name string) (bool, error) {
-	out := cmd.OutOrStdout()
+// a y/N answer from stdin. answered reports whether the user actually responded;
+// it is false when the prompt receives no input (EOF / non-interactive), letting
+// the caller distinguish an unanswered prompt from an explicit "no".
+func confirmCatalogTrust(cmd *cobra.Command, name string) (answered, confirmed bool, err error) {
+	// Interactive prompts go to stderr so stdout stays clean for redirection.
+	out := cmd.ErrOrStderr()
 	fmt.Fprintf(out, "\n  You're adding a third-party plugin catalog: %q\n\n", name)
 	fmt.Fprintln(out, "  Datum does not review, verify, or endorse plugins from this catalog.")
 	fmt.Fprintln(out, "  Plugins are programs that run on your machine with your Datum credentials.")
@@ -399,13 +411,14 @@ func confirmCatalogTrust(cmd *cobra.Command, name string) (bool, error) {
 	fmt.Fprint(out, "\n  Add this catalog? [y/N] ")
 
 	reader := bufio.NewReader(cmd.InOrStdin())
-	line, err := reader.ReadString('\n')
-	if err != nil && line == "" {
-		// EOF with no input (e.g. non-interactive) is treated as "no".
-		return false, nil
+	line, readErr := reader.ReadString('\n')
+	if readErr != nil && line == "" {
+		// EOF with no input (e.g. non-interactive shell): the prompt went
+		// unanswered. Leave the decision to the caller.
+		return false, false, nil
 	}
 	answer := strings.ToLower(strings.TrimSpace(line))
-	return answer == "y" || answer == "yes", nil
+	return true, answer == "y" || answer == "yes", nil
 }
 
 // updateCatalogHeader copies the freshly fetched catalog header into the

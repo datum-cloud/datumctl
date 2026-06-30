@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/plugindispatch"
@@ -33,20 +34,23 @@ func hashFile(path string) (string, error) {
 func trustCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trust <name>",
-		Short: "Trust an unmanaged plugin to suppress the verification warning",
-		Long: `Record that an unmanaged (PATH-installed) plugin is trusted.
+		Short: "Trust an unmanaged plugin so datumctl will run it",
+		Long: templates.LongDesc(`
+			Record that an unmanaged (PATH-installed) plugin is trusted so datumctl
+			will run it.
 
-When datumctl finds a plugin binary on the PATH that is not recorded in
-plugins.json, it blocks execution and shows an error. Use 'trust' to
-explicitly allow a specific unmanaged plugin to run.
+			When datumctl finds a plugin binary on your PATH that it did not install,
+			it blocks execution and shows an error. Use 'trust' to explicitly allow a
+			specific unmanaged plugin to run.
 
-The resolved absolute path and a SHA256 hash of the binary are stored in
-plugins.json. If the binary changes after trust is granted, datumctl will
-refuse to run it until you re-run 'datumctl plugin trust <name>'.
+			The resolved path and a fingerprint of the binary are recorded. If the
+			binary changes after trust is granted, datumctl will refuse to run it until
+			you re-run 'datumctl plugin trust <name>'.
 
-To revoke trust, use 'datumctl plugin untrust <name>'.`,
-		Example: `  # Trust the dns plugin found on PATH
-  datumctl plugin trust dns`,
+			To revoke trust, use 'datumctl plugin untrust <name>'.`),
+		Example: templates.Examples(`
+			# Trust the dns plugin found on PATH
+			datumctl plugin trust dns`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -107,12 +111,14 @@ func untrustCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "untrust <name>",
 		Short: "Remove a plugin from the trusted list",
-		Long: `Remove a previously trusted unmanaged plugin from plugins.json.
+		Long: templates.LongDesc(`
+			Remove a previously trusted unmanaged plugin from the trusted list.
 
-After running this command, invoking the plugin will return an error until
-you explicitly trust it again with 'datumctl plugin trust <name>'.`,
-		Example: `  # Revoke trust for the dns plugin
-  datumctl plugin untrust dns`,
+			After running this command, invoking the plugin will return an error until
+			you explicitly trust it again with 'datumctl plugin trust <name>'.`),
+		Example: templates.Examples(`
+			# Revoke trust for the dns plugin
+			datumctl plugin untrust dns`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]

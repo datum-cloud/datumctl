@@ -79,13 +79,28 @@ func resolveBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Reg
 
 // collisionError renders the "available from multiple catalogs" message that
 // asks the user to qualify a bare name. Matches are listed default-first.
+// Columns are padded to a common width so they align when the message is
+// rendered as a plain string (UserError does not run it through a tabwriter).
 func collisionError(name string, matches []catalogMatch) error {
+	cmds := make([]string, len(matches))
+	descs := make([]string, len(matches))
+	cmdWidth, descWidth := 0, 0
+	for i, m := range matches {
+		cmds[i] = fmt.Sprintf("datumctl plugin install %s/%s", m.catalog.Name, name)
+		descs[i] = m.plugin.Spec.ShortDescription
+		if len(cmds[i]) > cmdWidth {
+			cmdWidth = len(cmds[i])
+		}
+		if len(descs[i]) > descWidth {
+			descWidth = len(descs[i])
+		}
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "%q is available from multiple catalogs. Choose one:", name)
-	for _, m := range matches {
-		desc := m.plugin.Spec.ShortDescription
-		fmt.Fprintf(&b, "\n  datumctl plugin install %s/%s\t%s\t(%s)",
-			m.catalog.Name, name, desc, m.catalog.Trust())
+	for i, m := range matches {
+		fmt.Fprintf(&b, "\n  %-*s  %-*s  (%s)",
+			cmdWidth, cmds[i], descWidth, descs[i], m.catalog.Trust())
 	}
 	return fmt.Errorf("%s", b.String())
 }

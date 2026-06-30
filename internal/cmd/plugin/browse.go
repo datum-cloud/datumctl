@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	componentversion "k8s.io/component-base/version"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
@@ -26,17 +27,19 @@ func browseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "browse",
 		Short: "Browse and install plugins interactively",
-		Long: `Open an interactive browser over every registered plugin catalog.
+		Long: templates.LongDesc(`
+			Open an interactive browser over every registered plugin catalog.
 
-Type to filter, inspect a plugin's description, version, source catalog, and
-trust badge ("official" for Datum's curated datum catalog, "third-party" for
-catalogs you added), and install the selected plugin in place. Use --index to
-scope the browser to a single catalog.`,
-		Example: `  # Browse all catalogs
-  datumctl plugin browse
+			Type to filter, inspect a plugin's description, version, source catalog, and
+			trust badge ("official" for Datum's curated datum catalog, "third-party" for
+			catalogs you added), and install the selected plugin in place. Use --index to
+			scope the browser to a single catalog.`),
+		Example: templates.Examples(`
+			# Browse all catalogs
+			datumctl plugin browse
 
-  # Browse a single catalog
-  datumctl plugin browse --index acme`,
+			# Browse a single catalog
+			datumctl plugin browse --index acme`),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !browseIsTerminal() {
@@ -92,7 +95,8 @@ scope the browser to a single catalog.`,
 			}
 
 			currentVersion := componentversion.Get().GitVersion
-			return installFromCatalog(cmd, pluginsDir, reg, selected.catalog.Name, selected.plugin.Name, currentVersion)
+			// Empty version installs the catalog's recommended release.
+			return installFromCatalog(cmd, pluginsDir, reg, selected.catalog.Name, selected.plugin.Name, "", currentVersion)
 		},
 	}
 	cmd.Flags().StringVar(&indexName, "index", "", "Scope the browser to a single catalog")

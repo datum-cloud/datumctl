@@ -110,14 +110,19 @@ func TestIndexAdd_trustPromptDecline(t *testing.T) {
 	}
 }
 
-func TestIndexAdd_emptyStdinDeclines(t *testing.T) {
+func TestIndexAdd_emptyStdinErrors(t *testing.T) {
 	pluginsDir := t.TempDir()
 	src := writeLocalCatalog(t, testCatalogManifest)
 
-	// No stdin -> EOF -> treated as "no".
+	// No stdin -> the prompt goes unanswered. Rather than silently succeeding
+	// (or silently aborting) we fail loudly so a CI script that forgot --yes is
+	// not misled into thinking the catalog was added.
 	_, err := runIndex(t, pluginsDir, "", "add", "acme", src)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected an error when the trust prompt gets no confirmation")
+	}
+	if !strings.Contains(err.Error(), "requires confirmation") {
+		t.Fatalf("expected a 'requires confirmation' error, got: %v", err)
 	}
 	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") != nil {
 		t.Fatal("acme must NOT be registered when prompt gets no confirmation")

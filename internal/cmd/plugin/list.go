@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	"go.datum.net/datumctl/internal/plugindispatch"
 	"go.datum.net/datumctl/internal/pluginstore"
@@ -16,19 +17,20 @@ func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List installed datumctl plugins",
-		Long: `List all managed plugins recorded in plugins.json.
+		Long: templates.LongDesc(`
+			List the plugins you have installed, without running any of them.
 
-Reads plugins.json only — never execs plugin binaries.
+			Status column indicators:
+			  ok      Plugin is installed and compatible with this datumctl.
+			  update  A newer version is available in its catalog.
+			  !       Built for a different datumctl version.
+			  ?       Version info unavailable.
 
-Status column indicators:
-  ok      Plugin is installed and API version matches.
-  update  A newer version is available in the plugin index.
-  !       Stored api_version does not match the host's API version.
-  ?       No manifest recorded (plugin did not respond to --plugin-manifest).
-
-Run 'datumctl plugin search' to refresh the plugin index.`,
-		Example: `  # List all installed plugins
-  datumctl plugin list`,
+			Run 'datumctl plugin search' to refresh available plugins from your
+			catalogs.`),
+		Example: templates.Examples(`
+			# List all installed plugins
+			datumctl plugin list`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
 			if err != nil {
@@ -58,7 +60,7 @@ Run 'datumctl plugin search' to refresh the plugin index.`,
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tVERSION\tINDEX\tTRUST\tDESCRIPTION\tSTATUS")
+			fmt.Fprintln(w, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION\tSTATUS")
 			var anyUpdates bool
 			for name, entry := range manifest.Plugins {
 				description := ""
@@ -82,7 +84,7 @@ Run 'datumctl plugin search' to refresh the plugin index.`,
 						}
 					}
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, entry.Version, indexLabel, trust, description, status)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, indexLabel, entry.Version, trust, description, status)
 			}
 			if err := w.Flush(); err != nil {
 				return err

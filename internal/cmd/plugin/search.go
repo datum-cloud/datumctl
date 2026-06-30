@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
@@ -16,22 +17,25 @@ func searchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search for available datumctl plugins",
-		Long: `Search every registered plugin catalog for available datumctl plugins.
+		Long: templates.LongDesc(`
+			Search every registered plugin catalog for available datumctl plugins.
 
-Results span the official datum catalog and any catalogs you have added, with a
-column showing which catalog each plugin came from and a trust badge ("official"
-for Datum's curated datum catalog, "third-party" for catalogs you added). An
-optional query filters by name or description; use --index to scope to one catalog.
+			Results span the official datum catalog and any catalogs you have added,
+			with a column showing which catalog each plugin came from and a trust badge
+			("official" for Datum's curated datum catalog, "third-party" for catalogs
+			you added). An optional query filters by name or description; use --index to
+			scope to one catalog.
 
-Run 'datumctl plugin install <name>' to install a plugin listed here.`,
-		Example: `  # List all available plugins across catalogs
-  datumctl plugin search
+			Run 'datumctl plugin install <name>' to install a plugin listed here.`),
+		Example: templates.Examples(`
+			# List all available plugins across catalogs
+			datumctl plugin search
 
-  # Search for DNS-related plugins
-  datumctl plugin search dns
+			# Search for DNS-related plugins
+			datumctl plugin search dns
 
-  # Scope the search to one catalog
-  datumctl plugin search dns --index acme`,
+			# Scope the search to one catalog
+			datumctl plugin search dns --index acme`),
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
@@ -82,7 +86,7 @@ Run 'datumctl plugin install <name>' to install a plugin listed here.`,
 				return err
 			}
 			if rows == 0 {
-				fmt.Fprintln(cmd.ErrOrStderr(), "No matching plugins found.")
+				fmt.Fprintln(cmd.OutOrStdout(), "No matching plugins found.")
 			}
 			return nil
 		},
