@@ -58,11 +58,15 @@ func browseCmd() *cobra.Command {
 				return fmt.Errorf("load catalog registry: %w", err)
 			}
 
-			catalogs := reg.Catalogs
+			warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
+			catalogs := reg.Active()
 			if indexName != "" {
 				cat := reg.Find(indexName)
 				if cat == nil {
 					return customerrors.NewUserError(fmt.Sprintf("catalog %q is not registered", indexName))
+				}
+				if cat.Disabled {
+					return customerrors.NewUserError(fmt.Sprintf("catalog %q is disabled: %s", indexName, cat.DisabledReason))
 				}
 				catalogs = []pluginstore.Catalog{*cat}
 			}

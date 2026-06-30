@@ -95,38 +95,89 @@ func (c *ManagedConfig) Enforced() bool {
 	return len(c.AllowedIndexes) > 0
 }
 
+// gitHubScopePrefix marks an allow-list entry that scopes GitHub by owner (and
+// optionally repo), e.g. "github.com/acme-corp/*" or
+// "github.com/acme-corp/datumctl-plugins".
+const gitHubScopePrefix = "github.com/"
+
 // IsAllowed reports whether a catalog with the given name and source may be
 // added under the allow-list. When no allow-list is configured, everything is
 // allowed.
 //
 // Allow-list entries are matched by form:
+//   - GitHub owner/repo scopes ("github.com/<owner>", "github.com/<owner>/*",
+//     "github.com/<owner>/<repo>", or "github.com/*") authorize GitHub catalog
+//     sources by owner and optionally repo. A GitHub source — the "owner/repo"
+//     shorthand, the "github.com/owner/repo" form, and the
+//     raw.githubusercontent.com manifest URL they resolve through — is permitted
+//     ONLY by a matching scope entry. A plain "raw.githubusercontent.com" host
+//     entry does NOT authorize GitHub repos, so the scoping is meaningful; use
+//     "github.com/*" to authorize every GitHub repo.
 //   - Host patterns (entries containing a dot or a "*." wildcard) gate the
-//     source HOST. This is how remote catalogs are authorized, e.g.
-//     "plugins.acme.example" or "*.acme.example". GitHub owner/repo shorthand
-//     sources resolve to the raw.githubusercontent.com host for this match.
+//     source HOST for NON-GitHub remote catalogs, e.g. "plugins.acme.example"
+//     or "*.acme.example".
 //   - Bare names (no dot) authorize a catalog NAME, but only for local-path
 //     sources. Because the user chooses the local name freely, a bare-name
 //     entry is intentionally NOT sufficient to authorize a remote source — that
 //     would let a trusted name be pointed at an arbitrary host. Remote sources
-//     always require a host-pattern match.
+//     always require a host-pattern or GitHub-scope match.
 func (c *ManagedConfig) IsAllowed(name, source string) bool {
 	if !c.Enforced() {
 		return true
 	}
 	host := SourceHost(source) // "" for local-path sources
+	ghOwnerRepo, isGitHub := SourceGitHubOwnerRepo(source)
+
 	for _, entry := range c.AllowedIndexes {
-		if isHostPattern(entry) {
+		le := strings.ToLower(strings.TrimSpace(entry))
+		switch {
+		case strings.HasPrefix(le, gitHubScopePrefix):
+			// GitHub owner/repo scope: authorizes only matching GitHub sources.
+			if isGitHub && gitHubScopeMatches(le[len(gitHubScopePrefix):], ghOwnerRepo) {
+				return true
+			}
+		case isHostPattern(entry):
+			// Host patterns authorize non-GitHub remote sources by host. GitHub
+			// sources must be scoped by a "github.com/<owner>" entry so a bare
+			// raw.githubusercontent.com entry can't green-light every repo.
+			if isGitHub {
+				continue
+			}
 			if host != "" && hostMatches(entry, host) {
 				return true
 			}
-			continue
-		}
-		// Bare-name entry: sufficient only for local sources (no host).
-		if entry == name && host == "" {
-			return true
+		default:
+			// Bare-name entry: sufficient only for local sources (no host).
+			if entry == name && host == "" {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// gitHubScopeMatches reports whether a GitHub "owner/repo" satisfies a scope
+// (the part of an allow-list entry after "github.com/"). Supported scope forms:
+//   - "*"            authorizes every GitHub repo
+//   - "<owner>"      authorizes every repo under the owner
+//   - "<owner>/*"    authorizes every repo under the owner
+//   - "<owner>/<repo>" authorizes exactly that repo
+func gitHubScopeMatches(scope, ownerRepo string) bool {
+	scope = strings.Trim(strings.ToLower(scope), "/")
+	ownerRepo = strings.ToLower(ownerRepo)
+	owner, _, _ := strings.Cut(ownerRepo, "/")
+	switch {
+	case scope == "":
+		return false
+	case scope == "*":
+		return true
+	case strings.HasSuffix(scope, "/*"):
+		return owner == strings.TrimSuffix(scope, "/*")
+	case !strings.Contains(scope, "/"):
+		return owner == scope
+	default:
+		return scope == ownerRepo
+	}
 }
 
 // isHostPattern reports whether an allow-list entry is a host pattern (rather

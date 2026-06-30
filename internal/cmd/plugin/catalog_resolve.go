@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 
@@ -9,6 +10,18 @@ import (
 
 	"go.datum.net/datumctl/internal/pluginstore"
 )
+
+// warnDisabledCatalogs prints a one-line warning for each catalog an active
+// enterprise allow-list has disabled, so a catalog that silently stops being
+// used is explained rather than appearing to vanish. Each disabled catalog is
+// named once. It is the single user-facing chokepoint for this notice; the
+// commands that resolve/search/install/browse call it after loading the
+// registry, then operate on reg.Active().
+func warnDisabledCatalogs(w io.Writer, reg *pluginstore.Registry) {
+	for _, c := range reg.DisabledCatalogs() {
+		fmt.Fprintf(w, "warning: catalog %q is disabled — %s\n", c.Name, c.DisabledReason)
+	}
+}
 
 // pluginBinaryPrefixes are the recognized datumctl plugin binary prefixes, in
 // preference order. "milo-" identifies portable milo-os platform plugins;
@@ -63,8 +76,9 @@ func loadOrRefreshCatalog(cmd *cobra.Command, pluginsDir string, cat pluginstore
 // is skipped with a warning rather than failing the whole resolution.
 func resolveBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name string) []catalogMatch {
 	var matches []catalogMatch
-	for i := range reg.Catalogs {
-		cat := reg.Catalogs[i]
+	active := reg.Active()
+	for i := range active {
+		cat := active[i]
 		idx, err := loadOrRefreshCatalog(cmd, pluginsDir, cat)
 		if err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: skipping catalog %q: %v\n", cat.Name, err)

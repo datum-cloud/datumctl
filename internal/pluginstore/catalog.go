@@ -84,6 +84,15 @@ type Catalog struct {
 	// Managed catalogs are not persisted to indexes.json and cannot be removed
 	// by the user. Not serialized.
 	Managed bool `json:"-"`
+
+	// Disabled marks a catalog whose source is no longer permitted by an active
+	// enterprise allow-list. A disabled catalog is still shown by `index list`
+	// and can be removed, but is excluded from resolve, search, install, and
+	// browse. Set at load time by ApplyAllowList. Not serialized.
+	Disabled bool `json:"-"`
+	// DisabledReason is the human-readable reason a catalog is disabled. Not
+	// serialized.
+	DisabledReason string `json:"-"`
 }
 
 // IsOfficial reports whether this is the reserved official catalog.
@@ -128,6 +137,31 @@ func (r *Registry) Find(name string) *Catalog {
 		}
 	}
 	return nil
+}
+
+// Active returns the catalogs available for resolve, search, install, and
+// browse — every registered catalog except those an active allow-list has
+// disabled.
+func (r *Registry) Active() []Catalog {
+	out := make([]Catalog, 0, len(r.Catalogs))
+	for _, c := range r.Catalogs {
+		if !c.Disabled {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// DisabledCatalogs returns the catalogs an active allow-list has disabled, each
+// listed once. Used to explain to the user why a catalog stopped being used.
+func (r *Registry) DisabledCatalogs() []Catalog {
+	var out []Catalog
+	for _, c := range r.Catalogs {
+		if c.Disabled {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // Custom returns the user-registered catalogs (excludes default and managed).
@@ -240,7 +274,40 @@ func LoadRegistry(pluginsDir string) (*Registry, error) {
 		add(c)
 	}
 
+	// Enforce the allow-list as an ongoing guardrail, not just an onboarding
+	// gate: a user-registered catalog whose source is no longer permitted is
+	// marked disabled so it is excluded from use.
+	reg.ApplyAllowList(managed)
+
 	return reg, nil
+}
+
+// allowListDisabledReason explains why a catalog was disabled by ApplyAllowList.
+const allowListDisabledReason = "its source is no longer permitted by your organization's plugin catalog allow-list"
+
+// ApplyAllowList marks every user-registered catalog whose source is not
+// permitted by an active allow-list as disabled and returns the disabled
+// catalogs. The official catalog and managed pre-seeds are admin-controlled and
+// are never disabled. When no allow-list is configured nothing is disabled, so
+// the common default case is unchanged. LoadRegistry calls this so enforcement
+// is centralized at load time rather than only at `index add`.
+func (r *Registry) ApplyAllowList(m *ManagedConfig) []Catalog {
+	if m == nil || !m.Enforced() {
+		return nil
+	}
+	var disabled []Catalog
+	for i := range r.Catalogs {
+		c := &r.Catalogs[i]
+		if c.Managed || CanonicalCatalogName(c.Name) == OfficialCatalogName {
+			continue
+		}
+		if !m.IsAllowed(c.Name, c.Source) {
+			c.Disabled = true
+			c.DisabledReason = allowListDisabledReason
+			disabled = append(disabled, *c)
+		}
+	}
+	return disabled
 }
 
 // SaveRegistry persists only the user-registered catalogs (default and managed
@@ -381,4 +448,32 @@ func SourceHost(source string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// SourceGitHubOwnerRepo returns the GitHub "owner/repo" a catalog source
+// targets, for any of the forms that resolve to GitHub: the "owner/repo" (and
+// "github.com/owner/repo") shorthand, and a full raw.githubusercontent.com
+// manifest URL. ok is false for non-GitHub sources. Used to scope GitHub
+// allow-list entries by owner/repo.
+func SourceGitHubOwnerRepo(source string) (ownerRepo string, ok bool) {
+	resolved, err := ResolveCatalogSource(source)
+	if err != nil || resolved.IsLocal {
+		return "", false
+	}
+	if resolved.GitHubOwnerRepo != "" {
+		return resolved.GitHubOwnerRepo, true
+	}
+	u, err := url.Parse(resolved.FetchURL)
+	if err != nil {
+		return "", false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host != "raw.githubusercontent.com" && host != "github.com" {
+		return "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(u.Path, "/"), "/", 3)
+	if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0] + "/" + parts[1], true
+	}
+	return "", false
 }

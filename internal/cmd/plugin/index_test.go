@@ -317,6 +317,82 @@ func TestIndexRemove_managedRejected(t *testing.T) {
 	}
 }
 
+// registerLocalCatalog persists a single user catalog pointing at a local
+// manifest, bypassing the `add` allow-list gate, so load-time enforcement can be
+// exercised on its own.
+func registerLocalCatalog(t *testing.T, pluginsDir, name string) {
+	t.Helper()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: name, Source: src, Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIndexList_showsDisabledCatalog(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+	registerLocalCatalog(t, pluginsDir, "acme")
+
+	// An allow-list that does not cover acme disables it at load time.
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatalf("list must not fail with a disabled catalog: %v", err)
+	}
+	if !strings.Contains(out, "acme") {
+		t.Fatalf("disabled catalog must still be listed: %s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "acme") && !strings.Contains(line, "disabled") {
+			t.Fatalf("acme row should be marked disabled, got: %q", line)
+		}
+	}
+}
+
+func TestIndexRemove_removesDisabledCatalog(t *testing.T) {
+	pluginsDir := t.TempDir()
+	registerLocalCatalog(t, pluginsDir, "acme")
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+
+	// A disabled catalog can still be cleaned up.
+	out, err := runIndex(t, pluginsDir, "", "remove", "acme")
+	if err != nil {
+		t.Fatalf("removing a disabled catalog should succeed: %v", err)
+	}
+	if !strings.Contains(out, "Removed catalog acme") {
+		t.Fatalf("unexpected output: %s", out)
+	}
+	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") != nil {
+		t.Fatal("acme should be gone after remove")
+	}
+}
+
+func TestSearch_excludesDisabledCatalogAndWarns(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+	registerLocalCatalog(t, pluginsDir, "acme")
+	// Pre-seed acme's cache with its "deploy" plugin so a network fetch isn't
+	// needed to prove it would otherwise appear.
+	seedFreshCache(t, pluginsDir, "acme", testPlugin("deploy", "v2.1.0", "ACME guided deploy"))
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+
+	out, err := execPluginCmd(t, pluginsDir, searchCmd())
+	if err != nil {
+		t.Fatalf("search must not fail: %v", err)
+	}
+	if !strings.Contains(out, "dns") {
+		t.Fatalf("the permitted datum catalog's plugin should appear: %s", out)
+	}
+	if strings.Contains(out, "deploy") {
+		t.Fatalf("a disabled catalog's plugin must not appear in search: %s", out)
+	}
+	if !strings.Contains(out, "disabled") || !strings.Contains(out, "acme") {
+		t.Fatalf("search should warn that acme is disabled: %s", out)
+	}
+}
+
 func TestIndexValidate_goodAndBad(t *testing.T) {
 	pluginsDir := t.TempDir()
 

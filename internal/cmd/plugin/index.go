@@ -206,6 +206,11 @@ func indexListCmd() *cobra.Command {
 			var wg sync.WaitGroup
 			for i := range reg.Catalogs {
 				cat := reg.Catalogs[i]
+				if cat.Disabled {
+					// A disabled catalog is excluded from use; don't fetch it. It is
+					// still listed below, marked disabled, so the state is visible.
+					continue
+				}
 				cached, _ := pluginstore.LoadCatalogIndex(pluginsDir, cat.Name)
 				if !pluginstore.IsStale(cached) {
 					indexes[i] = cached
@@ -235,6 +240,17 @@ func indexListCmd() *cobra.Command {
 					count = fmt.Sprintf("%d", len(idx.Plugins))
 					if desc == "" && idx.Header.Description != "" {
 						desc = idx.Header.Description
+					}
+				}
+				if cat.Disabled {
+					// Mark a disabled catalog inline so the user understands why it no
+					// longer participates in search/install rather than seeing it vanish.
+					count = "—"
+					marker := "(disabled: not in allow-list)"
+					if desc != "" {
+						desc = marker + " " + desc
+					} else {
+						desc = marker
 					}
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cat.Name, cat.Type, count, cat.Trust(), desc)
@@ -329,15 +345,21 @@ func indexUpdateCmd() *cobra.Command {
 				return fmt.Errorf("load catalog registry: %w", err)
 			}
 
+			warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
+
 			var targets []pluginstore.Catalog
 			if len(args) == 1 {
 				cat := reg.Find(args[0])
 				if cat == nil {
 					return customerrors.NewUserError(fmt.Sprintf("catalog %q is not registered", args[0]))
 				}
+				if cat.Disabled {
+					return customerrors.NewUserError(fmt.Sprintf("catalog %q is disabled: %s", args[0], cat.DisabledReason))
+				}
 				targets = []pluginstore.Catalog{*cat}
 			} else {
-				targets = reg.Catalogs
+				// Disabled catalogs are excluded from use, so don't refresh them.
+				targets = reg.Active()
 			}
 
 			var failures int

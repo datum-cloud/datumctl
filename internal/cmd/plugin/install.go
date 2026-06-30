@@ -74,6 +74,7 @@ The plugin binary is written to the managed plugins directory
 			if err != nil {
 				return fmt.Errorf("load catalog registry: %w", err)
 			}
+			warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
 			return installArg(cmd, pluginsDir, reg, args[0], currentVersion)
 		},
 	}
@@ -182,6 +183,9 @@ func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 	if cat == nil {
 		return customerrors.NewUserError(fmt.Sprintf("catalog %q is not registered; run 'datumctl plugin index add %s <source>' first", catalogName, catalogName))
 	}
+	if cat.Disabled {
+		return customerrors.NewUserError(fmt.Sprintf("catalog %q is disabled: %s", catalogName, cat.DisabledReason))
+	}
 	idx, err := loadOrRefreshCatalog(cmd, pluginsDir, *cat)
 	if err != nil {
 		return indexFetchUserError(err)
@@ -262,6 +266,7 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 	if err != nil {
 		return fmt.Errorf("load catalog registry: %w", err)
 	}
+	warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
 
 	// Lazily load+refresh each catalog index, memoized by catalog name.
 	indexCache := map[string]*pluginstore.CachedIndex{}
@@ -272,6 +277,9 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 		cat := reg.Find(catalogName)
 		if cat == nil {
 			return nil, fmt.Errorf("catalog %q is no longer registered", catalogName)
+		}
+		if cat.Disabled {
+			return nil, fmt.Errorf("catalog %q is disabled: %s", catalogName, cat.DisabledReason)
 		}
 		idx, loadErr := loadOrRefreshCatalog(cmd, pluginsDir, *cat)
 		if loadErr != nil {
