@@ -10,7 +10,11 @@ type Manifest struct {
 
 // InstalledPlugin is one entry in the managed install record.
 type InstalledPlugin struct {
-	Source      string          `json:"source"`
+	Source string `json:"source"`
+	// Catalog is the name of the catalog (index) the plugin was installed from,
+	// e.g. "default" or "acme". Empty for direct owner/repo installs and for
+	// records written before the marketplace feature (treated as unknown).
+	Catalog     string          `json:"catalog,omitempty"`
 	Version     string          `json:"version"`
 	SHA256      string          `json:"sha256"`
 	InstalledAt time.Time       `json:"installed_at"`

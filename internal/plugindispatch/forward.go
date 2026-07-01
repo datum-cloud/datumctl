@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -53,18 +54,37 @@ func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.Datum
 
 // VerifyManagedPluginIntegrity loads plugins.json, finds the entry for name,
 // hashes the binary at binaryPath, and compares against InstalledPlugin.SHA256.
-// Returns nil if the entry has no recorded SHA256 (e.g. manually placed binary).
+//
+// It fails closed: a managed binary stored under its GENERIC name (e.g. "ipam")
+// is trusted only when plugins.json has a record for it with a non-empty SHA256
+// that matches the on-disk bytes. A generic-named binary with no record, an
+// empty recorded hash, or an unreadable manifest is REJECTED, so a bare binary
+// dropped into the managed directory cannot be exec'd with DATUM_* credentials.
+//
+// The one documented exception is the legacy "datumctl-<name>" layout: plugins
+// installed under the datumctl- prefix before install records existed predate
+// the SHA256 bookkeeping, so they are allowed through without a record. A
+// recorded legacy binary is still hash-checked when an entry is present.
 func VerifyManagedPluginIntegrity(pluginsDir, name, binaryPath string) error {
+	legacy := isLegacyManagedName(name, binaryPath)
+
 	manifest, err := pluginstore.Load(pluginsDir)
 	if err != nil {
-		// Cannot load manifest — proceed without verification rather than blocking.
-		return nil
+		// Manifest unreadable. Legacy datumctl-<name> installs predate records
+		// and must still run; generic-named binaries fail closed.
+		if legacy {
+			return nil
+		}
+		return fmt.Errorf("plugin %s has no verifiable install record (cannot read plugins.json); run 'datumctl plugin install %s' to (re)install it", name, name)
 	}
 
 	entry, ok := manifest.Plugins[name]
 	if !ok || entry == nil || entry.SHA256 == "" {
-		// No recorded SHA256 — nothing to verify.
-		return nil
+		// No recorded SHA256.
+		if legacy {
+			return nil
+		}
+		return fmt.Errorf("plugin %s is not a recorded managed plugin; run 'datumctl plugin install %s' to install it", name, name)
 	}
 
 	data, err := os.ReadFile(binaryPath)
@@ -79,6 +99,21 @@ func VerifyManagedPluginIntegrity(pluginsDir, name, binaryPath string) error {
 		return fmt.Errorf("plugin %s binary has been modified since install; run 'datumctl plugin install %s' to reinstall", name, name)
 	}
 	return nil
+}
+
+// isLegacyManagedName reports whether binaryPath is the legacy
+// "datumctl-<name>" managed layout (with an optional .exe suffix on Windows)
+// for the given generic plugin name. Legacy installs predate install records
+// and are allowed through VerifyManagedPluginIntegrity without a recorded hash.
+func isLegacyManagedName(name, binaryPath string) bool {
+	base := filepath.Base(binaryPath)
+	if base == "datumctl-"+name {
+		return true
+	}
+	if runtime.GOOS == "windows" && base == "datumctl-"+name+".exe" {
+		return true
+	}
+	return false
 }
 
 // ForwardCompletion checks whether os.Args represents a __complete call for a plugin.
@@ -124,6 +159,12 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 			// Return nil so cobra can handle completion for built-in commands.
 			return nil
 		}
+	} else if VerifyManagedPluginIntegrity(pluginsDir, name, binaryPath) != nil {
+		// Defense in depth: a managed plugin is exec'd with DATUM_* credentials
+		// during completion. Fail closed for a bare unrecorded binary dropped
+		// into the managed dir so it cannot harvest credentials on a tab-press.
+		// Silently decline so cobra still handles built-in completion.
+		return nil
 	}
 
 	// Strip the plugin name from the forwarded args so the plugin sees
@@ -202,7 +243,7 @@ func ForwardHelp(pluginsDir string) error {
 			binaryPath = abs
 		}
 		if !pluginstore.IsTrusted(pluginsDir, name, binaryPath) {
-			return fmt.Errorf("'datumctl-%s' is an unmanaged plugin that has not been trusted; run: datumctl plugin trust %s", name, name)
+			return fmt.Errorf("'%s' is an unmanaged plugin that has not been trusted; run: datumctl plugin trust %s", filepath.Base(binaryPath), name)
 		}
 	}
 

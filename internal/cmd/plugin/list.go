@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	"go.datum.net/datumctl/internal/plugindispatch"
 	"go.datum.net/datumctl/internal/pluginstore"
@@ -16,19 +17,20 @@ func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List installed datumctl plugins",
-		Long: `List all managed plugins recorded in plugins.json.
+		Long: templates.LongDesc(`
+			List the plugins you have installed, without running any of them.
 
-Reads plugins.json only — never execs plugin binaries.
+			Status column indicators:
+			  ok      Plugin is installed and compatible with this datumctl.
+			  update  A newer version is available in its catalog.
+			  !       Built for a different datumctl version.
+			  ?       Version info unavailable.
 
-Status column indicators:
-  ok      Plugin is installed and API version matches.
-  update  A newer version is available in the plugin index.
-  !       Stored api_version does not match the host's API version.
-  ?       No manifest recorded (plugin did not respond to --plugin-manifest).
-
-Run 'datumctl plugin search' to refresh the plugin index.`,
-		Example: `  # List all installed plugins
-  datumctl plugin list`,
+			Run 'datumctl plugin search' to refresh available plugins from your
+			catalogs.`),
+		Example: templates.Examples(`
+			# List all installed plugins
+			datumctl plugin list`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
 			if err != nil {
@@ -45,11 +47,20 @@ Run 'datumctl plugin search' to refresh the plugin index.`,
 				return nil
 			}
 
-			// Load the cached index read-only — no network calls.
-			idx, _ := pluginstore.LoadIndex()
+			// Load cached catalog indexes read-only — no network calls. Memoized
+			// per catalog so each is read at most once.
+			indexCache := map[string]*pluginstore.CachedIndex{}
+			catalogIndex := func(catalogName string) *pluginstore.CachedIndex {
+				if idx, ok := indexCache[catalogName]; ok {
+					return idx
+				}
+				idx, _ := pluginstore.LoadCatalogIndex(pluginsDir, catalogName)
+				indexCache[catalogName] = idx
+				return idx
+			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION\tSTATUS")
+			fmt.Fprintln(w, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION\tSTATUS")
 			var anyUpdates bool
 			for name, entry := range manifest.Plugins {
 				description := ""
@@ -62,15 +73,18 @@ Run 'datumctl plugin search' to refresh the plugin index.`,
 						status = "!"
 					}
 				}
-				if status == "ok" {
-					if indexEntry := pluginstore.FindInIndex(idx, name); indexEntry != nil {
+				indexLabel, trust := installedCatalogLabel(entry)
+				// Update detection only applies to catalog-sourced plugins (the
+				// "(direct)" label marks a direct GitHub install with no catalog).
+				if status == "ok" && indexLabel != "(direct)" {
+					if indexEntry := pluginstore.FindInIndex(catalogIndex(indexLabel), name); indexEntry != nil {
 						if isUpdateAvailable(entry.Version, indexEntry.Spec.Version) {
 							status = "update"
 							anyUpdates = true
 						}
 					}
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, entry.Version, description, status)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, indexLabel, entry.Version, trust, description, status)
 			}
 			if err := w.Flush(); err != nil {
 				return err

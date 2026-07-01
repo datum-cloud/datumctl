@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/pluginstore"
 )
 
 // runLanding prints a contextual welcome when `datumctl` is invoked with no
@@ -113,6 +115,7 @@ func printLoggedInLanding(out io.Writer, cfg *datumconfig.ConfigV1Beta1, session
 		fmt.Fprintln(out, "                         datumctl describe <resource> <name>")
 		fmt.Fprintln(out, "  Ship something         datumctl apply -f file.yaml")
 		fmt.Fprintln(out, "                         datumctl create <resource> ...")
+		fmt.Fprintln(out, "  Extend datumctl        datumctl plugin browse")
 		fmt.Fprintln(out, "  Explore the API        datumctl api-resources")
 		fmt.Fprintln(out, "  Follow the audit trail datumctl activity")
 		fmt.Fprintln(out, "  Switch context         datumctl ctx")
@@ -120,10 +123,71 @@ func printLoggedInLanding(out io.Writer, cfg *datumconfig.ConfigV1Beta1, session
 	fmt.Fprintln(out, "  Switch account         datumctl auth switch")
 	fmt.Fprintln(out)
 
+	// Installed plugins become `datumctl <command>` verbs, so reflect the user's
+	// own setup on the landing. Best-effort and local-only — never blocks the
+	// landing on a missing or unreadable plugin store.
+	printInstalledPlugins(out)
+
 	fmt.Fprintf(out, "Tip: %s\n", pickTip(time.Now().UnixNano()))
 	fmt.Fprintln(out)
 
 	fmt.Fprintln(out, "Run 'datumctl --help' for the full command reference.")
+}
+
+// printInstalledPlugins renders a "Your plugins" block listing each installed
+// plugin as a runnable `datumctl <command>` verb with the catalog it came from.
+// It is best-effort and local-only: any error reading the plugin store, or no
+// installed plugins, simply prints nothing.
+func printInstalledPlugins(out io.Writer) {
+	dir, err := pluginstore.PluginsDir("")
+	if err != nil {
+		return
+	}
+	manifest, err := pluginstore.Load(dir)
+	if err != nil || manifest == nil || len(manifest.Plugins) == 0 {
+		return
+	}
+
+	names := make([]string, 0, len(manifest.Plugins))
+	for name := range manifest.Plugins {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Pad the command column so the source labels line up.
+	cmdWidth := 0
+	for _, name := range names {
+		if w := len("datumctl " + name); w > cmdWidth {
+			cmdWidth = w
+		}
+	}
+
+	for i, name := range names {
+		label := ""
+		if i == 0 {
+			label = "Your plugins"
+		}
+		command := "datumctl " + name
+		fmt.Fprintf(out, "  %-22s %-*s (%s)\n", label, cmdWidth, command, landingPluginSource(manifest.Plugins[name]))
+	}
+	fmt.Fprintln(out)
+}
+
+// landingPluginSource returns a short catalog label for an installed plugin,
+// mirroring how `plugin list` labels provenance.
+func landingPluginSource(entry *pluginstore.InstalledPlugin) string {
+	if entry == nil {
+		return ""
+	}
+	if entry.Catalog != "" {
+		return pluginstore.CanonicalCatalogName(entry.Catalog)
+	}
+	// Legacy records: a slash in Source means a direct GitHub install; otherwise
+	// it came from the curated official catalog.
+	if strings.Contains(entry.Source, "/") {
+		return "direct"
+	}
+	return pluginstore.OfficialCatalogName
 }
 
 // firstName returns the first whitespace-delimited token of full. Returns ""
@@ -169,6 +233,10 @@ var landingTips = []string{
 	// Audit tips
 	"'datumctl activity' tails the audit trail across your whole control plane.",
 	"'datumctl activity --start-time now-1h' scopes the feed to the last hour.",
+	// Plugin / marketplace tips
+	"'datumctl plugin browse' explores plugins across every registered catalog.",
+	"'datumctl plugin search <keyword>' finds plugins to install from any catalog.",
+	"'datumctl plugin index add <name> <url>' registers a team or community catalog.",
 	// Power-user tips
 	"Set DATUM_PROJECT or DATUM_ORGANIZATION to override context for a single command.",
 	"'datumctl describe <resource> <name>' shows status conditions — handy for debugging.",

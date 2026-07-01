@@ -6,36 +6,58 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"k8s.io/kubectl/pkg/util/templates"
 
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
 func searchCmd() *cobra.Command {
-	return &cobra.Command{
+	var indexName string
+	cmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search for available datumctl plugins",
-		Long: `Search the curated plugin index for available datumctl plugins.
+		Long: templates.LongDesc(`
+			Search every registered plugin catalog for available datumctl plugins.
 
-The index is fetched from the datum-cloud/datumctl-plugins repository and
-cached locally. An optional query filters results by name or description.
+			Results span the official datum catalog and any catalogs you have added,
+			with a column showing which catalog each plugin came from and a trust badge
+			("official" for Datum's curated datum catalog, "third-party" for catalogs
+			you added). An optional query filters by name or description; use --index to
+			scope to one catalog.
 
-Run 'datumctl plugin install <name>' to install a plugin listed here.`,
-		Example: `  # List all available plugins
-  datumctl plugin search
+			Run 'datumctl plugin install <name>' to install a plugin listed here.`),
+		Example: templates.Examples(`
+			# List all available plugins across catalogs
+			datumctl plugin search
 
-  # Search for DNS-related plugins
-  datumctl plugin search dns`,
+			# Search for DNS-related plugins
+			datumctl plugin search dns
+
+			# Scope the search to one catalog
+			datumctl plugin search dns --index acme`),
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			idx, err := pluginstore.LoadIndex()
-			if err != nil || pluginstore.IsStale(idx) {
-				idx, err = pluginstore.RefreshIndex(cmd.Context())
-				if err != nil {
-					if idx == nil {
-						return indexFetchUserError(err)
-					}
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: index refresh failed (%v), showing cached results\n", err)
+			pluginsDir, err := resolvePluginsDir(cmd)
+			if err != nil {
+				return err
+			}
+			reg, err := pluginstore.LoadRegistry(pluginsDir)
+			if err != nil {
+				return fmt.Errorf("load catalog registry: %w", err)
+			}
+
+			warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
+			catalogs := reg.Active()
+			if indexName != "" {
+				cat := reg.Find(indexName)
+				if cat == nil {
+					return customerrors.NewUserError(fmt.Sprintf("catalog %q is not registered", indexName))
 				}
+				if cat.Disabled {
+					return customerrors.NewUserError(fmt.Sprintf("catalog %q is disabled: %s", indexName, cat.DisabledReason))
+				}
+				catalogs = []pluginstore.Catalog{*cat}
 			}
 
 			query := ""
@@ -44,15 +66,35 @@ Run 'datumctl plugin install <name>' to install a plugin listed here.`,
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION")
-			for _, p := range idx.Plugins {
-				if query != "" && !strings.Contains(p.Name, query) &&
-					!strings.Contains(strings.ToLower(p.Spec.ShortDescription), query) {
+			fmt.Fprintln(w, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION")
+			var rows int
+			for i := range catalogs {
+				cat := catalogs[i]
+				idx, idxErr := loadOrRefreshCatalog(cmd, pluginsDir, cat)
+				if idxErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: skipping catalog %q: %v\n", cat.Name, idxErr)
 					continue
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Spec.Version, p.Spec.ShortDescription)
+				for j := range idx.Plugins {
+					p := &idx.Plugins[j]
+					if query != "" && !strings.Contains(p.Name, query) &&
+						!strings.Contains(strings.ToLower(p.Spec.ShortDescription), query) {
+						continue
+					}
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+						p.Name, cat.Name, p.Spec.Version, cat.Trust(), p.Spec.ShortDescription)
+					rows++
+				}
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			if rows == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No matching plugins found.")
+			}
+			return nil
 		},
 	}
+	cmd.Flags().StringVar(&indexName, "index", "", "Scope the search to a single catalog")
+	return cmd
 }

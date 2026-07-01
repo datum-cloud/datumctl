@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -65,16 +67,27 @@ func exitCodeFromErr(err error) (int, bool) {
 // PluginAPIVersion is the current plugin API version declared by this host.
 const PluginAPIVersion = 1
 
+// pluginPATHPrefixes are the filename prefixes that mark a bare binary on PATH
+// as a datumctl plugin. "milo-" identifies portable milo-os platform plugins
+// (host-agnostic, e.g. milo-ipam); "datumctl-" identifies datumctl-native
+// plugins. A bare/generic name is NEVER resolved from PATH — a generic name is
+// trusted only from the integrity-checked managed directory.
+var pluginPATHPrefixes = []string{"datumctl-", "milo-"}
+
 // FindPlugin resolves a plugin name to an absolute binary path.
 // Managed dir is searched first, then PATH.
 // Returns (path, isManaged, error).
+//
+// Managed (catalog/index-installed) plugins are stored under their GENERIC name
+// (e.g. "ipam"), so the managed lookup resolves "<pluginsDir>/<name>" first and
+// falls back to a legacy "<pluginsDir>/datumctl-<name>" file for plugins
+// installed before generic naming. The PATH fallback deliberately remains
+// "datumctl-<name>" ONLY: a generic name is trusted as a plugin solely from the
+// integrity-checked managed directory, never from a bare PATH binary.
 func FindPlugin(name, pluginsDir string) (path string, managed bool, err error) {
-	binaryName := "datumctl-" + name
-
-	// Search managed dir first.
+	// Search managed dir first, generic name then legacy datumctl- prefix.
 	if pluginsDir != "" {
-		managedPath := filepath.Join(pluginsDir, binaryName)
-		if info, statErr := os.Stat(managedPath); statErr == nil && !info.IsDir() {
+		if managedPath, ok := findManagedBinary(pluginsDir, name); ok {
 			abs, absErr := filepath.Abs(managedPath)
 			if absErr != nil {
 				return "", false, fmt.Errorf("resolve managed plugin path: %w", absErr)
@@ -83,12 +96,37 @@ func FindPlugin(name, pluginsDir string) (path string, managed bool, err error) 
 		}
 	}
 
-	// Fall back to PATH.
-	found, lookErr := exec.LookPath(binaryName)
-	if lookErr != nil {
-		return "", false, fmt.Errorf("plugin %q not found in managed directory or PATH", name)
+	// Fall back to PATH — only a recognized plugin prefix (milo- or datumctl-)
+	// marks a bare PATH binary as a datumctl plugin. Generic names are never
+	// resolved from PATH.
+	for _, prefix := range pluginPATHPrefixes {
+		if found, lookErr := exec.LookPath(prefix + name); lookErr == nil {
+			return found, false, nil
+		}
 	}
-	return found, false, nil
+	return "", false, fmt.Errorf("plugin %q not found in managed directory or PATH", name)
+}
+
+// findManagedBinary returns the path to a managed plugin binary, trying the
+// generic name first and a legacy datumctl-<name> file second (with a .exe
+// variant on Windows). The returned path is reported only when it is a regular
+// file, so a directory such as the per-catalog cache cannot shadow a plugin.
+func findManagedBinary(pluginsDir, name string) (string, bool) {
+	candidates := []string{name}
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, name+".exe")
+	}
+	candidates = append(candidates, "datumctl-"+name)
+	if runtime.GOOS == "windows" {
+		candidates = append(candidates, "datumctl-"+name+".exe")
+	}
+	for _, c := range candidates {
+		p := filepath.Join(pluginsDir, c)
+		if info, statErr := os.Stat(p); statErr == nil && !info.IsDir() {
+			return p, true
+		}
+	}
+	return "", false
 }
 
 // BuildEnv constructs the plugin ENV overlay as a []string suitable for
@@ -155,28 +193,33 @@ func ListPluginNames(pluginsDir string, descriptions map[string]string) []string
 		}
 	}
 
-	// Managed dir first.
+	// Managed plugins are recorded in plugins.json, not detectable by a filename
+	// prefix (they are stored under their generic name), so the install record is
+	// the source of truth for managed names.
 	if pluginsDir != "" {
-		entries, _ := os.ReadDir(pluginsDir)
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			if n, ok := strings.CutPrefix(e.Name(), "datumctl-"); ok {
-				candidate(n, descriptions[n])
+		if m, loadErr := pluginstore.Load(pluginsDir); loadErr == nil {
+			for n, entry := range m.Plugins {
+				desc := descriptions[n]
+				if desc == "" && entry != nil && entry.Manifest != nil {
+					desc = entry.Manifest.Description
+				}
+				candidate(n, desc)
 			}
 		}
 	}
 
-	// PATH: walk every directory and collect datumctl-* executables.
+	// PATH: walk every directory and collect milo-* and datumctl-* executables.
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		entries, _ := os.ReadDir(dir)
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
 			}
-			if n, ok := strings.CutPrefix(e.Name(), "datumctl-"); ok {
-				candidate(n, descriptions[n])
+			for _, prefix := range pluginPATHPrefixes {
+				if n, ok := strings.CutPrefix(e.Name(), prefix); ok {
+					candidate(n, descriptions[n])
+					break
+				}
 			}
 		}
 	}
@@ -189,9 +232,9 @@ func ListPluginNames(pluginsDir string, descriptions map[string]string) []string
 func IsBuiltIn(root *cobra.Command, name string) bool {
 	// Reserved names that are always built-in.
 	reserved := map[string]bool{
-		"help":         true,
-		"completion":   true,
-		"__complete":   true,
+		"help":             true,
+		"completion":       true,
+		"__complete":       true,
 		"__completeNoDesc": true,
 	}
 	if reserved[name] {
@@ -204,10 +247,8 @@ func IsBuiltIn(root *cobra.Command, name string) bool {
 			return true
 		}
 		// Check aliases.
-		for _, alias := range sub.Aliases {
-			if alias == name {
-				return true
-			}
+		if slices.Contains(sub.Aliases, name) {
+			return true
 		}
 	}
 	return false
@@ -261,16 +302,16 @@ func overlayEnv(base []string, overlay []string) []string {
 	// Build a set of keys that appear in the overlay.
 	overrideKeys := make(map[string]struct{}, len(overlay))
 	for _, kv := range overlay {
-		if idx := strings.IndexByte(kv, '='); idx >= 0 {
-			overrideKeys[kv[:idx]] = struct{}{}
+		if key, _, ok := strings.Cut(kv, "="); ok {
+			overrideKeys[key] = struct{}{}
 		}
 	}
 
 	// Keep base entries whose keys are not in the overlay.
 	result := make([]string, 0, len(base)+len(overlay))
 	for _, kv := range base {
-		if idx := strings.IndexByte(kv, '='); idx >= 0 {
-			if _, ok := overrideKeys[kv[:idx]]; ok {
+		if key, _, ok := strings.Cut(kv, "="); ok {
+			if _, dup := overrideKeys[key]; dup {
 				continue
 			}
 		}

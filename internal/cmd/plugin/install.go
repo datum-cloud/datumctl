@@ -17,17 +17,22 @@ import (
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
-func installCmd(factory *client.DatumCloudFactory) *cobra.Command {
+func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install [name | owner/repo[@version]]",
 		Short: "Install a datumctl plugin",
-		Long: `Install a datumctl plugin from the curated plugin index or a GitHub Release.
+		Long: `Install a datumctl plugin from a plugin catalog or a GitHub Release.
 
-With no arguments, restores all plugins recorded in plugins.json to their
-recorded versions. Use this to reproduce a plugin set on a new machine.
+With no arguments, restores all previously installed plugins to their recorded
+versions. Use this to reproduce a plugin set on a new machine.
 
-With a plugin name argument, installs from the curated index:
-  - name             installs the latest indexed version
+With a plugin name argument, installs from a registered catalog:
+  - name                 resolves against the official datum catalog first, then
+                         any other registered catalog; a name found in more than
+                         one catalog prints the options instead of guessing
+  - name@version         installs a specific version of a catalog plugin
+  - catalog/name         installs from a specific registered catalog (e.g. datum/dns)
+  - catalog/name@version installs a specific version from a specific catalog
 
 With an owner/repo argument, installs directly from a GitHub Release:
   - owner/repo         installs the latest release
@@ -35,8 +40,11 @@ With an owner/repo argument, installs directly from a GitHub Release:
 
 The plugin binary is written to the managed plugins directory
 (~/.datumctl/plugins/ by default).`,
-		Example: `  # Install the dns plugin from the curated index
+		Example: `  # Install the dns plugin from the official datum catalog
   datumctl plugin install dns
+
+  # Install from a specific catalog
+  datumctl plugin install acme/deploy
 
   # Install directly from a GitHub Release
   datumctl plugin install datum-cloud/datumctl-dns
@@ -44,7 +52,11 @@ The plugin binary is written to the managed plugins directory
   # Install a specific version from GitHub
   datumctl plugin install datum-cloud/datumctl-dns@v1.2.0
 
-  # Restore all plugins from plugins.json
+  # Install a specific version of a catalog plugin
+  datumctl plugin install dns@v1.2.0
+  datumctl plugin install acme/deploy@v2.0.0
+
+  # Restore all previously installed plugins
   datumctl plugin install`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
@@ -58,31 +70,12 @@ The plugin binary is written to the managed plugins directory
 				return installAllFromManifest(cmd, pluginsDir, currentVersion)
 			}
 
-			arg := args[0]
-
-			// Third-party GitHub release path.
-			if strings.Contains(arg, "/") {
-				owner, repo, version, parseErr := parseSource(arg)
-				if parseErr != nil {
-					return customerrors.NewUserError(parseErr.Error())
-				}
-				entry, pluginName, binaryPath, installErr := installPluginFromGitHub(cmd.Context(), pluginsDir, owner, repo, version, currentVersion)
-				if installErr != nil {
-					return customerrors.NewUserError(fmt.Sprintf("install plugin %s/%s: %v", owner, repo, installErr))
-				}
-				return saveAndReport(cmd, pluginsDir, pluginName, entry, binaryPath)
+			reg, err := pluginstore.LoadRegistry(pluginsDir)
+			if err != nil {
+				return fmt.Errorf("load catalog registry: %w", err)
 			}
-
-			// Curated index path.
-			idx, idxErr := loadOrRefreshIndex(cmd)
-			if idxErr != nil {
-				return indexFetchUserError(idxErr)
-			}
-			entry, pluginName, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, arg, "", currentVersion, idx)
-			if installErr != nil {
-				return customerrors.NewUserError(fmt.Sprintf("install plugin %s: %v", arg, installErr))
-			}
-			return saveAndReport(cmd, pluginsDir, pluginName, entry, binaryPath)
+			warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
+			return installArg(cmd, pluginsDir, reg, args[0], currentVersion)
 		},
 	}
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -99,6 +92,127 @@ The plugin binary is written to the managed plugins directory
 		return names, cobra.ShellCompDirectiveNoFileComp
 	}
 	return cmd
+}
+
+// installRouteKind identifies which install path an argument resolves to.
+type installRouteKind int
+
+const (
+	// routeGitHub installs directly from a GitHub release (owner/repo).
+	routeGitHub installRouteKind = iota
+	// routeCatalog installs a named plugin from a specific registered catalog.
+	routeCatalog
+	// routeBare resolves a bare plugin name across all registered catalogs.
+	routeBare
+)
+
+// installRoute is the parsed routing decision for a single install argument.
+// It is produced by routeInstallArg and consumed by installArg; keeping the
+// decision in a pure value makes the routing logic unit-testable without
+// performing real network installs.
+type installRoute struct {
+	kind installRouteKind
+	// ghSource is the "owner/repo" (or "github.com/owner/repo") string to hand
+	// to the GitHub install path; only set for routeGitHub.
+	ghSource string
+	// catalog is the registered catalog name; only set for routeCatalog.
+	catalog string
+	// name is the plugin name (catalog/bare paths); unset for routeGitHub.
+	name string
+	// version is the trailing "@version" requested, or "" for latest. It is
+	// threaded through every route.
+	version string
+}
+
+// routeInstallArg parses a single install argument into a routing decision.
+// Any trailing "@version" is split off FIRST, then routing is decided on the
+// remaining string so that version-pinning works uniformly across catalogs and
+// GitHub:
+//   - "catalog/name"  -> routeCatalog, when the prefix is a registered catalog
+//   - "owner/repo"    -> routeGitHub otherwise (the slash is owner/repo)
+//   - "name"          -> routeBare, resolved across catalogs (default first)
+//
+// The version is carried on the route so "catalog/name@v2", "name@v2", and
+// "owner/repo@v2" all pin the requested version through their respective paths.
+func routeInstallArg(reg *pluginstore.Registry, arg string) installRoute {
+	rest, version, _ := strings.Cut(arg, "@")
+	if strings.Contains(rest, "/") {
+		prefix, name, _ := strings.Cut(rest, "/")
+		if reg.Find(prefix) != nil {
+			return installRoute{kind: routeCatalog, catalog: prefix, name: name, version: version}
+		}
+		return installRoute{kind: routeGitHub, ghSource: rest, version: version}
+	}
+	return installRoute{kind: routeBare, name: rest, version: version}
+}
+
+// installArg dispatches a single install argument to the right path based on
+// catalog-aware addressing. See routeInstallArg for the routing rules.
+func installArg(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, arg, currentVersion string) error {
+	route := routeInstallArg(reg, arg)
+	switch route.kind {
+	case routeCatalog:
+		return installFromCatalog(cmd, pluginsDir, reg, route.catalog, route.name, route.version, currentVersion)
+	case routeBare:
+		return installBareName(cmd, pluginsDir, reg, route.name, route.version, currentVersion)
+	default:
+		return installGitHubArg(cmd, pluginsDir, route.ghSource, route.version, currentVersion)
+	}
+}
+
+// installGitHubArg installs directly from a GitHub release. ghSource is the
+// "owner/repo" (or "github.com/owner/repo") string with any "@version" already
+// split off; the requested version is passed separately.
+func installGitHubArg(cmd *cobra.Command, pluginsDir, ghSource, version, currentVersion string) error {
+	owner, repo, _, parseErr := parseSource(ghSource)
+	if parseErr != nil {
+		return customerrors.NewUserError(parseErr.Error())
+	}
+	entry, pluginName, binaryPath, installErr := installPluginFromGitHub(cmd.Context(), pluginsDir, owner, repo, version, currentVersion)
+	if installErr != nil {
+		return customerrors.NewUserError(fmt.Sprintf("install plugin %s/%s: %v", owner, repo, installErr))
+	}
+	return saveAndReport(cmd, pluginsDir, pluginName, entry, binaryPath)
+}
+
+// installFromCatalog installs a named plugin from a specific registered
+// catalog. version pins a specific release, or "" installs the catalog's
+// recommended version.
+func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, catalogName, pluginName, version, currentVersion string) error {
+	cat := reg.Find(catalogName)
+	if cat == nil {
+		return customerrors.NewUserError(fmt.Sprintf("catalog %q is not registered; run 'datumctl plugin index add %s <source>' first", catalogName, catalogName))
+	}
+	if cat.Disabled {
+		return customerrors.NewUserError(fmt.Sprintf("catalog %q is disabled: %s", catalogName, cat.DisabledReason))
+	}
+	idx, err := loadOrRefreshCatalog(cmd, pluginsDir, *cat)
+	if err != nil {
+		return indexFetchUserError(err)
+	}
+	idxEntry, name, binaryPath, installErr := installPlugin(cmd.Context(), pluginsDir, pluginName, version, currentVersion, idx)
+	if installErr != nil {
+		return customerrors.NewUserError(fmt.Sprintf("install plugin %s/%s: %v", catalogName, pluginName, installErr))
+	}
+	// Record the catalog's canonical name (cat.Name), so "default/<plugin>"
+	// is stored as "datum".
+	idxEntry.Catalog = cat.Name
+	return saveAndReport(cmd, pluginsDir, name, idxEntry, binaryPath)
+}
+
+// installBareName resolves a bare plugin name across all catalogs (default
+// first) and installs the unique match, or surfaces the options on a collision.
+// version pins a specific release, or "" installs the recommended version.
+func installBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name, version, currentVersion string) error {
+	matches := resolveBareName(cmd, pluginsDir, reg, name)
+	switch len(matches) {
+	case 0:
+		return customerrors.NewUserError(fmt.Sprintf("plugin %q not found in any registered catalog; run 'datumctl plugin search %s' to look for it", name, name))
+	case 1:
+		return installFromCatalog(cmd, pluginsDir, reg, matches[0].catalog.Name, name, version, currentVersion)
+	default:
+		return customerrors.NewUserError(collisionError(name, matches).Error())
+	}
 }
 
 // saveAndReport upserts plugins.json and prints the install confirmation.
@@ -122,29 +236,21 @@ func saveAndReport(cmd *cobra.Command, pluginsDir, pluginName string, entry *plu
 		}
 		return fmt.Errorf("save plugins manifest: %w", saveErr)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Installed %s %s\n", pluginName, entry.Version)
+	if entry.Catalog != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Installed %s %s from %s  [%s]\n",
+			pluginName, entry.Version, entry.Catalog, installBadge(entry.Catalog))
+	} else {
+		// Direct GitHub install: not from a curated catalog.
+		fmt.Fprintf(cmd.OutOrStdout(), "Installed %s %s  [%s]\n",
+			pluginName, entry.Version, pluginstore.TrustThirdParty)
+	}
 	return nil
 }
 
-// loadOrRefreshIndex loads the cached index; if stale, refreshes it.
-// Returns (nil, err) only if both load and refresh fail without a cache.
-func loadOrRefreshIndex(cmd *cobra.Command) (*pluginstore.CachedIndex, error) {
-	idx, _ := pluginstore.LoadIndex()
-	if pluginstore.IsStale(idx) {
-		fresh, refreshErr := pluginstore.RefreshIndex(cmd.Context())
-		if refreshErr != nil {
-			if fresh == nil {
-				return nil, refreshErr
-			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: index refresh failed (%v), using cached results\n", refreshErr)
-			return fresh, nil
-		}
-		return fresh, nil
-	}
-	return idx, nil
-}
-
-// installAllFromManifest restores all plugins recorded in plugins.json.
+// installAllFromManifest restores all plugins recorded in plugins.json. Each
+// recorded plugin is restored from the catalog it was originally installed from
+// (or directly from GitHub for owner/repo sources). Catalog indexes are loaded
+// lazily and memoized so each catalog is fetched at most once.
 func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion string) error {
 	manifest, err := pluginstore.Load(pluginsDir)
 	if err != nil {
@@ -152,30 +258,41 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 	}
 
 	if len(manifest.Plugins) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No plugins recorded in plugins.json.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No previously installed plugins to restore.")
 		return nil
 	}
 
-	// Load/refresh the index up front for index-based entries.
-	idx, _ := pluginstore.LoadIndex()
-	if pluginstore.IsStale(idx) {
-		fresh, refreshErr := pluginstore.RefreshIndex(cmd.Context())
-		if refreshErr != nil {
-			if fresh == nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: index refresh failed (%v); index-based plugins may fail\n", refreshErr)
-			} else {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: index refresh failed (%v), using cached results\n", refreshErr)
-				idx = fresh
-			}
-		} else {
-			idx = fresh
+	reg, err := pluginstore.LoadRegistry(pluginsDir)
+	if err != nil {
+		return fmt.Errorf("load catalog registry: %w", err)
+	}
+	warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
+
+	// Lazily load+refresh each catalog index, memoized by catalog name.
+	indexCache := map[string]*pluginstore.CachedIndex{}
+	getIndex := func(catalogName string) (*pluginstore.CachedIndex, error) {
+		if idx, ok := indexCache[catalogName]; ok {
+			return idx, nil
 		}
+		cat := reg.Find(catalogName)
+		if cat == nil {
+			return nil, fmt.Errorf("catalog %q is no longer registered", catalogName)
+		}
+		if cat.Disabled {
+			return nil, fmt.Errorf("catalog %q is disabled: %s", catalogName, cat.DisabledReason)
+		}
+		idx, loadErr := loadOrRefreshCatalog(cmd, pluginsDir, *cat)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		indexCache[catalogName] = idx
+		return idx, nil
 	}
 
 	var errs []string
 	for name, entry := range manifest.Plugins {
-		// Third-party source (owner/repo format).
-		if strings.Contains(entry.Source, "/") {
+		// Direct GitHub source (owner/repo format).
+		if entry.Catalog == "" && strings.Contains(entry.Source, "/") {
 			owner, repo, _, parseErr := parseSource(entry.Source)
 			if parseErr != nil {
 				errs = append(errs, fmt.Sprintf("%s: invalid source %q: %v", name, entry.Source, parseErr))
@@ -191,14 +308,26 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 			continue
 		}
 
-		// Curated index source (short name).
+		// Catalog source. An empty Catalog on a non-slash source is a legacy
+		// curated install, which restores from the official catalog. A recorded
+		// legacy "default" name is canonicalized to "datum".
+		catalogName := pluginstore.CanonicalCatalogName(entry.Catalog)
+		if catalogName == "" {
+			catalogName = pluginstore.OfficialCatalogName
+		}
+		idx, idxErr := getIndex(catalogName)
+		if idxErr != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, idxErr))
+			continue
+		}
 		newEntry, _, _, installErr := installPlugin(cmd.Context(), pluginsDir, name, entry.Version, currentVersion, idx)
 		if installErr != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, installErr))
 			continue
 		}
+		newEntry.Catalog = catalogName
 		manifest.Plugins[name] = newEntry
-		fmt.Fprintf(cmd.OutOrStdout(), "Installed %s %s\n", name, newEntry.Version)
+		fmt.Fprintf(cmd.OutOrStdout(), "Installed %s %s from %s\n", name, newEntry.Version, catalogName)
 	}
 
 	if saveErr := pluginstore.Save(pluginsDir, manifest); saveErr != nil {
@@ -249,8 +378,10 @@ func installPlugin(ctx context.Context, pluginsDir, pluginName, version, current
 		return nil, pluginName, "", fmt.Errorf("download plugin: %w", err)
 	}
 
-	// Extract the binary.
-	binaryName := "datumctl-" + pluginName
+	// Extract the binary, then write it under its GENERIC name (e.g. "ipam").
+	// Catalog/managed plugins are not datumctl-branded on disk; the install
+	// record in plugins.json — not a filename prefix — marks them as plugins.
+	binaryName := pluginName
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
@@ -294,35 +425,46 @@ func installPlugin(ctx context.Context, pluginsDir, pluginName, version, current
 }
 
 // extractFromArchive extracts the plugin binary from the archive bytes.
-// If platform.Files is non-empty, the first matching FileOperation is used.
-// Otherwise the binary is auto-detected by matching datumctl-<pluginName>[.exe].
+// If platform.Files is non-empty, the first FileOperation's From path is used
+// verbatim (this is how a catalog points at a specific binary). Otherwise the
+// binary is auto-detected, PREFERRING the prefixed plugin names "milo-<name>"
+// and "datumctl-<name>" over the bare "<name>". The bare name is tried last so
+// that an archive bundling a service binary that shares the bare name (e.g. the
+// milo-os "ipam" service alongside the "milo-ipam" plugin) installs the plugin,
+// never the service binary.
 func extractFromArchive(archiveBytes []byte, platform *pluginstore.Platform, pluginName, archiveURI string) ([]byte, error) {
 	isTarGz := strings.HasSuffix(archiveURI, ".tar.gz") || strings.HasSuffix(archiveURI, ".tgz")
 	isZip := strings.HasSuffix(archiveURI, ".zip")
 
+	var candidates []string
 	if len(platform.Files) > 0 {
-		// Use the first FileOperation that specifies the binary.
-		op := platform.Files[0]
-		if isTarGz {
-			return extractBinaryFromTarGz(newBytesReader(archiveBytes), op.From)
-		} else if isZip {
-			return extractBinaryFromZip(archiveBytes, op.From)
-		}
+		// Explicit binary directive from the catalog manifest.
+		candidates = []string{platform.Files[0].From}
+	} else {
+		candidates = archiveBinaryCandidates(pluginName)
+	}
+
+	if !isTarGz && !isZip {
 		return nil, fmt.Errorf("unsupported archive format for URI: %s", archiveURI)
 	}
 
-	// Auto-detect: find the file named datumctl-<pluginName>[.exe].
-	binName := "datumctl-" + pluginName
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
+	var lastErr error
+	for _, name := range candidates {
+		var (
+			b   []byte
+			err error
+		)
+		if isTarGz {
+			b, err = extractBinaryFromTarGz(newBytesReader(archiveBytes), name)
+		} else {
+			b, err = extractBinaryFromZip(archiveBytes, name)
+		}
+		if err == nil {
+			return b, nil
+		}
+		lastErr = err
 	}
-
-	if isTarGz {
-		return extractBinaryFromTarGz(newBytesReader(archiveBytes), binName)
-	} else if isZip {
-		return extractBinaryFromZip(archiveBytes, binName)
-	}
-	return nil, fmt.Errorf("unsupported archive format for URI: %s", archiveURI)
+	return nil, fmt.Errorf("no plugin binary found in archive (tried %v): %w", candidates, lastErr)
 }
 
 // installPluginFromGitHub is the third-party GitHub Release install path.
@@ -368,7 +510,8 @@ func installPluginFromGitHub(ctx context.Context, pluginsDir, owner, repo, versi
 		}
 	}
 
-	binaryName := "datumctl-" + pluginName
+	// Write under the generic name; the install record marks it as a plugin.
+	binaryName := pluginName
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}

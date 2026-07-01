@@ -59,7 +59,7 @@ var rePluginName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // pluginAssetName returns the archive filename for the current OS/arch.
 // Follows the same naming convention as updatecheck.archiveName() (capitalised OS, goarch-style arch).
 // Example: "datumctl-dns_Linux_x86_64.tar.gz"
-func pluginAssetName(pluginName, version string) (string, error) {
+func pluginAssetName(pluginName, _ string) (string, error) {
 	var osName string
 	switch runtime.GOOS {
 	case "linux":
@@ -104,10 +104,10 @@ func fetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
 
 	client := &http.Client{
 		Timeout: 15 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Follow redirects automatically; net/http handles this.
-			return nil
-		},
+		// Re-validate every redirect hop (HTTPS + non-private target) so a
+		// release-tag redirect cannot downgrade to HTTP or point at an internal
+		// address.
+		CheckRedirect: pluginstore.SafeCheckRedirect,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
@@ -139,7 +139,7 @@ func fetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
 func fetchChecksums(ctx context.Context, owner, repo, tag string) (map[string]string, error) {
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/checksums.txt", owner, repo, tag)
 
-	httpClient := &http.Client{Timeout: 15 * time.Second}
+	httpClient := &http.Client{Timeout: 15 * time.Second, CheckRedirect: pluginstore.SafeCheckRedirect}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -156,13 +156,13 @@ func fetchChecksums(ctx context.Context, owner, repo, tag string) (map[string]st
 		return nil, fmt.Errorf("couldn't verify %s/%s@%s — the release doesn't include a checksums file.\nThe plugin author needs to add checksums.txt to the GitHub Release before it can be installed safely", owner, repo, tag)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read checksums.txt: %w", err)
 	}
 
 	checksums := make(map[string]string)
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -187,7 +187,7 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 	}
 
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/download/%s/%s", owner, repo, tag, assetName)
-	httpClient := &http.Client{Timeout: pluginDownloadTimeout}
+	httpClient := &http.Client{Timeout: pluginDownloadTimeout, CheckRedirect: pluginstore.SafeCheckRedirect}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err
@@ -204,7 +204,7 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 		return nil, "", fmt.Errorf("download %s: HTTP %d", assetName, resp.StatusCode)
 	}
 
-	archiveBytes, err := io.ReadAll(resp.Body)
+	archiveBytes, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxArchiveBytes)
 	if err != nil {
 		return nil, "", fmt.Errorf("read archive: %w", err)
 	}
@@ -216,25 +216,41 @@ func downloadAndVerify(ctx context.Context, owner, repo, tag, assetName string, 
 		return nil, "", fmt.Errorf("SHA256 mismatch for %s: expected %s, got %s", assetName, expectedSHA, gotSHA)
 	}
 
-	// Extract the binary from the archive.
-	// The binary name inside the archive is the plugin name without the archive extension.
-	// e.g. for "datumctl-dns_Linux_x86_64.tar.gz", the binary is "datumctl-dns"
+	// Extract the binary from the archive. The in-archive binary may be named
+	// with a plugin prefix ("milo-dns", "datumctl-dns") or bare ("dns"). Prefer
+	// the prefixed names and try the bare name last so a bundled service binary
+	// sharing the bare name is never picked. binaryNameFromAsset already carries
+	// the platform extension (e.g. ".exe" on Windows), so prefixes are applied
+	// to that bare name without re-adding a suffix.
+	// e.g. for "datumctl-dns_Linux_x86_64.tar.gz", binaryNameFromAsset → "datumctl-dns".
 	pluginBinName := binaryNameFromAsset(assetName)
-	var extracted []byte
-	if strings.HasSuffix(assetName, ".tar.gz") {
-		extracted, err = extractBinaryFromTarGz(bytes.NewReader(archiveBytes), pluginBinName)
-	} else if strings.HasSuffix(assetName, ".zip") {
-		extracted, err = extractBinaryFromZip(archiveBytes, pluginBinName)
-	} else {
+	bare, _ := strings.CutPrefix(pluginBinName, "datumctl-")
+	candidates := make([]string, 0, len(pluginBinaryPrefixes)+1)
+	for _, prefix := range pluginBinaryPrefixes {
+		candidates = append(candidates, prefix+bare)
+	}
+	candidates = append(candidates, bare)
+
+	isTarGz := strings.HasSuffix(assetName, ".tar.gz")
+	isZip := strings.HasSuffix(assetName, ".zip")
+	if !isTarGz && !isZip {
 		return nil, "", fmt.Errorf("unsupported archive format: %s", assetName)
 	}
-	if err != nil {
-		return nil, "", fmt.Errorf("extract binary from archive: %w", err)
+
+	var extracted []byte
+	var extractErr error
+	for _, name := range candidates {
+		if isTarGz {
+			extracted, extractErr = extractBinaryFromTarGz(bytes.NewReader(archiveBytes), name)
+		} else {
+			extracted, extractErr = extractBinaryFromZip(archiveBytes, name)
+		}
+		if extractErr == nil {
+			return extracted, gotSHA, nil
+		}
 	}
-
-	return extracted, gotSHA, nil
+	return nil, "", fmt.Errorf("extract binary from archive (tried %v): %w", candidates, extractErr)
 }
-
 
 func extractBinaryFromTarGz(r io.Reader, binName string) ([]byte, error) {
 	gz, err := gzip.NewReader(r)
@@ -258,7 +274,9 @@ func extractBinaryFromTarGz(r io.Reader, binName string) ([]byte, error) {
 		if filepath.Base(hdr.Name) != binName {
 			continue
 		}
-		data, err := io.ReadAll(tr)
+		// Cap the decompressed read: SHA256 is verified on the compressed bytes,
+		// so a gzip bomb could otherwise expand a small archive without bound.
+		data, err := pluginstore.ReadCapped(tr, pluginstore.MaxDecompressedFileBytes)
 		if err != nil {
 			return nil, fmt.Errorf("extract %s: %w", binName, err)
 		}
@@ -279,7 +297,9 @@ func extractBinaryFromZip(archiveBytes []byte, binName string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open %s in zip: %w", binName, err)
 		}
-		data, copyErr := io.ReadAll(rc)
+		// Cap the decompressed read so a zip bomb cannot expand without bound;
+		// the SHA256 only covers the compressed archive.
+		data, copyErr := pluginstore.ReadCapped(rc, pluginstore.MaxDecompressedFileBytes)
 		rc.Close()
 		if copyErr != nil {
 			return nil, fmt.Errorf("extract %s: %w", binName, copyErr)
@@ -314,7 +334,7 @@ func downloadAndVerifyURI(ctx context.Context, uri, sha256hex string) ([]byte, e
 		return nil, err
 	}
 
-	httpClient := &http.Client{Timeout: pluginDownloadTimeout}
+	httpClient := &http.Client{Timeout: pluginDownloadTimeout, CheckRedirect: pluginstore.SafeCheckRedirect}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, err
@@ -331,7 +351,7 @@ func downloadAndVerifyURI(ctx context.Context, uri, sha256hex string) ([]byte, e
 		return nil, fmt.Errorf("download archive: HTTP %d", resp.StatusCode)
 	}
 
-	archiveBytes, err := io.ReadAll(resp.Body)
+	archiveBytes, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxArchiveBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read archive: %w", err)
 	}
@@ -345,14 +365,50 @@ func downloadAndVerifyURI(ctx context.Context, uri, sha256hex string) ([]byte, e
 	return archiveBytes, nil
 }
 
+// minimalManifestEnv returns a minimal, scrubbed environment used when executing
+// a freshly-downloaded plugin binary to read its manifest. It is built as an
+// allow-list from scratch (rather than scrubbing the inherited environment) so
+// that sensitive variables — Datum credentials, credential-helper config, cloud
+// provider tokens, etc. — are never exposed to third-party code by default, and
+// so newly-introduced sensitive vars do not leak as they are added over time.
+//
+// Only variables a binary plausibly needs to start up and emit a manifest are
+// forwarded: a PATH to resolve any runtime/loader, a home directory, and the
+// platform temp-dir hints. Each is copied only if present in the host
+// environment.
+func minimalManifestEnv() []string {
+	// allow is the set of variable names that may be forwarded. Keep this list
+	// conservative; anything not named here is intentionally dropped.
+	allow := []string{"PATH", "HOME", "TMPDIR", "TMP", "TEMP"}
+	if runtime.GOOS == "windows" {
+		// Windows resolves the user profile and system DLLs via these.
+		allow = append(allow, "USERPROFILE", "SYSTEMROOT", "SystemRoot", "windir")
+	}
+
+	env := make([]string, 0, len(allow))
+	for _, name := range allow {
+		if v, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+v)
+		}
+	}
+	return env
+}
+
 // readPluginManifest writes binaryPath to a temp file (if needed), runs it with
 // --plugin-manifest, and parses the JSON output. Returns nil, nil if the binary
 // exits non-zero or produces no valid JSON.
+//
+// SECURITY: this executes the (third-party, freshly-downloaded) plugin binary as
+// part of installation. Install is an explicit user action, but to shrink the
+// blast radius of running untrusted code we run it with a minimal, scrubbed
+// environment (see minimalManifestEnv) rather than the user's full environment,
+// so credentials and tokens are not exposed to the binary.
 func readPluginManifest(binaryPath string) (*pluginstore.PluginManifest, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), manifestReadTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binaryPath, "--plugin-manifest")
+	cmd.Env = minimalManifestEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		// Non-zero exit — treat as "no manifest".
@@ -530,4 +586,3 @@ func sha256HexOf(b []byte) string {
 func newBytesReader(b []byte) *bytes.Reader {
 	return bytes.NewReader(b)
 }
-

@@ -1,0 +1,430 @@
+package plugin
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"go.datum.net/datumctl/internal/pluginstore"
+)
+
+const testCatalogManifest = `name: acme
+description: ACME internal Datum tooling
+owner: ACME Platform Team
+items:
+  - metadata:
+      name: deploy
+    spec:
+      shortDescription: ACME guided deploy
+      version: v2.1.0
+      platforms:
+        - uri: https://plugins.acme.example/deploy.tar.gz
+          sha256: "abc"
+`
+
+// writeLocalCatalog creates a directory with an index.yaml and returns the dir.
+func writeLocalCatalog(t *testing.T, manifest string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// runIndex executes `index <args...>` against a fresh command tree, with stdin
+// wired to the given input. It returns stdout+stderr combined and the error.
+func runIndex(t *testing.T, pluginsDir, stdin string, args ...string) (string, error) {
+	t.Helper()
+	t.Setenv("DATUMCTL_PLUGINS_DIR", pluginsDir)
+	cmd := indexCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(strings.NewReader(stdin))
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+func TestIndexAdd_withYesRegistersCatalog(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+
+	out, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes")
+	if err != nil {
+		t.Fatalf("add failed: %v (out=%s)", err, out)
+	}
+	if !strings.Contains(out, "Added catalog acme") || !strings.Contains(out, pluginstore.TrustThirdParty) {
+		t.Fatalf("unexpected output: %s", out)
+	}
+
+	reg, err := pluginstore.LoadRegistry(pluginsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := reg.Find("acme")
+	if cat == nil {
+		t.Fatal("acme not registered")
+	}
+	if cat.TrustedAt.IsZero() {
+		t.Fatal("trustedAt not recorded")
+	}
+	// Initial refresh should have captured the header.
+	if cat.Description != "ACME internal Datum tooling" {
+		t.Fatalf("catalog header not captured: %+v", cat)
+	}
+}
+
+func TestIndexAdd_trustPromptAccept(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+
+	out, err := runIndex(t, pluginsDir, "y\n", "add", "acme", src)
+	if err != nil {
+		t.Fatalf("add failed: %v (out=%s)", err, out)
+	}
+	if !strings.Contains(out, "third-party plugin catalog") {
+		t.Fatalf("trust prompt not shown: %s", out)
+	}
+	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") == nil {
+		t.Fatal("acme should be registered after accepting")
+	}
+}
+
+func TestIndexAdd_trustPromptDecline(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+
+	out, err := runIndex(t, pluginsDir, "n\n", "add", "acme", src)
+	if err != nil {
+		t.Fatalf("decline should not error: %v", err)
+	}
+	if !strings.Contains(out, "Aborted") {
+		t.Fatalf("expected abort message: %s", out)
+	}
+	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") != nil {
+		t.Fatal("acme must NOT be registered after declining")
+	}
+}
+
+func TestIndexAdd_emptyStdinErrors(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+
+	// No stdin -> the prompt goes unanswered. Rather than silently succeeding
+	// (or silently aborting) we fail loudly so a CI script that forgot --yes is
+	// not misled into thinking the catalog was added.
+	_, err := runIndex(t, pluginsDir, "", "add", "acme", src)
+	if err == nil {
+		t.Fatal("expected an error when the trust prompt gets no confirmation")
+	}
+	if !strings.Contains(err.Error(), "requires confirmation") {
+		t.Fatalf("expected a 'requires confirmation' error, got: %v", err)
+	}
+	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") != nil {
+		t.Fatal("acme must NOT be registered when prompt gets no confirmation")
+	}
+}
+
+func TestIndexAdd_reservedNameRejected(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	for _, name := range []string{"datum", "default", "official"} {
+		if _, err := runIndex(t, pluginsDir, "", "add", name, src, "--yes"); err == nil {
+			t.Fatalf("expected reserved-name error for %q", name)
+		}
+	}
+}
+
+func TestIndexAdd_duplicateRejected(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if _, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes"); err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestIndexAdd_allowListDenies(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+	_, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes")
+	if err == nil {
+		t.Fatal("expected allow-list denial")
+	}
+	if !strings.Contains(err.Error(), "allow-list") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestIndexAdd_allowListPermitsByName(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "acme")
+	if _, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes"); err != nil {
+		t.Fatalf("acme should be permitted by name: %v", err)
+	}
+}
+
+func TestIndexList_showsDatumAndAdded(t *testing.T) {
+	pluginsDir := t.TempDir()
+	// Seed the official datum catalog cache so list does not hit the network.
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if _, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "datum") || !strings.Contains(out, "official") {
+		t.Fatalf("datum/official badge missing: %s", out)
+	}
+	if !strings.Contains(out, "acme") || !strings.Contains(out, "third-party") {
+		t.Fatalf("acme/third-party badge missing: %s", out)
+	}
+	// datum must be listed first.
+	if i, j := strings.Index(out, "datum"), strings.Index(out, "acme"); i < 0 || j < 0 || i > j {
+		t.Fatalf("datum should be first: %s", out)
+	}
+}
+
+func TestIndexList_populatesCountForUncachedCatalog(t *testing.T) {
+	pluginsDir := t.TempDir()
+	// Seed the datum cache so the official catalog needs no network.
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+
+	// Register a catalog directly (no `add`, so it has NO cache yet) pointing at
+	// a reachable local manifest with one plugin.
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: "acme", Source: src, Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatalf("list must not fail: %v", err)
+	}
+	// acme has exactly one plugin in testCatalogManifest; the count must populate
+	// via the best-effort refresh (not "?" or "—").
+	if !strings.Contains(out, "acme") {
+		t.Fatalf("acme missing: %s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "acme") {
+			if strings.Contains(line, "—") || strings.Contains(line, "?") {
+				t.Fatalf("acme count should have populated, got: %q", line)
+			}
+			if !strings.Contains(line, "1") {
+				t.Fatalf("acme count should be 1, got: %q", line)
+			}
+		}
+	}
+}
+
+func TestIndexList_unreachableCatalogShowsDashAndExitsZero(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+
+	// Register a catalog whose local source does not exist -> refresh fails fast,
+	// no cache -> count renders as "—" and the command still exits 0.
+	missing := filepath.Join(t.TempDir(), "does-not-exist", "index.yaml")
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: "offline", Source: missing, Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatalf("list must not hard-fail on an offline catalog: %v", err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "offline") && !strings.Contains(line, "—") {
+			t.Fatalf("offline catalog should show the — marker, got: %q", line)
+		}
+	}
+	if strings.Contains(out, "\t?") || strings.Contains(out, " ? ") {
+		t.Fatalf("the legacy ? marker must not appear: %s", out)
+	}
+}
+
+func TestSearch_indexAliasDefaultScopesToDatum(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+
+	// --index default must resolve to the official datum catalog.
+	out, err := execPluginCmd(t, pluginsDir, searchCmd(), "--index", "default")
+	if err != nil {
+		t.Fatalf("search --index default should resolve via alias: %v", err)
+	}
+	if !strings.Contains(out, "dns") || !strings.Contains(out, "datum") {
+		t.Fatalf("alias scope should show the datum catalog's plugins:\n%s", out)
+	}
+}
+
+func TestIndexRemove_datumRejected(t *testing.T) {
+	pluginsDir := t.TempDir()
+	// Both the canonical name and the legacy alias are rejected.
+	if _, err := runIndex(t, pluginsDir, "", "remove", "datum"); err == nil {
+		t.Fatal("removing datum must be rejected")
+	}
+	if _, err := runIndex(t, pluginsDir, "", "remove", "default"); err == nil {
+		t.Fatal("removing the legacy default alias must be rejected")
+	}
+}
+
+func TestIndexRemove_removesAndCleansCache(t *testing.T) {
+	pluginsDir := t.TempDir()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if _, err := runIndex(t, pluginsDir, "", "add", "acme", src, "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir, _ := pluginstore.CatalogCacheDir(pluginsDir, "acme")
+	if _, err := os.Stat(cacheDir); err != nil {
+		t.Fatalf("expected cache dir to exist after add: %v", err)
+	}
+
+	if _, err := runIndex(t, pluginsDir, "", "remove", "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") != nil {
+		t.Fatal("acme should be gone")
+	}
+	if _, err := os.Stat(cacheDir); !os.IsNotExist(err) {
+		t.Fatalf("cache dir should be removed, got err=%v", err)
+	}
+}
+
+func TestIndexRemove_managedRejected(t *testing.T) {
+	pluginsDir := t.TempDir()
+	mc := filepath.Join(t.TempDir(), "managed.yaml")
+	if err := os.WriteFile(mc, []byte("indexes:\n  - name: corp\n    source: https://corp.example/index.yaml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATUMCTL_PLUGIN_MANAGED_CONFIG", mc)
+	if _, err := runIndex(t, pluginsDir, "", "remove", "corp"); err == nil {
+		t.Fatal("removing a managed catalog must be rejected")
+	}
+}
+
+// registerLocalCatalog persists a single user catalog pointing at a local
+// manifest, bypassing the `add` allow-list gate, so load-time enforcement can be
+// exercised on its own.
+func registerLocalCatalog(t *testing.T, pluginsDir, name string) {
+	t.Helper()
+	src := writeLocalCatalog(t, testCatalogManifest)
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: name, Source: src, Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIndexList_showsDisabledCatalog(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+	registerLocalCatalog(t, pluginsDir, "acme")
+
+	// An allow-list that does not cover acme disables it at load time.
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+	out, err := runIndex(t, pluginsDir, "", "list")
+	if err != nil {
+		t.Fatalf("list must not fail with a disabled catalog: %v", err)
+	}
+	if !strings.Contains(out, "acme") {
+		t.Fatalf("disabled catalog must still be listed: %s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "acme") && !strings.Contains(line, "disabled") {
+			t.Fatalf("acme row should be marked disabled, got: %q", line)
+		}
+	}
+}
+
+func TestIndexRemove_removesDisabledCatalog(t *testing.T) {
+	pluginsDir := t.TempDir()
+	registerLocalCatalog(t, pluginsDir, "acme")
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+
+	// A disabled catalog can still be cleaned up.
+	out, err := runIndex(t, pluginsDir, "", "remove", "acme")
+	if err != nil {
+		t.Fatalf("removing a disabled catalog should succeed: %v", err)
+	}
+	if !strings.Contains(out, "Removed catalog acme") {
+		t.Fatalf("unexpected output: %s", out)
+	}
+	if reg, _ := pluginstore.LoadRegistry(pluginsDir); reg.Find("acme") != nil {
+		t.Fatal("acme should be gone after remove")
+	}
+}
+
+func TestSearch_excludesDisabledCatalogAndWarns(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", testPlugin("dns", "v1.2.3", "Manage DNS zones"))
+	registerLocalCatalog(t, pluginsDir, "acme")
+	// Pre-seed acme's cache with its "deploy" plugin so a network fetch isn't
+	// needed to prove it would otherwise appear.
+	seedFreshCache(t, pluginsDir, "acme", testPlugin("deploy", "v2.1.0", "ACME guided deploy"))
+	t.Setenv("DATUMCTL_PLUGIN_ALLOWED_INDEXES", "approved-only")
+
+	out, err := execPluginCmd(t, pluginsDir, searchCmd())
+	if err != nil {
+		t.Fatalf("search must not fail: %v", err)
+	}
+	if !strings.Contains(out, "dns") {
+		t.Fatalf("the permitted datum catalog's plugin should appear: %s", out)
+	}
+	if strings.Contains(out, "deploy") {
+		t.Fatalf("a disabled catalog's plugin must not appear in search: %s", out)
+	}
+	if !strings.Contains(out, "disabled") || !strings.Contains(out, "acme") {
+		t.Fatalf("search should warn that acme is disabled: %s", out)
+	}
+}
+
+func TestIndexValidate_goodAndBad(t *testing.T) {
+	pluginsDir := t.TempDir()
+
+	goodDir := writeLocalCatalog(t, testCatalogManifest)
+	out, err := runIndex(t, pluginsDir, "", "validate", filepath.Join(goodDir, "index.yaml"))
+	if err != nil {
+		t.Fatalf("valid manifest should pass: %v (out=%s)", err, out)
+	}
+	if !strings.Contains(out, "OK") {
+		t.Fatalf("expected OK: %s", out)
+	}
+
+	badDir := writeLocalCatalog(t, `items:
+  - metadata:
+      name: broken
+    spec:
+      platforms:
+        - uri: http://insecure.example/x.tar.gz
+`)
+	_, err = runIndex(t, pluginsDir, "", "validate", filepath.Join(badDir, "index.yaml"))
+	if err == nil {
+		t.Fatal("invalid manifest should fail validation")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "HTTPS") || !strings.Contains(msg, "sha256") || !strings.Contains(msg, "version") {
+		t.Fatalf("expected problems for https/sha256/version, got: %s", msg)
+	}
+}
+
+func TestIndexUpdate_missingCatalogErrors(t *testing.T) {
+	pluginsDir := t.TempDir()
+	if _, err := runIndex(t, pluginsDir, "", "update", "nope"); err == nil {
+		t.Fatal("updating an unregistered catalog must error")
+	}
+}
