@@ -270,9 +270,10 @@ func completeLogin(ctx context.Context, provider *oidc.Provider, clientID, authH
 
 	fmt.Fprintf(out, "\nAuthenticated as: %s (%s)\n", claims.Name, claims.Email)
 
-	// Use email as the keyring key for interactive logins, matching the
-	// behaviour of the original cmd/auth/login.go implementation.
-	userKey := claims.Email
+	// Key the keyring entry by email *and* auth hostname so that the same email
+	// logged into different environments (e.g. production and staging) does not
+	// share one entry, where the second login would clobber the first.
+	userKey := userKeyFor(claims.Email, authHostname)
 
 	creds := StoredCredentials{
 		Hostname:         authHostname,

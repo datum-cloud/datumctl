@@ -54,7 +54,7 @@ func runSwitch(_ *cobra.Command, args []string) error {
 		for i := range cfg.Sessions {
 			allSessions[i] = &cfg.Sessions[i]
 		}
-		sessionName, err = picker.SelectSession(allSessions)
+		sessionName, err = picker.SelectSession(allSessions, cfg.ActiveSession)
 		if err != nil {
 			return err
 		}
@@ -70,7 +70,7 @@ func runSwitch(_ *cobra.Command, args []string) error {
 		if len(sessions) == 1 {
 			sessionName = sessions[0].Name
 		} else {
-			sessionName, err = picker.SelectSession(sessions)
+			sessionName, err = picker.SelectSession(sessions, cfg.ActiveSession)
 			if err != nil {
 				return err
 			}

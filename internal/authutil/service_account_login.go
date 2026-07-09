@@ -95,10 +95,13 @@ func RunServiceAccountLogin(ctx context.Context, credentialsPath, hostname, apiH
 		displayName = creds.ClientID
 	}
 
-	userKey := creds.ClientEmail
-	if userKey == "" {
-		userKey = creds.ClientID
+	identity := creds.ClientEmail
+	if identity == "" {
+		identity = creds.ClientID
 	}
+	// Scope the keyring entry by auth hostname so the same service account used
+	// against different environments does not share (and overwrite) one entry.
+	userKey := userKeyFor(identity, hostname)
 
 	keyFilePath, err := WriteServiceAccountKeyFile(userKey, creds.PrivateKey)
 	if err != nil {

@@ -124,8 +124,11 @@ func buildContextOptions(contexts []datumconfig.DiscoveredContext, cfg *datumcon
 }
 
 // SelectSession presents an interactive picker for disambiguating between
-// sessions that share the same email. Returns the session name.
-func SelectSession(sessions []*datumconfig.Session) (string, error) {
+// sessions that share the same email. The session whose name matches
+// activeSessionName is labelled "(active)" and pre-selected so the picker opens
+// on the currently active session. Pass "" when no session is active. Returns
+// the selected session name.
+func SelectSession(sessions []*datumconfig.Session, activeSessionName string) (string, error) {
 	if len(sessions) == 0 {
 		return "", fmt.Errorf("no sessions to select from")
 	}
@@ -159,10 +162,14 @@ func SelectSession(sessions []*datumconfig.Session) (string, error) {
 		if showEndpoint {
 			label = fmt.Sprintf("%s  (%s)", s.UserEmail, datumconfig.StripScheme(s.Endpoint.Server))
 		}
+		if s.Name == activeSessionName {
+			label += "  (active)"
+		}
 		options[i] = huh.NewOption(label, s.Name)
 	}
 
-	var selected string
+	// Pre-select the active session so the picker opens on it.
+	selected := activeSessionName
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
