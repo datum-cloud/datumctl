@@ -25,6 +25,9 @@ func runWhoami(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	if err := authutil.EnsureUserKeysMigrated(cfg); err != nil {
+		return err
+	}
 
 	session := cfg.ActiveSessionEntry()
 	if session == nil {

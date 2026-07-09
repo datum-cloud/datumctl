@@ -18,6 +18,9 @@ func GetUserKeyForCurrentSession() (string, *datumconfig.Session, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	if err := EnsureUserKeysMigrated(cfg); err != nil {
+		return "", nil, err
+	}
 
 	if session := cfg.ActiveSessionEntry(); session != nil && session.UserKey != "" {
 		return session.UserKey, session, nil
@@ -47,6 +50,9 @@ func GetUserKeyForSession(sessionName string) (string, error) {
 	}
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
+		return "", err
+	}
+	if err := EnsureUserKeysMigrated(cfg); err != nil {
 		return "", err
 	}
 	session := cfg.SessionByName(sessionName)

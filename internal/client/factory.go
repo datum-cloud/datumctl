@@ -243,6 +243,9 @@ func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.DiscoveredContext, 
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := authutil.EnsureUserKeysMigrated(cfg); err != nil {
+		return nil, nil, err
+	}
 	ctxEntry := cfg.CurrentContextEntry()
 	if ctxEntry == nil {
 		return nil, nil, nil
