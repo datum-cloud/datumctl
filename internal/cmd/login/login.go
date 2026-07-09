@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/discovery"
 	"go.datum.net/datumctl/internal/keyring"
+	"go.datum.net/datumctl/internal/onboarding"
 	"go.datum.net/datumctl/internal/picker"
 )
 
@@ -136,18 +138,59 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 
 	discovery.UpdateConfigCache(cfg, sessionName, orgs, projects)
 
+	if len(orgs) == 0 {
+		onboardingResult, err := onboarding.NoOrgsResult(apiHostname)
+		if err != nil {
+			return fmt.Errorf("derive portal URL: %w", err)
+		}
+		if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+		if err := browser.OpenURL(onboardingResult.ActionURL); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "\nCould not open browser automatically. Visit %s to create an organization.\n", onboardingResult.ActionURL)
+		}
+		return onboarding.UserError(onboardingResult)
+	}
+
 	sessionContexts := cfg.ContextsForSession(sessionName)
 	if len(sessionContexts) == 0 {
-		fmt.Println("\nNo contexts available.")
+		onboardingResult, err := onboarding.NoOrgsResult(apiHostname)
+		if err != nil {
+			return fmt.Errorf("derive portal URL: %w", err)
+		}
 		if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
 			return fmt.Errorf("save config: %w", saveErr)
 		}
-		return nil
+		if err := browser.OpenURL(onboardingResult.ActionURL); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "\nCould not open browser automatically. Visit %s to create an organization.\n", onboardingResult.ActionURL)
+		}
+		return onboarding.UserError(onboardingResult)
 	}
 
 	selected, err := picker.SelectContext(sessionContexts, cfg)
 	if err != nil {
 		return err
+	}
+
+	selectedCtx := cfg.ContextByName(selected)
+	if selectedCtx != nil {
+		onboardingResult, err := onboarding.CheckOrg(
+			ctx,
+			apiHostname,
+			tknSrc,
+			result.Subject,
+			selectedCtx.OrganizationID,
+			cfg.OrgDisplayName(selectedCtx.OrganizationID),
+		)
+		if err != nil {
+			return fmt.Errorf("check onboarding status: %w", err)
+		}
+		if onboardingResult.State != onboarding.Complete {
+			if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
+				return fmt.Errorf("save config: %w", saveErr)
+			}
+			return onboarding.UserError(onboardingResult)
+		}
 	}
 
 	cfg.CurrentContext = selected

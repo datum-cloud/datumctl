@@ -629,6 +629,24 @@ the server.`
 
   # Print version in JSON format
   datumctl version -o json`
+	versionPreRun := versionCmd.PreRunE
+	versionCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if clientOnly, _ := cmd.Flags().GetBool("client"); clientOnly {
+			factory.ConfigFlags.SkipOnboardingCheck = true
+		}
+		if versionPreRun != nil {
+			return versionPreRun(cmd, args)
+		}
+		return nil
+	}
+	versionPostRun := versionCmd.PostRunE
+	versionCmd.PostRunE = func(cmd *cobra.Command, args []string) error {
+		factory.ConfigFlags.SkipOnboardingCheck = false
+		if versionPostRun != nil {
+			return versionPostRun(cmd, args)
+		}
+		return nil
+	}
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
 

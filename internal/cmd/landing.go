@@ -1,16 +1,20 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/onboarding"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
@@ -32,7 +36,7 @@ func runLanding(cmd *cobra.Command, _ []string) {
 		return
 	}
 
-	printLoggedInLanding(out, cfg, session)
+	printLoggedInLanding(cmd.Context(), out, cfg, session)
 }
 
 func printLoggedOutLanding(out io.Writer) {
@@ -62,7 +66,7 @@ You're not signed in yet. Pick the login style that fits your situation:
 Run 'datumctl --help' for the full command reference.`)
 }
 
-func printLoggedInLanding(out io.Writer, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) {
+func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) {
 	name := firstName(session.UserName)
 	greeting := timeOfDayGreeting(time.Now())
 	if name == "" {
@@ -99,8 +103,38 @@ func printLoggedInLanding(out io.Writer, cfg *datumconfig.ConfigV1Beta1, session
 		} else {
 			fmt.Fprintf(out, "  Access         %d org(s)\n", len(orgs))
 		}
+	} else if len(cfg.ContextsForSession(session.Name)) == 0 {
+		if portalBase, err := onboarding.DerivePortalURL(session.Endpoint.Server); err == nil {
+			fmt.Fprintf(out, "  Next step      %s\n", portalBase)
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "Create an organization in the Datum Cloud portal to start using datumctl.")
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "  datumctl login           Sign in and set up your account")
+			fmt.Fprintln(out, "  datumctl auth switch     Switch to another account")
+			fmt.Fprintln(out)
+			fmt.Fprintf(out, "Tip: %s\n", pickTip(time.Now().UnixNano()))
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "Run 'datumctl --help' for the full command reference.")
+			return
+		}
 	}
 	fmt.Fprintln(out)
+
+	onboardingResult, onboardingChecked := checkOnboardingStatus(ctx, cfg, session)
+	if onboardingChecked && onboardingResult.State != onboarding.Complete {
+		fmt.Fprintf(out, "  Onboarding     %s\n", onboarding.StatusLabel(onboardingResult))
+		fmt.Fprintf(out, "  Next step      %s\n", onboardingResult.ActionURL)
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "This organization needs setup in the Datum Cloud portal before you can use it with datumctl.")
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "  datumctl whoami        Check onboarding status")
+		fmt.Fprintln(out, "  datumctl auth switch   Switch to another account")
+		fmt.Fprintln(out)
+		fmt.Fprintf(out, "Tip: %s\n", pickTip(time.Now().UnixNano()))
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Run 'datumctl --help' for the full command reference.")
+		return
+	}
 
 	// Contextual next-step suggestions
 	if ctxEntry == nil {
@@ -248,4 +282,29 @@ var landingTips = []string{
 func pickTip(seed int64) string {
 	r := rand.New(rand.NewSource(seed))
 	return landingTips[r.Intn(len(landingTips))]
+}
+
+func checkOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) (onboarding.Result, bool) {
+	orgID := onboarding.ResolveEffectiveOrgID(cfg, os.Getenv("DATUM_PROJECT"), os.Getenv("DATUM_ORGANIZATION"))
+	if orgID == "" {
+		return onboarding.Result{}, false
+	}
+
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, session.UserKey)
+	if err != nil {
+		return onboarding.Result{}, false
+	}
+	userID, err := authutil.GetUserIDFromTokenForUser(session.UserKey)
+	if err != nil {
+		return onboarding.Result{}, false
+	}
+	apiHostname, err := authutil.GetAPIHostnameForUser(session.UserKey)
+	if err != nil {
+		return onboarding.Result{}, false
+	}
+	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(orgID))
+	if err != nil {
+		return onboarding.Result{}, false
+	}
+	return result, true
 }

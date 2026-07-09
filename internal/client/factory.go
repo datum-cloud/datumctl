@@ -12,7 +12,9 @@ import (
 	"github.com/spf13/pflag"
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/miloapi"
+	"go.datum.net/datumctl/internal/onboarding"
 	"golang.org/x/oauth2"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -45,10 +47,11 @@ type DatumCloudFactory struct {
 
 type CustomConfigFlags struct {
 	*genericclioptions.ConfigFlags
-	Project      *string
-	Organization *string
-	PlatformWide *bool
-	Context      context.Context
+	Project               *string
+	Organization          *string
+	PlatformWide          *bool
+	Context               context.Context
+	SkipOnboardingCheck   bool
 }
 
 func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
@@ -90,16 +93,22 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		return nil, err
 	}
 
+	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
+	if err != nil {
+		return nil, err
+	}
+
+	if !c.SkipOnboardingCheck && !platformWide {
+		if err := c.ensureOnboardingComplete(userKey, tknSrc, projectID, organizationID, ctxEntry); err != nil {
+			return nil, err
+		}
+	}
+
 	config.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
 		return &oauth2.Transport{Source: tknSrc, Base: rt}
 	}
 
 	baseServer, err := c.resolveBaseServer(userKey, session)
-	if err != nil {
-		return nil, err
-	}
-
-	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +344,52 @@ func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext
 	}
 
 	return projectID, organizationID, platformWide, nil
+}
+
+func (c *CustomConfigFlags) ensureOnboardingComplete(
+	userKey string,
+	tknSrc oauth2.TokenSource,
+	projectID, organizationID string,
+	ctxEntry *datumconfig.DiscoveredContext,
+) error {
+	orgID := onboarding.ResolveOrgID(projectID, organizationID, ctxEntry, c.loadConfigForScope())
+	if orgID == "" {
+		return nil
+	}
+
+	userID, err := authutil.GetUserIDFromTokenForUser(userKey)
+	if err != nil {
+		return fmt.Errorf("failed to get user ID from token: %w", err)
+	}
+
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
+	if err != nil {
+		return err
+	}
+
+	cfg := c.loadConfigForScope()
+	orgDisplayName := ""
+	if cfg != nil {
+		orgDisplayName = cfg.OrgDisplayName(orgID)
+	}
+
+	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)
+	if err != nil {
+		return customerrors.WrapUserErrorWithHint(
+			"Could not verify organization onboarding status.",
+			"If you recently completed setup in the Datum Cloud portal, try again in a moment.",
+			err,
+		)
+	}
+	return onboarding.UserError(result)
+}
+
+func (c *CustomConfigFlags) loadConfigForScope() *datumconfig.ConfigV1Beta1 {
+	cfg, err := datumconfig.LoadAuto()
+	if err != nil {
+		return nil
+	}
+	return cfg
 }
 
 func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {

@@ -10,9 +10,10 @@ API keys directly.
 
 Authentication involves the following commands:
 
-*   `datumctl auth login`
+*   `datumctl login`
+*   `datumctl logout`
+*   `datumctl whoami`
 *   `datumctl auth list`
-*   `datumctl auth logout`
 *   `datumctl auth get-token`
 *   `datumctl auth update-kubeconfig`
 *   `datumctl auth switch`
@@ -25,7 +26,7 @@ keyring.
 To authenticate with Datum Cloud, use the `login` command:
 
 ```
-datumctl auth login [--hostname <auth-hostname>] [--no-browser] [-v]
+datumctl login [--hostname <auth-hostname>] [--no-browser] [-v]
 ```
 
 *   `--hostname <auth-hostname>`: (Optional) Specify the hostname of the Datum
@@ -49,6 +50,33 @@ Running this command will:
 
 Your credentials (including refresh tokens) are stored securely in the system
 keyring, associated with your user identifier (typically your email address).
+
+## Account onboarding
+
+Before you can use datumctl against an organization, that organization must
+complete onboarding in the [Datum Cloud portal](https://cloud.datum.net). This
+includes finishing billing setup (contact information, billing account, and
+payment method).
+
+Onboarding is checked **per organization**, based on your active context or
+`--organization` / `--project` flags. User-scoped commands (such as
+`datumctl get organizations`) work without an org context even if another
+organization you belong to is still onboarding.
+
+When the targeted organization is incomplete:
+
+*   `datumctl login` stores your credentials but blocks selecting that
+    organization's context and prints a link to the portal.
+*   Org- or project-scoped commands are blocked with a message pointing you to
+    the portal.
+*   `datumctl whoami` shows onboarding status for your current context's
+    organization.
+
+Machine accounts are subject to the same requirement for the organization they
+target.
+
+For staging environments, use the staging portal at
+`https://cloud.staging.env.datum.net`.
 
 ## Updating kubeconfig
 
@@ -116,7 +144,7 @@ To remove stored credentials, use the `logout` command.
 **Log out a specific user:**
 
 ```
-datumctl auth logout <user-email>
+datumctl logout <user-email>
 ```
 
 Replace `<user-email>` with the email address shown in the
@@ -125,7 +153,7 @@ Replace `<user-email>` with the email address shown in the
 **Log out all users:**
 
 ```
-datumctl auth logout --all
+datumctl logout --all
 ```
 
 This removes all Datum Cloud credentials stored by `datumctl` in your keyring.
