@@ -107,7 +107,7 @@ func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.C
 		if portalBase, err := onboarding.DerivePortalURL(session.Endpoint.Server); err == nil {
 			fmt.Fprintf(out, "  Next step      %s\n", portalBase)
 			fmt.Fprintln(out)
-			fmt.Fprintln(out, "Create an organization in the Datum Cloud portal to start using datumctl.")
+			fmt.Fprintln(out, "You'll need an organization before datumctl can do much. Create one in the portal to get going.")
 			fmt.Fprintln(out)
 			fmt.Fprintln(out, "  datumctl login           Sign in and set up your account")
 			fmt.Fprintln(out, "  datumctl auth switch     Switch to another account")
@@ -125,7 +125,7 @@ func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.C
 		fmt.Fprintf(out, "  Onboarding     %s\n", onboarding.StatusLabel(onboardingResult))
 		fmt.Fprintf(out, "  Next step      %s\n", onboardingResult.ActionURL)
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, "This organization needs setup in the Datum Cloud portal before you can use it with datumctl.")
+		fmt.Fprintln(out, "This organization still needs a little setup in the portal before you can use it here.")
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "  datumctl whoami        Check onboarding status")
 		fmt.Fprintln(out, "  datumctl auth switch   Switch to another account")

@@ -10,6 +10,7 @@ import (
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
 	"go.datum.net/datumctl/internal/discovery"
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/keyring"
 	"go.datum.net/datumctl/internal/onboarding"
 	"go.datum.net/datumctl/internal/picker"
@@ -147,7 +148,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("save config: %w", err)
 		}
 		if err := browser.OpenURL(onboardingResult.ActionURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "\nCould not open browser automatically. Visit %s to create an organization.\n", onboardingResult.ActionURL)
+			fmt.Fprintf(cmd.ErrOrStderr(), "\nWe couldn't open your browser. Head to %s to create an organization.\n", onboardingResult.ActionURL)
 		}
 		return onboarding.UserError(onboardingResult)
 	}
@@ -162,7 +163,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("save config: %w", saveErr)
 		}
 		if err := browser.OpenURL(onboardingResult.ActionURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "\nCould not open browser automatically. Visit %s to create an organization.\n", onboardingResult.ActionURL)
+			fmt.Fprintf(cmd.ErrOrStderr(), "\nWe couldn't open your browser. Head to %s to create an organization.\n", onboardingResult.ActionURL)
 		}
 		return onboarding.UserError(onboardingResult)
 	}
@@ -183,7 +184,11 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 			cfg.OrgDisplayName(selectedCtx.OrganizationID),
 		)
 		if err != nil {
-			return fmt.Errorf("check onboarding status: %w", err)
+			return customerrors.WrapUserErrorWithHint(
+				"We couldn't check whether your organization is ready yet.",
+				"Try again in a moment, or finish setup in the portal.",
+				err,
+			)
 		}
 		if onboardingResult.State != onboarding.Complete {
 			if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {

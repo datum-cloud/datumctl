@@ -162,10 +162,10 @@ func TestUserError(t *testing.T) {
 }
 
 func TestStatusLabel(t *testing.T) {
-	if got := StatusLabel(Result{State: Complete}); got != "complete" {
+	if got := StatusLabel(Result{State: Complete}); got != "ready" {
 		t.Fatalf("StatusLabel(Complete) = %q", got)
 	}
-	if got := StatusLabel(Result{State: NeedsOnboarding}); got != "incomplete (no organization)" {
+	if got := StatusLabel(Result{State: NeedsOnboarding}); got != "no org yet" {
 		t.Fatalf("StatusLabel(NeedsOnboarding) = %q", got)
 	}
 }

@@ -376,8 +376,8 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)
 	if err != nil {
 		return customerrors.WrapUserErrorWithHint(
-			"Could not verify organization onboarding status.",
-			"If you recently completed setup in the Datum Cloud portal, try again in a moment.",
+			"We couldn't check whether this organization is ready yet.",
+			"If you just finished setup in the portal, wait a moment and try again.",
 			err,
 		)
 	}

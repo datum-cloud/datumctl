@@ -94,7 +94,7 @@ func orgOnboardingStatus(org *resourcemanagerv1alpha1.Organization) (complete bo
 	if cond == nil {
 		return false,
 			resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonContactInfoIncomplete,
-			"Organization onboarding status is unknown"
+			"We couldn't tell if setup is finished yet"
 	}
 	if cond.Status == metav1.ConditionTrue &&
 		cond.Reason == resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonReady {
@@ -106,9 +106,35 @@ func orgOnboardingStatus(org *resourcemanagerv1alpha1.Organization) (complete bo
 	}
 	message = cond.Message
 	if message == "" {
-		message = "Organization onboarding is incomplete"
+		message = "Setup isn't finished yet"
 	}
 	return false, reason, message
+}
+
+func portalHint(actionURL string) string {
+	return fmt.Sprintf("Head to %s to finish up.", actionURL)
+}
+
+func orgIncompleteMessage(displayName, reason, apiMessage string) string {
+	name := displayName
+	if name == "" {
+		name = "This organization"
+	}
+
+	if apiMessage != "" && apiMessage != humanReason(reason) && !strings.HasPrefix(apiMessage, "Organization ") {
+		return fmt.Sprintf("%s still needs setup: %s.", name, apiMessage)
+	}
+
+	switch reason {
+	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonContactInfoIncomplete:
+		return fmt.Sprintf("%s still needs your contact details before you can use datumctl here.", name)
+	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonBillingAccountMissing:
+		return fmt.Sprintf("%s still needs billing set up before you can use datumctl here.", name)
+	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonPaymentMethodNotReady:
+		return fmt.Sprintf("%s still needs a payment method on file before you can use datumctl here.", name)
+	default:
+		return fmt.Sprintf("%s still needs a little setup in the portal before you can use datumctl here.", name)
+	}
 }
 
 // UserError converts a non-complete Result into a user-facing error with a
@@ -118,30 +144,21 @@ func UserError(result Result) error {
 		return nil
 	}
 
-	hint := fmt.Sprintf("Visit %s to complete setup.", result.ActionURL)
+	hint := portalHint(result.ActionURL)
 	switch result.State {
 	case NeedsOnboarding:
 		return customerrors.NewUserErrorWithHint(
-			"You do not have any organizations yet. Create one in the Datum Cloud portal before using datumctl.",
+			"You're signed in, but you don't have an organization yet.",
 			hint,
 		)
 	case OrgIncomplete:
-		msg := fmt.Sprintf(
-			"Organization %q is not ready for platform use (%s). Finish onboarding in the Datum Cloud portal before using datumctl.",
-			result.OrgDisplayName,
-			humanReason(result.Reason),
+		return customerrors.NewUserErrorWithHint(
+			orgIncompleteMessage(result.OrgDisplayName, result.Reason, result.Message),
+			hint,
 		)
-		if result.Message != "" && result.Message != humanReason(result.Reason) {
-			msg = fmt.Sprintf(
-				"Organization %q is not ready for platform use: %s. Finish onboarding in the Datum Cloud portal before using datumctl.",
-				result.OrgDisplayName,
-				result.Message,
-			)
-		}
-		return customerrors.NewUserErrorWithHint(msg, hint)
 	default:
 		return customerrors.NewUserErrorWithHint(
-			"Account setup is incomplete. Finish onboarding in the Datum Cloud portal before using datumctl.",
+			"Your account still needs a little setup in the portal.",
 			hint,
 		)
 	}
@@ -150,14 +167,17 @@ func UserError(result Result) error {
 func humanReason(reason string) string {
 	switch reason {
 	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonContactInfoIncomplete:
-		return "contact information incomplete"
+		return "contact details needed"
 	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonBillingAccountMissing:
-		return "billing account missing"
+		return "billing setup needed"
 	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonPaymentMethodNotReady:
-		return "payment method not ready"
+		return "payment method needed"
 	case resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonReady:
 		return "ready"
 	default:
+		if reason == "" {
+			return "setup needed"
+		}
 		return reason
 	}
 }
@@ -166,14 +186,14 @@ func humanReason(reason string) string {
 func StatusLabel(result Result) string {
 	switch result.State {
 	case Complete:
-		return "complete"
+		return "ready"
 	case NeedsOnboarding:
-		return "incomplete (no organization)"
+		return "no org yet"
 	case OrgIncomplete:
 		if result.OrgDisplayName != "" {
-			return fmt.Sprintf("incomplete (%s: %s)", result.OrgDisplayName, humanReason(result.Reason))
+			return fmt.Sprintf("needs setup (%s: %s)", result.OrgDisplayName, humanReason(result.Reason))
 		}
-		return fmt.Sprintf("incomplete (%s)", humanReason(result.Reason))
+		return fmt.Sprintf("needs setup (%s)", humanReason(result.Reason))
 	default:
 		return "unknown"
 	}

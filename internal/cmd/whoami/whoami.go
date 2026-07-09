@@ -108,13 +108,13 @@ func printOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, 
 
 	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(orgID))
 	if err != nil {
-		fmt.Println("Onboarding:   unknown (could not check status)")
+		fmt.Println("Onboarding:   couldn't check")
 		return
 	}
 
 	fmt.Printf("Onboarding:   %s\n", onboarding.StatusLabel(result))
 	if result.State != onboarding.Complete {
-		fmt.Printf("  Complete setup at %s\n", result.ActionURL)
+		fmt.Printf("  Finish setup at %s\n", result.ActionURL)
 	}
 }
 
