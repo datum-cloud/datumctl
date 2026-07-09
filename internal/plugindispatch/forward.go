@@ -17,12 +17,18 @@ import (
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
-// ForwardPlugin checks whether os.Args represents a managed-plugin invocation and,
-// if so, replaces the current process with the plugin binary before cobra can
-// parse (and discard) flags that belong to the plugin's own subcommands.
+// ForwardPlugin checks whether os.Args represents a plugin invocation and, if so,
+// replaces the current process with the plugin binary before cobra can parse (and
+// discard) flags that belong to the plugin's own subcommands. This verbatim
+// forwarding is what lets "datumctl <plugin> <subcmd> -o wide" work without the
+// caller having to insert a "--" separator.
 //
-// It only execs managed plugins (found in pluginsDir). PATH-based plugins reach
-// the same destination via the root RunE, where trust-checking also runs.
+// It execs both managed plugins (found in pluginsDir, gated by a SHA256 integrity
+// check) and trusted PATH plugins (milo-<name>/datumctl-<name>, gated by the same
+// pluginstore.IsTrusted check the help/completion forward paths and the root RunE
+// use). An untrusted or unknown PATH binary is left for cobra, where the root RunE
+// surfaces the "has not been trusted" guidance — it is never exec'd or handed
+// DATUM_* credentials from here.
 //
 // Must be called after the cobra command tree is fully built so that IsBuiltIn
 // can correctly distinguish plugin names from registered subcommands.
@@ -39,14 +45,32 @@ func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.Datum
 	}
 
 	binaryPath, managed, err := FindPlugin(name, pluginsDir)
-	if err != nil || !managed {
+	if err != nil {
+		// Not a known plugin in the managed dir or on PATH — let cobra handle it.
 		return nil
 	}
 
-	// Verify the on-disk binary's SHA256 matches the recorded manifest entry.
-	// This guards against the binary being silently replaced after install.
-	if verifyErr := VerifyManagedPluginIntegrity(pluginsDir, name, binaryPath); verifyErr != nil {
-		return verifyErr
+	if managed {
+		// Verify the on-disk binary's SHA256 matches the recorded manifest entry.
+		// This guards against the binary being silently replaced after install.
+		if verifyErr := VerifyManagedPluginIntegrity(pluginsDir, name, binaryPath); verifyErr != nil {
+			return verifyErr
+		}
+	} else {
+		// Unmanaged PATH plugin. Trust must be established BEFORE exec because Exec
+		// injects DATUM_CREDENTIALS_HELPER; an untrusted binary must never reach it.
+		// Resolve symlinks once so the trust check and the subsequent exec act on
+		// the same real path (TOCTOU defense, matching the root RunE and the
+		// help/completion forward paths).
+		if abs, absErr := filepath.EvalSymlinks(binaryPath); absErr == nil {
+			binaryPath = abs
+		}
+		if !pluginstore.IsTrusted(pluginsDir, name, binaryPath) {
+			// Untrusted/unknown binary: fall through to cobra unchanged. The root
+			// RunE surfaces the "has not been trusted" guidance; do not exec or
+			// inject credentials here.
+			return nil
+		}
 	}
 
 	return Exec(binaryPath, args[1:], factory)
