@@ -7,14 +7,13 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
 
 	servicesv1alpha1 "go.miloapis.com/service-catalog/api/v1alpha1"
 )
 
-func gateWith(t *testing.T, fc *fakeClient, io IOStreams) Gate {
+func gateWith(t *testing.T, ec EntitlementClient, io IOStreams) Gate {
 	t.Helper()
-	return Gate{Config: testConfig, Client: fc, IO: io, Project: "datum-cloud"}
+	return Gate{Config: testConfig, Client: ec, IO: io, Project: "datum-cloud"}
 }
 
 // wantExit asserts err is an *Error with the expected code and state.
@@ -34,10 +33,10 @@ func wantExit(t *testing.T, err error, code int, state State) {
 
 func TestGateActiveProceeds(t *testing.T) {
 	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
-	fc := &fakeClient{listResult: listOf(active)}
+	ec, _ := newFake(withObjects(active))
 	io, _, errb := testIO("", false)
 
-	if err := gateWith(t, fc, io).Run(context.Background()); err != nil {
+	if err := gateWith(t, ec, io).Run(context.Background()); err != nil {
 		t.Fatalf("Run() = %v, want nil (command should proceed)", err)
 	}
 	if errb.Len() != 0 {
@@ -46,13 +45,13 @@ func TestGateActiveProceeds(t *testing.T) {
 }
 
 func TestGateNonInteractiveNeverMutates(t *testing.T) {
-	fc := &fakeClient{} // empty list → NotRequested
+	ec, cs := newFake() // empty list → NotRequested
 	io, _, errb := testIO("", false)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitNotEnabled, StateNotRequested)
-	if len(fc.creates) != 0 {
-		t.Fatalf("non-interactive gate created %d entitlements, want 0", len(fc.creates))
+	if got := countVerb(cs, "create"); got != 0 {
+		t.Fatalf("non-interactive gate created %d entitlements, want 0", got)
 	}
 	if !strings.Contains(errb.String(), "Request access with: datumctl compute access request") {
 		t.Fatalf("missing opt-in command in output:\n%s", errb.String())
@@ -61,13 +60,13 @@ func TestGateNonInteractiveNeverMutates(t *testing.T) {
 
 func TestGateInteractiveSubmitLandsPending(t *testing.T) {
 	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
-	fc := &fakeClient{watchEmit: []watch.Event{modifiedEvent(pending)}}
+	ec, cs := newFake(withWatch(modifiedEvent(pending)))
 	io, _, errb := testIO("y\n", true)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitPending, StatePendingApproval)
-	if len(fc.creates) != 1 {
-		t.Fatalf("expected exactly 1 create, got %d", len(fc.creates))
+	if got := countVerb(cs, "create"); got != 1 {
+		t.Fatalf("expected exactly 1 create, got %d", got)
 	}
 	out := errb.String()
 	if !strings.Contains(out, "has been submitted") {
@@ -85,12 +84,12 @@ func TestGateInteractiveSubmitLandsPending(t *testing.T) {
 }
 
 func TestGateInteractiveDecline(t *testing.T) {
-	fc := &fakeClient{}
+	ec, cs := newFake()
 	io, _, errb := testIO("n\n", true)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitDeclined, StateNotRequested)
-	if len(fc.creates) != 0 {
+	if got := countVerb(cs, "create"); got != 0 {
 		t.Fatalf("declining still created an entitlement")
 	}
 	if !strings.Contains(errb.String(), "No request was made") {
@@ -100,13 +99,10 @@ func TestGateInteractiveDecline(t *testing.T) {
 
 func TestGateCreateAlreadyExistsFallsThrough(t *testing.T) {
 	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
-	fc := &fakeClient{
-		createErr: alreadyExistsErr(),
-		watchEmit: []watch.Event{modifiedEvent(pending)},
-	}
+	ec, _ := newFake(withCreateErr(alreadyExistsErr()), withWatch(modifiedEvent(pending)))
 	io, _, errb := testIO("y\n", true)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	// AlreadyExists is a won race, not a failure: fall through to the wait.
 	wantExit(t, err, ExitPending, StatePendingApproval)
 	if !strings.Contains(errb.String(), "has been submitted") {
@@ -115,10 +111,10 @@ func TestGateCreateAlreadyExistsFallsThrough(t *testing.T) {
 }
 
 func TestGateCreateAdmissionRejectionMapsToUnavailable(t *testing.T) {
-	fc := &fakeClient{createErr: invalidCreateErr()}
+	ec, _ := newFake(withCreateErr(invalidCreateErr()))
 	io, _, errb := testIO("y\n", true)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitUnavailable, StateUnavailable)
 	if !strings.Contains(errb.String(), "not available on this platform environment") {
 		t.Fatalf("missing unavailable copy:\n%s", errb.String())
@@ -130,12 +126,12 @@ func TestGatePendingReentryIsInstant(t *testing.T) {
 		entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil),
 		metav1.NewTime(time.Now().Add(-2*time.Hour)),
 	)
-	fc := &fakeClient{listResult: listOf(pending)}
+	ec, cs := newFake(withObjects(pending))
 	io, _, errb := testIO("", false)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitPending, StatePendingApproval)
-	if len(fc.creates) != 0 {
+	if got := countVerb(cs, "create"); got != 0 {
 		t.Fatalf("pending re-entry must not create")
 	}
 	if !strings.Contains(errb.String(), "awaiting provider approval") {
@@ -145,10 +141,10 @@ func TestGatePendingReentryIsInstant(t *testing.T) {
 
 func TestGateDeniedReentry(t *testing.T) {
 	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, reasonEntitlementRejected, "The service provider denied this request.", nil)
-	fc := &fakeClient{listResult: listOf(denied)}
+	ec, _ := newFake(withObjects(denied))
 	io, _, errb := testIO("", false)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitDeniedOrRevoked, StateDenied)
 	if !strings.Contains(errb.String(), "--renew") {
 		t.Fatalf("missing recovery command:\n%s", errb.String())
@@ -156,12 +152,12 @@ func TestGateDeniedReentry(t *testing.T) {
 }
 
 func TestGateCatalogUnavailable(t *testing.T) {
-	fc := &fakeClient{listErr: catalogAbsentErr()}
+	ec, cs := newFake(withListErr(catalogAbsentErr()))
 	io, _, errb := testIO("", false)
 
-	err := gateWith(t, fc, io).Run(context.Background())
+	err := gateWith(t, ec, io).Run(context.Background())
 	wantExit(t, err, ExitUnavailable, StateCatalogUnavailable)
-	if len(fc.creates) != 0 {
+	if got := countVerb(cs, "create"); got != 0 {
 		t.Fatalf("catalog-absent must never create")
 	}
 	if !strings.Contains(errb.String(), "not available on this platform environment") {
@@ -170,9 +166,9 @@ func TestGateCatalogUnavailable(t *testing.T) {
 }
 
 func TestGateEmptyProjectIsNoop(t *testing.T) {
-	fc := &fakeClient{listErr: catalogAbsentErr()}
+	ec, _ := newFake(withListErr(catalogAbsentErr()))
 	io, _, _ := testIO("", false)
-	g := Gate{Config: testConfig, Client: fc, IO: io, Project: ""}
+	g := Gate{Config: testConfig, Client: ec, IO: io, Project: ""}
 	if err := g.Run(context.Background()); err != nil {
 		t.Fatalf("empty project should be a no-op, got %v", err)
 	}

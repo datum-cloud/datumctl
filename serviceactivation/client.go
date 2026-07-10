@@ -5,26 +5,24 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	servicesv1alpha1 "go.miloapis.com/service-catalog/api/v1alpha1"
+	versioned "go.miloapis.com/service-catalog/pkg/generated/clientset/versioned"
 )
 
 // EntitlementClient is the narrow surface the flow needs against a project's
-// virtual control plane. Keeping it minimal lets tests inject a fake that
-// simulates catalog-absent, already-exists, and watch-event sequences without a
-// real API server. ServiceEntitlements are cluster-scoped, so no namespace is
-// carried.
+// virtual control plane. Keeping it minimal lets tests inject the generated
+// fake clientset and simulate catalog-absent, already-exists, and watch-event
+// sequences without a real API server. ServiceEntitlements are cluster-scoped,
+// so no namespace is carried.
 type EntitlementClient interface {
 	// List returns every ServiceEntitlement visible in the control plane.
 	List(ctx context.Context) (*servicesv1alpha1.ServiceEntitlementList, error)
 	// Get fetches a single entitlement by name.
 	Get(ctx context.Context, name string) (*servicesv1alpha1.ServiceEntitlement, error)
-	// Create submits a new entitlement.
+	// Create submits a new entitlement, writing the server's response back into e.
 	Create(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error
 	// Delete removes an entitlement.
 	Delete(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error
@@ -33,9 +31,16 @@ type EntitlementClient interface {
 	Watch(ctx context.Context, name, resourceVersion string) (watch.Interface, error)
 }
 
-// restClient adapts a controller-runtime client.WithWatch to EntitlementClient.
-type restClient struct {
-	c client.WithWatch
+// clientsetAdapter maps the generated services clientset onto EntitlementClient.
+type clientsetAdapter struct {
+	cs versioned.Interface
+}
+
+// NewClient wraps a generated services clientset (real or fake) as an
+// EntitlementClient. Tests pass the generated fake; production passes a
+// clientset built from a REST config.
+func NewClient(cs versioned.Interface) EntitlementClient {
+	return &clientsetAdapter{cs: cs}
 }
 
 // NewRESTClient builds an EntitlementClient from a Kubernetes REST config. This
@@ -43,49 +48,59 @@ type restClient struct {
 // host and a bearer token (plugins from the datumctl credentials helper, core
 // from its native config).
 func NewRESTClient(cfg *rest.Config) (EntitlementClient, error) {
-	scheme := runtime.NewScheme()
-	if err := servicesv1alpha1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("registering services scheme: %w", err)
-	}
-	c, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme})
+	cs, err := versioned.NewForConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("building entitlement client: %w", err)
+		return nil, fmt.Errorf("building services clientset: %w", err)
 	}
-	return &restClient{c: c}, nil
+	return NewClient(cs), nil
 }
 
-func (r *restClient) List(ctx context.Context) (*servicesv1alpha1.ServiceEntitlementList, error) {
-	var list servicesv1alpha1.ServiceEntitlementList
-	if err := r.c.List(ctx, &list); err != nil {
-		return nil, err
+// entitlements is the subset of the generated ServiceEntitlementInterface the
+// adapter calls. Naming it keeps the methods readable and documents the exact
+// surface the flow depends on.
+func (a *clientsetAdapter) entitlements() clientEntitlements {
+	return a.cs.ServicesV1alpha1().ServiceEntitlements()
+}
+
+func (a *clientsetAdapter) List(ctx context.Context) (*servicesv1alpha1.ServiceEntitlementList, error) {
+	return a.entitlements().List(ctx, metav1.ListOptions{})
+}
+
+func (a *clientsetAdapter) Get(ctx context.Context, name string) (*servicesv1alpha1.ServiceEntitlement, error) {
+	return a.entitlements().Get(ctx, name, metav1.GetOptions{})
+}
+
+func (a *clientsetAdapter) Create(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error {
+	created, err := a.entitlements().Create(ctx, e, metav1.CreateOptions{})
+	if err != nil {
+		return err
 	}
-	return &list, nil
+	// The clientset returns a fresh object; copy it back so callers see the
+	// server-assigned resourceVersion (used to seed the post-create watch).
+	*e = *created
+	return nil
 }
 
-func (r *restClient) Get(ctx context.Context, name string) (*servicesv1alpha1.ServiceEntitlement, error) {
-	var e servicesv1alpha1.ServiceEntitlement
-	if err := r.c.Get(ctx, types.NamespacedName{Name: name}, &e); err != nil {
-		return nil, err
-	}
-	return &e, nil
+func (a *clientsetAdapter) Delete(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error {
+	return a.entitlements().Delete(ctx, e.Name, metav1.DeleteOptions{})
 }
 
-func (r *restClient) Create(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error {
-	return r.c.Create(ctx, e)
-}
-
-func (r *restClient) Delete(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error {
-	return r.c.Delete(ctx, e)
-}
-
-func (r *restClient) Watch(ctx context.Context, name, resourceVersion string) (watch.Interface, error) {
-	return r.c.Watch(ctx, &servicesv1alpha1.ServiceEntitlementList{}, &client.ListOptions{
+func (a *clientsetAdapter) Watch(ctx context.Context, name, resourceVersion string) (watch.Interface, error) {
+	return a.entitlements().Watch(ctx, metav1.ListOptions{
 		// Scope the watch to the single named entitlement and resume from the
 		// create response's resourceVersion so the first status write is not
 		// missed between the create and the watch establishing.
-		Raw: &metav1.ListOptions{
-			FieldSelector:   "metadata.name=" + name,
-			ResourceVersion: resourceVersion,
-		},
+		FieldSelector:   "metadata.name=" + name,
+		ResourceVersion: resourceVersion,
 	})
+}
+
+// clientEntitlements is the subset of the generated ServiceEntitlementInterface
+// the adapter uses. The generated interface is a superset, so it satisfies this.
+type clientEntitlements interface {
+	List(ctx context.Context, opts metav1.ListOptions) (*servicesv1alpha1.ServiceEntitlementList, error)
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*servicesv1alpha1.ServiceEntitlement, error)
+	Create(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement, opts metav1.CreateOptions) (*servicesv1alpha1.ServiceEntitlement, error)
+	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
+	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
 }

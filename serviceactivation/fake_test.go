@@ -2,103 +2,102 @@ package serviceactivation
 
 import (
 	"bytes"
-	"context"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/watch"
+	k8stesting "k8s.io/client-go/testing"
 
 	servicesv1alpha1 "go.miloapis.com/service-catalog/api/v1alpha1"
+	svcfake "go.miloapis.com/service-catalog/pkg/generated/clientset/versioned/fake"
 )
 
-var entitlementGR = schema.GroupResource{Group: "services.miloapis.com", Resource: "serviceentitlements"}
+const entitlementResource = "serviceentitlements"
+
+var entitlementGR = schema.GroupResource{Group: "services.miloapis.com", Resource: entitlementResource}
+
+// newFake builds an EntitlementClient backed by the generated fake clientset,
+// configured by opts, and returns the fake so tests can assert on recorded
+// actions. Exercising the real clientsetAdapter over the generated fake is the
+// point: it covers the production code path, not a stand-in.
+func newFake(opts ...fakeOpt) (EntitlementClient, *svcfake.Clientset) {
+	cfg := fakeConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	cs := svcfake.NewSimpleClientset(cfg.seed...)
+	if cfg.listErr != nil {
+		cs.PrependReactor("list", entitlementResource, func(k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, cfg.listErr
+		})
+	}
+	if cfg.createErr != nil {
+		cs.PrependReactor("create", entitlementResource, func(k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, cfg.createErr
+		})
+	}
+	if cfg.watchEvents != nil {
+		cs.PrependWatchReactor(entitlementResource, func(k8stesting.Action) (bool, watch.Interface, error) {
+			fw := watch.NewFakeWithChanSize(len(cfg.watchEvents)+1, false)
+			for _, ev := range cfg.watchEvents {
+				if ev.Type == watch.Added {
+					fw.Add(ev.Object)
+				} else {
+					fw.Modify(ev.Object)
+				}
+			}
+			return true, fw, nil
+		})
+	}
+	return NewClient(cs), cs
+}
+
+type fakeConfig struct {
+	seed        []runtime.Object
+	listErr     error
+	createErr   error
+	watchEvents []watch.Event
+}
+
+type fakeOpt func(*fakeConfig)
+
+func withObjects(objs ...*servicesv1alpha1.ServiceEntitlement) fakeOpt {
+	return func(c *fakeConfig) {
+		for _, o := range objs {
+			c.seed = append(c.seed, o)
+		}
+	}
+}
+
+func withListErr(err error) fakeOpt        { return func(c *fakeConfig) { c.listErr = err } }
+func withCreateErr(err error) fakeOpt      { return func(c *fakeConfig) { c.createErr = err } }
+func withWatch(evs ...watch.Event) fakeOpt { return func(c *fakeConfig) { c.watchEvents = evs } }
+
+// countVerb returns how many actions of the given verb were recorded against
+// serviceentitlements.
+func countVerb(cs *svcfake.Clientset, verb string) int {
+	n := 0
+	for _, a := range cs.Actions() {
+		if a.GetVerb() == verb && a.GetResource().Resource == entitlementResource {
+			n++
+		}
+	}
+	return n
+}
 
 // catalogAbsentErr is the real discovery failure returned when the services API
 // group is not served, so catalogAbsent (apimeta.IsNoMatchError) recognizes it.
 func catalogAbsentErr() error {
 	return &apimeta.NoResourceMatchError{
 		PartialResource: schema.GroupVersionResource{
-			Group: "services.miloapis.com", Version: "v1alpha1", Resource: "serviceentitlements",
+			Group: "services.miloapis.com", Version: "v1alpha1", Resource: entitlementResource,
 		},
 	}
-}
-
-// fakeClient is a scriptable EntitlementClient for exercising the flow without a
-// real API server. Each response can be configured, and mutating calls are
-// recorded so tests can assert that the non-interactive paths never mutate.
-type fakeClient struct {
-	listResult *servicesv1alpha1.ServiceEntitlementList
-	listErr    error
-
-	getResult *servicesv1alpha1.ServiceEntitlement
-	getErr    error
-
-	createErr error
-	watchEmit []watch.Event
-
-	creates []*servicesv1alpha1.ServiceEntitlement
-	deletes []*servicesv1alpha1.ServiceEntitlement
-}
-
-func (f *fakeClient) List(ctx context.Context) (*servicesv1alpha1.ServiceEntitlementList, error) {
-	if f.listErr != nil {
-		return nil, f.listErr
-	}
-	if f.listResult != nil {
-		return f.listResult, nil
-	}
-	return &servicesv1alpha1.ServiceEntitlementList{}, nil
-}
-
-func (f *fakeClient) Get(ctx context.Context, name string) (*servicesv1alpha1.ServiceEntitlement, error) {
-	if f.getErr != nil {
-		return nil, f.getErr
-	}
-	if f.getResult != nil {
-		return f.getResult, nil
-	}
-	return nil, apierrors.NewNotFound(entitlementGR, name)
-}
-
-func (f *fakeClient) Create(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error {
-	f.creates = append(f.creates, e.DeepCopy())
-	if f.createErr != nil {
-		return f.createErr
-	}
-	e.ResourceVersion = "1"
-	return nil
-}
-
-func (f *fakeClient) Delete(ctx context.Context, e *servicesv1alpha1.ServiceEntitlement) error {
-	f.deletes = append(f.deletes, e.DeepCopy())
-	return nil
-}
-
-func (f *fakeClient) Watch(ctx context.Context, name, resourceVersion string) (watch.Interface, error) {
-	ch := make(chan watch.Event, len(f.watchEmit)+1)
-	for _, ev := range f.watchEmit {
-		ch <- ev
-	}
-	return &bufferedWatch{ch: ch}, nil
-}
-
-// bufferedWatch replays a fixed set of events and then blocks (its channel stays
-// open) so a bounded wait resolves on the first matching event rather than
-// falling through to the closed-channel re-read path.
-type bufferedWatch struct {
-	ch chan watch.Event
-}
-
-func (b *bufferedWatch) Stop()                          {}
-func (b *bufferedWatch) ResultChan() <-chan watch.Event { return b.ch }
-
-// modifiedEvent wraps an entitlement in a MODIFIED watch event.
-func modifiedEvent(e *servicesv1alpha1.ServiceEntitlement) watch.Event {
-	return watch.Event{Type: watch.Modified, Object: e}
 }
 
 // alreadyExistsErr mimics a concurrent create winning the race.
@@ -116,13 +115,9 @@ func invalidCreateErr() error {
 	)
 }
 
-// listOf wraps entitlements in a list.
-func listOf(items ...*servicesv1alpha1.ServiceEntitlement) *servicesv1alpha1.ServiceEntitlementList {
-	list := &servicesv1alpha1.ServiceEntitlementList{}
-	for _, it := range items {
-		list.Items = append(list.Items, *it)
-	}
-	return list
+// modifiedEvent wraps an entitlement in a MODIFIED watch event.
+func modifiedEvent(e *servicesv1alpha1.ServiceEntitlement) watch.Event {
+	return watch.Event{Type: watch.Modified, Object: e}
 }
 
 // testIO returns IOStreams over buffers with a scripted stdin, plus the stderr
