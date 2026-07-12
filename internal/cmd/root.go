@@ -252,7 +252,7 @@ Get started:
 
 	// Top-level auth entry points. Promoted out of the 'auth' subgroup so that
 	// new users find 'datumctl login' at the root of the CLI, while experienced
-	// users can still reach 'datumctl auth login' for advanced options
+	// users can still reach 'datumctl login' for advanced options
 	// (service-account, device flow).
 	loginCmd := login.Command()
 	loginCmd.GroupID = "auth"

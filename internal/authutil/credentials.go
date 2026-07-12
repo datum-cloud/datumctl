@@ -27,7 +27,7 @@ const KnownUsersKey = "known_users"
 // ErrNoActiveUser indicates that no active user is set in the keyring.
 var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"No active user found.",
-	"Please login first using: `datumctl auth login`",
+	"Please login first using: `datumctl login`",
 )
 
 // IsNoActiveUser reports whether err wraps ErrNoActiveUser.
@@ -145,7 +145,7 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 			if retrieveErr.ErrorCode == "invalid_grant" || retrieveErr.ErrorCode == "invalid_request" {
 				return nil, customerrors.WrapUserErrorWithHint(
 					"Authentication session has expired or refresh token is no longer valid.",
-					"Please re-authenticate using: `datumctl auth login`",
+					"Please re-authenticate using: `datumctl login`",
 					err,
 				)
 			}
