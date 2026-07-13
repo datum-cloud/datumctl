@@ -175,6 +175,22 @@ func TestSelectEntitlement(t *testing.T) {
 			t.Fatalf("SelectEntitlement() = %+v, want nil", got)
 		}
 	})
+
+	t.Run("status.serviceName is preferred over the spec object-name reference", func(t *testing.T) {
+		// spec.serviceRef.name is the k8s object name ("compute"); the controller
+		// resolves and stamps the canonical reverse-DNS identifier onto
+		// status.serviceName once it reconciles. Canonical selection must key on
+		// the stamped status, not assume the two strings coincide.
+		stamped := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "ok", nil)
+		stamped.Name = "compute"
+		stamped.Status.ServiceName = "compute.datumapis.com"
+
+		list := &servicesv1alpha1.ServiceEntitlementList{Items: []servicesv1alpha1.ServiceEntitlement{*other, *stamped}}
+		got := SelectEntitlement(list, testConfig)
+		if got == nil || got.Name != "compute" {
+			t.Fatalf("SelectEntitlement() = %+v, want the entitlement whose status.serviceName is canonical", got)
+		}
+	})
 }
 
 // ageAgo is exercised indirectly by the renderer; a direct check guards the

@@ -74,11 +74,6 @@ func Classify(obs Observation) State {
 // SelectEntitlement picks the entitlement representing the configured service
 // from a list, preferring a canonical-name match over the object-name fallback.
 // It returns nil when none matches.
-//
-// The canonical identity would ideally come from a controller-stamped
-// status.serviceName, but that field does not yet exist on the API; until it
-// does, canonicalNameOf reads spec.serviceRef.name, which dependency-origin
-// entitlements carry as the canonical name.
 func SelectEntitlement(list *servicesv1alpha1.ServiceEntitlementList, cfg Config) *servicesv1alpha1.ServiceEntitlement {
 	if list == nil {
 		return nil
@@ -97,9 +92,13 @@ func SelectEntitlement(list *servicesv1alpha1.ServiceEntitlementList, cfg Config
 }
 
 // canonicalNameOf returns the best-known canonical service identity for an
-// entitlement. status.serviceName is not yet part of the API, so this reads the
-// spec reference; update it to prefer status.serviceName once that lands.
+// entitlement, preferring the controller-stamped status.serviceName and
+// falling back to the spec reference for entitlements the controller hasn't
+// reconciled yet (status not written).
 func canonicalNameOf(e *servicesv1alpha1.ServiceEntitlement) string {
+	if e.Status.ServiceName != "" {
+		return e.Status.ServiceName
+	}
 	return e.Spec.ServiceRef.Name
 }
 
