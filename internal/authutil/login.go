@@ -201,7 +201,7 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 		fmt.Println("Please visit this URL manually to authenticate:")
 		fmt.Printf("\n%s\n\n", authURL)
 		fmt.Println("Tip: in a headless environment (CI, SSH without forwarding, or a container) use")
-		fmt.Println("'datumctl auth login --no-browser' — it uses a device-code flow that doesn't need a local browser.")
+		fmt.Println("'datumctl login --no-browser' — it uses a device-code flow that doesn't need a local browser.")
 	} else {
 		fmt.Println("Please complete the authentication in your browser.")
 	}

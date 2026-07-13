@@ -145,7 +145,7 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 			if retrieveErr.ErrorCode == "invalid_grant" || retrieveErr.ErrorCode == "invalid_request" {
 				return nil, customerrors.WrapUserErrorWithHint(
 					"Authentication session has expired or refresh token is no longer valid.",
-					"Please re-authenticate using: `datumctl auth login`",
+					"Please re-authenticate using: `datumctl login`",
 					err,
 				)
 			}

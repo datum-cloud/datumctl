@@ -22,7 +22,7 @@ You need an API key from one of the supported LLM providers:
 You also need to be logged in to Datum Cloud:
 
 ```
-datumctl auth login
+datumctl login
 ```
 
 ## Quick start
