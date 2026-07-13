@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -90,14 +89,12 @@ func countVerb(cs *svcfake.Clientset, verb string) int {
 	return n
 }
 
-// catalogAbsentErr is the real discovery failure returned when the services API
-// group is not served, so catalogAbsent (apimeta.IsNoMatchError) recognizes it.
+// catalogAbsentErr mimics what the generated clientset actually returns when
+// the services API group isn't served: a plain 404 from the apiserver
+// (apierrors.IsNotFound), since this client hits a fixed REST path with no
+// RESTMapper involved and so can never produce a meta.NoResourceMatchError.
 func catalogAbsentErr() error {
-	return &apimeta.NoResourceMatchError{
-		PartialResource: schema.GroupVersionResource{
-			Group: "services.miloapis.com", Version: "v1alpha1", Resource: entitlementResource,
-		},
-	}
+	return apierrors.NewNotFound(entitlementGR, "")
 }
 
 // alreadyExistsErr mimics a concurrent create winning the race.

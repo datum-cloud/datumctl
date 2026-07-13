@@ -1,22 +1,11 @@
 package serviceactivation
 
 import (
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	servicesv1alpha1 "go.miloapis.com/service-catalog/api/v1alpha1"
-)
-
-const (
-	// conditionTypeReady is the single condition type the entitlement controller
-	// writes. It is unexported by service-catalog today (the RFC's one upstream
-	// ask is to promote it to api/v1alpha1); mirror it here until then.
-	conditionTypeReady = "Ready"
-
-	// reasonServiceNotPublished is the only Ready reason that branches control
-	// flow: it maps a Rejected entitlement to Unavailable rather than Denied.
-	// All other reasons refine wording only.
-	reasonServiceNotPublished = "ServiceNotPublished"
 )
 
 // Observation is the raw input Classify reduces to a State: the selected
@@ -43,7 +32,7 @@ func Classify(obs Observation) State {
 		return StateNotRequested
 	}
 
-	ready := apimeta.FindStatusCondition(e.Status.Conditions, conditionTypeReady)
+	ready := apimeta.FindStatusCondition(e.Status.Conditions, servicesv1alpha1.ConditionTypeReady)
 	if e.Status.Phase == "" || ready == nil {
 		// The operator has not written status yet.
 		return StateProcessing
@@ -55,8 +44,10 @@ func Classify(obs Observation) State {
 	case servicesv1alpha1.EntitlementPhasePendingApproval:
 		return StatePendingApproval
 	case servicesv1alpha1.EntitlementPhaseRejected:
-		// ServiceNotPublished is checked before the Denied/Revoked split.
-		if ready.Reason == reasonServiceNotPublished {
+		// ReasonServiceNotPublished is the only Ready reason that branches control
+		// flow (Unavailable instead of Denied); it is checked before the
+		// Denied/Revoked split. All other reasons refine wording only.
+		if ready.Reason == servicesv1alpha1.ReasonServiceNotPublished {
 			return StateUnavailable
 		}
 		// entitledAt is written once on first activation and never cleared, so it
@@ -104,8 +95,14 @@ func canonicalNameOf(e *servicesv1alpha1.ServiceEntitlement) string {
 
 // catalogAbsent reports whether a List error means the services API group is
 // not served, as opposed to a transient or permission error.
+//
+// The client here is the generated typed clientset (gentype.ClientWithList
+// over a fixed REST path), not a RESTMapper-backed client — a missing API
+// group surfaces as a plain 404 NotFound from the apiserver, never as
+// meta.NoResourceMatchError/NoKindMatchError (those are RESTMapper-only
+// errors and would never occur on this client).
 func catalogAbsent(err error) bool {
-	return apimeta.IsNoMatchError(err)
+	return apierrors.IsNotFound(err)
 }
 
 // readyCondition returns the entitlement's Ready condition, or nil.
@@ -113,5 +110,5 @@ func readyCondition(e *servicesv1alpha1.ServiceEntitlement) *metav1.Condition {
 	if e == nil {
 		return nil
 	}
-	return apimeta.FindStatusCondition(e.Status.Conditions, conditionTypeReady)
+	return apimeta.FindStatusCondition(e.Status.Conditions, servicesv1alpha1.ConditionTypeReady)
 }

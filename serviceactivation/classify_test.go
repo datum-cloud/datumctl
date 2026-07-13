@@ -17,16 +17,11 @@ var testConfig = Config{
 	AccessCommand: "datumctl compute access",
 }
 
-// Reason and message strings below mirror exactly what the service-catalog
-// serviceentitlement controller writes (internal/controller/serviceentitlement_controller.go),
-// so the fixtures match production object shape rather than an invented one.
-const (
-	reasonEntitlementActive          = "EntitlementActive"
-	reasonEntitlementPendingApproval = "EntitlementPendingApproval"
-	reasonEntitlementRejected        = "EntitlementRejected"
-	// reasonConsumerDenied is a transient relay reason no state may key on.
-	reasonConsumerDenied = "ConsumerDenied"
-)
+// reasonConsumerDenied is a transient ServiceConsumer-relay Ready reason no
+// state may key on; unlike the ReasonEntitlement* reasons it is not part of
+// the ServiceEntitlement API surface, so there is no exported constant to
+// reference.
+const reasonConsumerDenied = "ConsumerDenied"
 
 // entitlement builds a ServiceEntitlement with a Ready condition, matching the
 // controller's setEntitlementStatus write path.
@@ -44,7 +39,7 @@ func entitlement(spec string, phase servicesv1alpha1.EntitlementPhase, reason, m
 		status = metav1.ConditionTrue
 	}
 	e.Status.Conditions = []metav1.Condition{{
-		Type:    conditionTypeReady,
+		Type:    servicesv1alpha1.ConditionTypeReady,
 		Status:  status,
 		Reason:  reason,
 		Message: message,
@@ -89,25 +84,25 @@ func TestClassify(t *testing.T) {
 		{
 			name: "active",
 			obs: Observation{Entitlement: entitlement("compute", servicesv1alpha1.EntitlementPhaseActive,
-				reasonEntitlementActive, "This service is enabled and ready to use.", &now)},
+				servicesv1alpha1.ReasonEntitlementActive, "This service is enabled and ready to use.", &now)},
 			want: StateActive,
 		},
 		{
 			name: "pending approval",
 			obs: Observation{Entitlement: entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval,
-				reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)},
+				servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)},
 			want: StatePendingApproval,
 		},
 		{
 			name: "denied: rejected with entitledAt unset",
 			obs: Observation{Entitlement: entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected,
-				reasonEntitlementRejected, "The service provider denied this request.", nil)},
+				servicesv1alpha1.ReasonEntitlementRejected, "The service provider denied this request.", nil)},
 			want: StateDenied,
 		},
 		{
 			name: "revoked: rejected with entitledAt set",
 			obs: Observation{Entitlement: entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected,
-				reasonEntitlementRejected, "The service provider denied this request.", &now)},
+				servicesv1alpha1.ReasonEntitlementRejected, "The service provider denied this request.", &now)},
 			want: StateRevoked,
 		},
 		{
@@ -119,13 +114,13 @@ func TestClassify(t *testing.T) {
 		{
 			name: "unavailable: rejected with ServiceNotPublished (service missing)",
 			obs: Observation{Entitlement: entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected,
-				reasonServiceNotPublished, "The requested service could not be found.", nil)},
+				servicesv1alpha1.ReasonServiceNotPublished, "The requested service could not be found.", nil)},
 			want: StateUnavailable,
 		},
 		{
 			name: "unavailable takes precedence over the revoked split even when entitledAt is set",
 			obs: Observation{Entitlement: entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected,
-				reasonServiceNotPublished, "The service \"compute.datumapis.com\" isn't published yet, so it can't be enabled.", &now)},
+				servicesv1alpha1.ReasonServiceNotPublished, "The service \"compute.datumapis.com\" isn't published yet, so it can't be enabled.", &now)},
 			want: StateUnavailable,
 		},
 		{
@@ -146,11 +141,11 @@ func TestClassify(t *testing.T) {
 }
 
 func TestSelectEntitlement(t *testing.T) {
-	direct := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "ok", nil)
+	direct := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, servicesv1alpha1.ReasonEntitlementActive, "ok", nil)
 	direct.Name = "compute"
-	canonical := entitlement("compute.datumapis.com", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "waiting", nil)
+	canonical := entitlement("compute.datumapis.com", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "waiting", nil)
 	canonical.Name = "compute.datumapis.com"
-	other := entitlement("network", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "ok", nil)
+	other := entitlement("network", servicesv1alpha1.EntitlementPhaseActive, servicesv1alpha1.ReasonEntitlementActive, "ok", nil)
 	other.Name = "network"
 
 	t.Run("object-name match when only the direct entitlement exists", func(t *testing.T) {
@@ -181,7 +176,7 @@ func TestSelectEntitlement(t *testing.T) {
 		// resolves and stamps the canonical reverse-DNS identifier onto
 		// status.serviceName once it reconciles. Canonical selection must key on
 		// the stamped status, not assume the two strings coincide.
-		stamped := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "ok", nil)
+		stamped := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, servicesv1alpha1.ReasonEntitlementActive, "ok", nil)
 		stamped.Name = "compute"
 		stamped.Status.ServiceName = "compute.datumapis.com"
 

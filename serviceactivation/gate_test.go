@@ -32,7 +32,7 @@ func wantExit(t *testing.T, err error, code int, state State) {
 }
 
 func TestGateActiveProceeds(t *testing.T) {
-	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
+	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, servicesv1alpha1.ReasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
 	ec, _ := newFake(withObjects(active))
 	io, _, errb := testIO("", false)
 
@@ -59,7 +59,7 @@ func TestGateNonInteractiveNeverMutates(t *testing.T) {
 }
 
 func TestGateInteractiveSubmitLandsPending(t *testing.T) {
-	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
+	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
 	ec, cs := newFake(withWatch(modifiedEvent(pending)))
 	io, _, errb := testIO("y\n", true)
 
@@ -98,7 +98,7 @@ func TestGateInteractiveDecline(t *testing.T) {
 }
 
 func TestGateCreateAlreadyExistsFallsThrough(t *testing.T) {
-	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
+	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
 	ec, _ := newFake(withCreateErr(alreadyExistsErr()), withWatch(modifiedEvent(pending)))
 	io, _, errb := testIO("y\n", true)
 
@@ -123,7 +123,7 @@ func TestGateCreateAdmissionRejectionMapsToUnavailable(t *testing.T) {
 
 func TestGatePendingReentryIsInstant(t *testing.T) {
 	pending := withCreationAge(
-		entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil),
+		entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil),
 		metav1.NewTime(time.Now().Add(-2*time.Hour)),
 	)
 	ec, cs := newFake(withObjects(pending))
@@ -140,7 +140,7 @@ func TestGatePendingReentryIsInstant(t *testing.T) {
 }
 
 func TestGateDeniedReentry(t *testing.T) {
-	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, reasonEntitlementRejected, "The service provider denied this request.", nil)
+	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, servicesv1alpha1.ReasonEntitlementRejected, "The service provider denied this request.", nil)
 	ec, _ := newFake(withObjects(denied))
 	io, _, errb := testIO("", false)
 

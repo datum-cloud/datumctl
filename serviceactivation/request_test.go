@@ -14,7 +14,7 @@ func requesterWith(ec EntitlementClient, io IOStreams) Requester {
 }
 
 func TestRequestSubmitPendingExitsZero(t *testing.T) {
-	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
+	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
 	ec, cs := newFake(withWatch(modifiedEvent(pending)))
 	io, _, errb := testIO("", false)
 
@@ -31,7 +31,7 @@ func TestRequestSubmitPendingExitsZero(t *testing.T) {
 }
 
 func TestRequestDeniedWithoutRenewIsTerminal(t *testing.T) {
-	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, reasonEntitlementRejected, "The service provider denied this request.", nil)
+	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, servicesv1alpha1.ReasonEntitlementRejected, "The service provider denied this request.", nil)
 	ec, cs := newFake(withObjects(denied))
 	io, _, _ := testIO("", false)
 
@@ -43,8 +43,8 @@ func TestRequestDeniedWithoutRenewIsTerminal(t *testing.T) {
 }
 
 func TestRequestRenewDeletesAndRecreates(t *testing.T) {
-	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, reasonEntitlementRejected, "The service provider denied this request.", nil)
-	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
+	denied := entitlement("compute", servicesv1alpha1.EntitlementPhaseRejected, servicesv1alpha1.ReasonEntitlementRejected, "The service provider denied this request.", nil)
+	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
 	ec, cs := newFake(withObjects(denied), withWatch(modifiedEvent(pending)))
 	io, _, _ := testIO("", false) // non-interactive: no renew confirmation prompt
 
@@ -60,7 +60,7 @@ func TestRequestRenewDeletesAndRecreates(t *testing.T) {
 }
 
 func TestRequestWaitTimesOutWhilePending(t *testing.T) {
-	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
+	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
 	// The entitlement stays pending and the watch never delivers a resolving
 	// event, so a short --timeout expires while pending → exit 12.
 	ec, _ := newFake(withObjects(pending))
@@ -74,8 +74,8 @@ func TestRequestWaitTimesOutWhilePending(t *testing.T) {
 }
 
 func TestRequestWaitReachesActive(t *testing.T) {
-	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, reasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
-	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
+	pending := entitlement("compute", servicesv1alpha1.EntitlementPhasePendingApproval, servicesv1alpha1.ReasonEntitlementPendingApproval, "Waiting for the service provider to approve this request.", nil)
+	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, servicesv1alpha1.ReasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
 	// Starts pending; the watch then delivers Active.
 	ec, _ := newFake(withObjects(pending), withWatch(modifiedEvent(active)))
 	io, _, errb := testIO("", false)
@@ -89,7 +89,7 @@ func TestRequestWaitReachesActive(t *testing.T) {
 }
 
 func TestRequestAlreadyActiveStands(t *testing.T) {
-	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, reasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
+	active := entitlement("compute", servicesv1alpha1.EntitlementPhaseActive, servicesv1alpha1.ReasonEntitlementActive, "This service is enabled and ready to use.", ptrNow())
 	ec, cs := newFake(withObjects(active))
 	io, _, errb := testIO("", false)
 
