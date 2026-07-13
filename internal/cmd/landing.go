@@ -79,10 +79,10 @@ func printLoggedInLanding(out io.Writer, cfg *datumconfig.ConfigV1Beta1, session
 	if ctxEntry != nil {
 		var ctxLine string
 		if ctxEntry.ProjectID != "" {
-			projName := cfg.ProjectDisplayName(ctxEntry.ProjectID)
+			projName := cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID)
 			ctxLine = fmt.Sprintf("%q project (%s)", projName, ctxEntry.Ref())
 		} else {
-			orgName := cfg.OrgDisplayName(ctxEntry.OrganizationID)
+			orgName := cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID)
 			ctxLine = fmt.Sprintf("%q org (%s)", orgName, ctxEntry.OrganizationID)
 		}
 		fmt.Fprintf(out, "  Context        %s\n", ctxLine)

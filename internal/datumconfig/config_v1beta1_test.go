@@ -13,12 +13,14 @@ func TestConfigV1Beta1RoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "config")
 
+	const sess = "jane@acme.com@api.datum.net"
+	const currentCtx = sess + "/org-acme/proj-infra"
 	original := NewV1Beta1()
-	original.CurrentContext = "org-acme/proj-infra"
-	original.ActiveSession = "jane@acme.com@api.datum.net"
+	original.CurrentContext = currentCtx
+	original.ActiveSession = sess
 	original.Sessions = []Session{
 		{
-			Name:      "jane@acme.com@api.datum.net",
+			Name:      sess,
 			UserKey:   "key-abc123",
 			UserEmail: "jane@acme.com",
 			UserName:  "Jane Doe",
@@ -26,18 +28,18 @@ func TestConfigV1Beta1RoundTrip(t *testing.T) {
 				Server:       "https://api.datum.net",
 				AuthHostname: "auth.datum.net",
 			},
-			LastContext: "org-acme/proj-infra",
+			LastContext: currentCtx,
 		},
 	}
 	original.Contexts = []DiscoveredContext{
 		{
-			Name:           "org-acme",
-			Session:        "jane@acme.com@api.datum.net",
+			Name:           sess + "/org-acme",
+			Session:        sess,
 			OrganizationID: "org-acme",
 		},
 		{
-			Name:           "org-acme/proj-infra",
-			Session:        "jane@acme.com@api.datum.net",
+			Name:           currentCtx,
+			Session:        sess,
 			OrganizationID: "org-acme",
 			ProjectID:      "proj-infra",
 			Namespace:      "default",
@@ -59,18 +61,18 @@ func TestConfigV1Beta1RoundTrip(t *testing.T) {
 	if loaded.Kind != DefaultKind {
 		t.Errorf("Kind=%q, want %q", loaded.Kind, DefaultKind)
 	}
-	if loaded.CurrentContext != "org-acme/proj-infra" {
-		t.Errorf("CurrentContext=%q, want %q", loaded.CurrentContext, "org-acme/proj-infra")
+	if loaded.CurrentContext != currentCtx {
+		t.Errorf("CurrentContext=%q, want %q", loaded.CurrentContext, currentCtx)
 	}
-	if loaded.ActiveSession != "jane@acme.com@api.datum.net" {
-		t.Errorf("ActiveSession=%q, want %q", loaded.ActiveSession, "jane@acme.com@api.datum.net")
+	if loaded.ActiveSession != sess {
+		t.Errorf("ActiveSession=%q, want %q", loaded.ActiveSession, sess)
 	}
 	if len(loaded.Sessions) != 1 {
 		t.Fatalf("Sessions len=%d, want 1", len(loaded.Sessions))
 	}
 	s := loaded.Sessions[0]
-	if s.Name != "jane@acme.com@api.datum.net" {
-		t.Errorf("Session.Name=%q, want %q", s.Name, "jane@acme.com@api.datum.net")
+	if s.Name != sess {
+		t.Errorf("Session.Name=%q, want %q", s.Name, sess)
 	}
 	if s.UserKey != "key-abc123" {
 		t.Errorf("Session.UserKey=%q, want %q", s.UserKey, "key-abc123")
@@ -84,8 +86,8 @@ func TestConfigV1Beta1RoundTrip(t *testing.T) {
 	if s.Endpoint.Server != "https://api.datum.net" {
 		t.Errorf("Endpoint.Server=%q, want %q", s.Endpoint.Server, "https://api.datum.net")
 	}
-	if s.LastContext != "org-acme/proj-infra" {
-		t.Errorf("Session.LastContext=%q, want %q", s.LastContext, "org-acme/proj-infra")
+	if s.LastContext != currentCtx {
+		t.Errorf("Session.LastContext=%q, want %q", s.LastContext, currentCtx)
 	}
 	if len(loaded.Contexts) != 2 {
 		t.Fatalf("Contexts len=%d, want 2", len(loaded.Contexts))
@@ -310,8 +312,9 @@ func TestHasMultipleEndpoints(t *testing.T) {
 	}
 }
 
-// TestActiveSessionEntry verifies fallback logic: explicit ActiveSession first,
-// then session derived from current context.
+// TestActiveSessionEntry verifies the single-source-of-truth precedence: the
+// current context's session is authoritative, and the stored ActiveSession is
+// only a fallback for when no current context resolves.
 func TestActiveSessionEntry(t *testing.T) {
 	t.Parallel()
 
@@ -321,7 +324,7 @@ func TestActiveSessionEntry(t *testing.T) {
 		{Name: "sess-2", UserEmail: "bob@example.com"},
 	}
 	cfg.Contexts = []DiscoveredContext{
-		{Name: "acme-corp", Session: "sess-1"},
+		{Name: "sess-1/acme-corp", Session: "sess-1", OrganizationID: "acme-corp"},
 	}
 
 	// No active session and no current context — should return nil.
@@ -330,34 +333,37 @@ func TestActiveSessionEntry(t *testing.T) {
 		t.Errorf("expected nil when no ActiveSession and no CurrentContext, got %+v", got)
 	}
 
-	// Set CurrentContext only — should fall back to context's session.
-	cfg.CurrentContext = "acme-corp"
+	// ActiveSession only (no current context) — falls back to ActiveSession.
+	cfg.ActiveSession = "sess-2"
+	got = cfg.ActiveSessionEntry()
+	if got == nil {
+		t.Fatal("expected fallback to ActiveSession, got nil")
+	}
+	if got.UserEmail != "bob@example.com" {
+		t.Errorf("fallback UserEmail=%q, want %q", got.UserEmail, "bob@example.com")
+	}
+
+	// Set a current context — its session wins over a divergent ActiveSession.
+	// This is the #248 fix: whoami must not report a different environment than
+	// the one the current context routes requests to.
+	cfg.CurrentContext = "sess-1/acme-corp"
 	got = cfg.ActiveSessionEntry()
 	if got == nil {
 		t.Fatal("expected session from current context, got nil")
 	}
 	if got.UserEmail != "alice@example.com" {
-		t.Errorf("UserEmail=%q, want %q", got.UserEmail, "alice@example.com")
+		t.Errorf("current context's session must win: UserEmail=%q, want %q", got.UserEmail, "alice@example.com")
 	}
 
-	// Set explicit ActiveSession — should prefer it over context session.
-	cfg.ActiveSession = "sess-2"
+	// Current context points at a missing session — fall back to ActiveSession.
+	cfg.CurrentContext = "sess-1/gone"
+	cfg.Contexts = append(cfg.Contexts, DiscoveredContext{Name: "sess-1/gone", Session: "removed-session"})
 	got = cfg.ActiveSessionEntry()
 	if got == nil {
-		t.Fatal("expected session from ActiveSession, got nil")
+		t.Fatal("expected fallback to ActiveSession when context session missing, got nil")
 	}
 	if got.UserEmail != "bob@example.com" {
-		t.Errorf("UserEmail=%q, want %q", got.UserEmail, "bob@example.com")
-	}
-
-	// ActiveSession set but nonexistent — falls back to current context.
-	cfg.ActiveSession = "nonexistent"
-	got = cfg.ActiveSessionEntry()
-	if got == nil {
-		t.Fatal("expected fallback to current context session, got nil")
-	}
-	if got.UserEmail != "alice@example.com" {
-		t.Errorf("fallback UserEmail=%q, want %q", got.UserEmail, "alice@example.com")
+		t.Errorf("fallback UserEmail=%q, want %q", got.UserEmail, "bob@example.com")
 	}
 }
 
@@ -772,5 +778,230 @@ func TestDisplayRef(t *testing.T) {
 	orphan := &DiscoveredContext{OrganizationID: "unknown-org", ProjectID: "unknown-proj"}
 	if got := cfg.DisplayRef(orphan); got != "unknown-org/unknown-proj" {
 		t.Errorf("orphan DisplayRef = %q, want IDs", got)
+	}
+}
+
+// TestActiveSessionEntry_Issue248 reproduces the production incident: a user is
+// logged into staging (ActiveSession = staging) but has selected a production
+// context. whoami reads ActiveSessionEntry, and it must report production —
+// the same environment requests route to — not the stale ActiveSession.
+func TestActiveSessionEntry_Issue248(t *testing.T) {
+	t.Parallel()
+
+	const staging = "user@example.com@api.staging.datum.net"
+	const prod = "user@example.com@api.datum.net"
+
+	cfg := NewV1Beta1()
+	cfg.Sessions = []Session{
+		{Name: staging, UserEmail: "user@example.com", Endpoint: Endpoint{Server: "https://api.staging.datum.net"}},
+		{Name: prod, UserEmail: "user@example.com", Endpoint: Endpoint{Server: "https://api.datum.net"}},
+	}
+	cfg.Contexts = []DiscoveredContext{
+		{Name: QualifiedContextName(prod, "datum/datum-cloud"), Session: prod, OrganizationID: "datum", ProjectID: "datum-cloud"},
+	}
+	// The bug state: ActiveSession still names staging, but the current context
+	// belongs to prod (as it would after `ctx use` a prod context).
+	cfg.ActiveSession = staging
+	cfg.CurrentContext = QualifiedContextName(prod, "datum/datum-cloud")
+
+	got := cfg.ActiveSessionEntry()
+	if got == nil {
+		t.Fatal("ActiveSessionEntry returned nil")
+	}
+	if got.Name != prod {
+		t.Errorf("ActiveSessionEntry = %q, want %q (must follow the current context, not the stale ActiveSession)", got.Name, prod)
+	}
+}
+
+// TestActiveSessionEntry_FallbackWhenNoContext verifies a freshly-logged-in
+// session with no current context falls back to ActiveSession.
+func TestActiveSessionEntry_FallbackWhenNoContext(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewV1Beta1()
+	cfg.Sessions = []Session{{Name: "fresh@api.datum.net", UserEmail: "fresh@example.com"}}
+	cfg.ActiveSession = "fresh@api.datum.net"
+	// No CurrentContext set (as right after login before picking one).
+
+	got := cfg.ActiveSessionEntry()
+	if got == nil {
+		t.Fatal("expected fallback to ActiveSession, got nil")
+	}
+	if got.UserEmail != "fresh@example.com" {
+		t.Errorf("UserEmail=%q, want %q", got.UserEmail, "fresh@example.com")
+	}
+}
+
+// TestResolveContextInSession_ScopedAddressing verifies that a ref is resolved
+// only within the active session, and that a ref living solely in another
+// session is not silently borrowed — instead FindContextOwner names the owner.
+func TestResolveContextInSession_ScopedAddressing(t *testing.T) {
+	t.Parallel()
+
+	const staging = "user@example.com@api.staging.datum.net"
+	const prod = "user@example.com@api.datum.net"
+
+	cfg := NewV1Beta1()
+	cfg.Sessions = []Session{
+		{Name: staging, UserEmail: "user@example.com", Endpoint: Endpoint{Server: "https://api.staging.datum.net"}},
+		{Name: prod, UserEmail: "user@example.com", Endpoint: Endpoint{Server: "https://api.datum.net"}},
+	}
+	cfg.Contexts = []DiscoveredContext{
+		// Both environments share the identical ref.
+		{Name: QualifiedContextName(staging, "datum/datum-cloud"), Session: staging, OrganizationID: "datum", ProjectID: "datum-cloud"},
+		{Name: QualifiedContextName(prod, "datum/datum-cloud"), Session: prod, OrganizationID: "datum", ProjectID: "datum-cloud"},
+		// A ref that exists only in prod.
+		{Name: QualifiedContextName(prod, "datum/prod-only"), Session: prod, OrganizationID: "datum", ProjectID: "prod-only"},
+	}
+
+	// Shared ref resolves within the active (staging) session to staging's entry.
+	got := cfg.ResolveContextInSession("datum/datum-cloud", staging)
+	if got == nil || got.Session != staging {
+		t.Fatalf("ResolveContextInSession(shared, staging) = %+v, want staging entry", got)
+	}
+
+	// A prod-only ref is NOT resolvable while staging is active.
+	if got := cfg.ResolveContextInSession("datum/prod-only", staging); got != nil {
+		t.Errorf("ResolveContextInSession(prod-only, staging) = %+v, want nil", got)
+	}
+
+	// FindContextOwner points at the prod session so the command can tell the
+	// user to switch first.
+	owner := cfg.FindContextOwner("datum/prod-only", staging)
+	if owner == nil {
+		t.Fatal("FindContextOwner(prod-only, staging) = nil, want prod session")
+	}
+	if owner.Name != prod {
+		t.Errorf("owner = %q, want %q", owner.Name, prod)
+	}
+
+	// A ref that exists nowhere has no owner.
+	if owner := cfg.FindContextOwner("datum/nope", staging); owner != nil {
+		t.Errorf("FindContextOwner(nope) = %+v, want nil", owner)
+	}
+}
+
+// TestResolveContextInSession_DisplayNamesScopedToSession verifies that display
+// names collide across environments but resolve within the correct session.
+func TestResolveContextInSession_DisplayNamesScopedToSession(t *testing.T) {
+	t.Parallel()
+
+	const staging = "s@api.staging.datum.net"
+	const prod = "s@api.datum.net"
+
+	cfg := NewV1Beta1()
+	// Same org ID "datum" in both, but different display names per environment.
+	cfg.Cache.Organizations = []CachedOrg{
+		{ID: "datum", DisplayName: "Datum Staging", Session: staging},
+		{ID: "datum", DisplayName: "Datum Production", Session: prod},
+	}
+	cfg.Contexts = []DiscoveredContext{
+		{Name: QualifiedContextName(staging, "datum"), Session: staging, OrganizationID: "datum"},
+		{Name: QualifiedContextName(prod, "datum"), Session: prod, OrganizationID: "datum"},
+	}
+
+	if got := cfg.OrgDisplayName(staging, "datum"); got != "Datum Staging" {
+		t.Errorf("OrgDisplayName(staging) = %q, want %q", got, "Datum Staging")
+	}
+	if got := cfg.OrgDisplayName(prod, "datum"); got != "Datum Production" {
+		t.Errorf("OrgDisplayName(prod) = %q, want %q", got, "Datum Production")
+	}
+
+	// Resolving the production display name while staging is active must fail —
+	// it belongs to a different environment.
+	if got := cfg.ResolveContextInSession("Datum Production", staging); got != nil {
+		t.Errorf("ResolveContextInSession(Datum Production, staging) = %+v, want nil", got)
+	}
+	if got := cfg.ResolveContextInSession("Datum Production", prod); got == nil || got.Session != prod {
+		t.Errorf("ResolveContextInSession(Datum Production, prod) = %+v, want prod entry", got)
+	}
+}
+
+// TestMigrateSessionScoping verifies that a config written before session
+// qualification is upgraded on load: context names become session-qualified,
+// the current-context and last-context pointers follow, contexts stay intact,
+// and un-sessioned display-cache entries are dropped.
+func TestMigrateSessionScoping(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "config")
+
+	// A pre-change config: bare-ref context names, un-sessioned cache.
+	legacy := `apiVersion: datumctl.config.datum.net/v1beta1
+kind: DatumctlConfig
+current-context: datum/datum-cloud
+active-session: user@example.com@api.datum.net
+sessions:
+- name: user@example.com@api.datum.net
+  user-key: k1
+  user-email: user@example.com
+  endpoint:
+    server: https://api.datum.net
+    auth-hostname: auth.datum.net
+  last-context: datum/datum-cloud
+contexts:
+- name: datum
+  session: user@example.com@api.datum.net
+  organization-id: datum
+- name: datum/datum-cloud
+  session: user@example.com@api.datum.net
+  organization-id: datum
+  project-id: datum-cloud
+  namespace: default
+cache:
+  organizations:
+  - id: datum
+    display-name: Datum Technology
+  projects:
+  - id: datum-cloud
+    display-name: Datum Cloud
+    org-id: datum
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg, err := LoadV1Beta1FromPath(path)
+	if err != nil {
+		t.Fatalf("LoadV1Beta1FromPath: %v", err)
+	}
+
+	const sess = "user@example.com@api.datum.net"
+	wantCurrent := QualifiedContextName(sess, "datum/datum-cloud")
+
+	// Names upgraded to the qualified form.
+	if cfg.CurrentContext != wantCurrent {
+		t.Errorf("CurrentContext=%q, want %q", cfg.CurrentContext, wantCurrent)
+	}
+	if got := cfg.SessionByName(sess); got == nil || got.LastContext != wantCurrent {
+		t.Errorf("LastContext not migrated: %+v", got)
+	}
+	// Contexts intact and addressable by their new qualified names.
+	if len(cfg.Contexts) != 2 {
+		t.Fatalf("Contexts len=%d, want 2", len(cfg.Contexts))
+	}
+	if cfg.ContextByName(wantCurrent) == nil {
+		t.Error("qualified project context not found after migration")
+	}
+	if cfg.CurrentContextEntry() == nil {
+		t.Error("current context does not resolve after migration")
+	}
+	// Un-sessioned cache dropped.
+	if len(cfg.Cache.Organizations) != 0 || len(cfg.Cache.Projects) != 0 {
+		t.Errorf("un-sessioned cache not dropped: orgs=%d projects=%d",
+			len(cfg.Cache.Organizations), len(cfg.Cache.Projects))
+	}
+
+	// Migration is idempotent: running it again changes nothing.
+	before := cfg.CurrentContext
+	cfg.migrateSessionScoping()
+	if cfg.CurrentContext != before {
+		t.Errorf("migration not idempotent: CurrentContext changed to %q", cfg.CurrentContext)
+	}
+	for i := range cfg.Contexts {
+		if cfg.Contexts[i].Name != cfg.Contexts[i].QualifiedName() {
+			t.Errorf("context %d not stable under re-migration: %q", i, cfg.Contexts[i].Name)
+		}
 	}
 }

@@ -61,11 +61,11 @@ func runWhoami(_ *cobra.Command, _ []string) error {
 		fmt.Printf("Context:      %s\n", ctxEntry.Ref())
 
 		fmt.Printf("Organization: %s\n", datumconfig.FormatWithID(
-			cfg.OrgDisplayName(ctxEntry.OrganizationID), ctxEntry.OrganizationID))
+			cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID), ctxEntry.OrganizationID))
 
 		if ctxEntry.ProjectID != "" {
 			fmt.Printf("Project:      %s\n", datumconfig.FormatWithID(
-				cfg.ProjectDisplayName(ctxEntry.ProjectID), ctxEntry.ProjectID))
+				cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID), ctxEntry.ProjectID))
 		}
 	} else {
 		fmt.Println("Context:      (none)")
