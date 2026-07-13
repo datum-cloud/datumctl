@@ -1,5 +1,5 @@
 ---
-status: provisional
+status: implementable
 stage: alpha
 latest-milestone: "v0.x"
 ---
@@ -26,7 +26,7 @@ latest-milestone: "v0.x"
   - [Prior art](#prior-art)
   - [Testing strategy](#testing-strategy)
   - [V1 milestone cut](#v1-milestone-cut)
-- [Open Questions](#open-questions)
+- [Resolved Questions](#resolved-questions)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
@@ -270,7 +270,8 @@ itself is never exposed — a local client can make API calls but cannot
 exfiltrate the credential to use elsewhere, which is a strictly better
 boundary than token-in-env approaches it replaces. A Unix-socket listener
 (file-permission-enforced, same-user-only) is the natural hardening step
-and is listed under [Open Questions](#open-questions).
+and is first on the deferred list (see
+[Resolved Questions](#resolved-questions)).
 
 #### Risk: Browsers as confused deputies (DNS rebinding, CSRF)
 
@@ -551,7 +552,8 @@ Conservative by default, with the rationale stated so future changes are
 deliberate:
 
 - **Loopback only, no override.** The listener binds `127.0.0.1` (v1 does
-  not bind `::1`; see Open Questions). There is no flag to bind other
+  not bind `::1`; the printed URL is always the IPv4 literal — see
+  [Resolved Questions](#resolved-questions)). There is no flag to bind other
   addresses — not even a scary one — because every legitimate "remote
   proxy" story we could name is better served by the user running their own
   tunnel (SSH, tailscale) whose security model they already own. datumctl
@@ -565,7 +567,7 @@ deliberate:
   runs) is bounded by proxy lifetime, named in the docs, mitigated by
   default request logging, and — unlike token-in-env — never exposes the
   credential itself. A Unix-socket mode with `0600` permissions is the
-  documented hardening path (Open Questions).
+  documented hardening path, first on the deferred list.
 - **Host-header validation** (DNS-rebinding defense): requests whose
   `Host` is not `localhost`, `127.0.0.1`, or `[::1]` — with or without the
   bound port — are rejected with `403` before proxying. This is the same
@@ -602,9 +604,9 @@ One line per request to stderr, on by default, silenced by `--quiet`:
 
 Streaming responses log when headers are sent (marked `…streaming`) and
 again on stream end with total duration and bytes, so an abruptly closed
-watch is visible. The proxy generates an internal per-request ID used only
-to correlate its own log lines at higher verbosity; inbound `X-Request-ID`
-passes through to the upstream untouched.
+watch is visible. Per-request correlation IDs for the proxy's own log
+lines are part of the deferred richer-diagnostics work; inbound
+`X-Request-ID` passes through to the upstream untouched.
 
 ### Failure and lifecycle UX
 
@@ -716,34 +718,46 @@ Explicitly deferred (in likely priority order):
 3. `--cors-allow-origin` for browser-direct use
 4. `datumctl api request` one-shot sibling (`gh api` analog)
 5. Tested WebSocket guarantee, if a platform feature comes to need it
+6. Richer diagnostics: per-request log correlation IDs and
+   successful-refresh log lines
 
-## Open Questions
+## Resolved Questions
 
-1. **Bind `::1` as well as `127.0.0.1`?** Clients that resolve `localhost`
-   to `::1` first would otherwise fail. Leaning yes (two listeners, one
-   port), but it doubles the Host/binding matrix; decide during
-   implementation.
-2. **Retry-once on upstream 401?** If the upstream rejects a token the
-   proxy believed valid (clock skew, early revocation), should the proxy
-   force-refresh and retry idempotent requests once before passing the 401
-   through? kubectl does not; v1 passes through. Revisit with field data.
-3. **Unix-socket mode timing** — fast-follow or v1? It is the honest answer
-   to the shared-machine caveat, and the E2E harness would prefer it. Cut
-   from v1 only for scope discipline.
-4. **Session liveness UX.** Should the banner (or a `-v` log line) surface
-   token expiry/refresh events so a developer can see the refresh machinery
-   working? Cheap and probably worth it; needs a non-noisy format.
-5. **`datumctl proxy` alias.** Is the extra `api` level worth it? This doc
-   says yes — it groups a future `api request` and keeps the root
-   uncluttered — but if usage shows the command is overwhelmingly
-   interactive, a hidden top-level alias is cheap.
-6. **Should a bare `datumctl api proxy` ever inherit the active context?**
-   This doc says no (see [Path semantics](#path-semantics)): parity with
-   production paths and freedom from ambient state outweigh saving one
-   flag. Flagged for cloud-portal review, since they are the consumers who
-   would feel a wrong default first; if interactive users consistently
-   expect context inheritance, an explicit `--current-context` opt-in is
-   the compromise that preserves both properties.
+Questions raised while this proposal was drafted, closed with the v1
+design:
+
+1. **Bind `::1` as well as `127.0.0.1`?** **Resolved: `127.0.0.1` only.**
+   The printed URL — always the IPv4 literal — is the address contract,
+   so anything that follows the startup output never touches the IPv6
+   gap, and modern clients handed `localhost` fall back between address
+   families on their own. Dual-binding would double the bind and
+   Host-validation matrix to fix a failure nobody has observed. Reopen
+   only if a real client cannot connect.
+2. **Retry-once on upstream 401?** **Resolved: never.** A passthrough
+   proxy must preserve the meaning of upstream responses: a `401` always
+   means the platform rejected the request the client actually sent.
+   Auto-retrying would mask clock-skew and revocation problems and replay
+   requests the proxy cannot know are idempotent. `kubectl` behaves the
+   same way.
+3. **Unix-socket mode: fast-follow or v1?** **Resolved: fast-follow.**
+   The same-user loopback trust boundary is accepted for v1 with the
+   documented mitigations; the socket listener stays first on the
+   deferred list as the designated answer to the shared-machine caveat.
+4. **Session liveness UX.** **Resolved: failures now, successes later.**
+   Refresh *failures* — the event a user must act on — are logged once
+   per cooldown window, even with `--quiet`. Log lines for *successful*
+   refreshes join the deferred richer-diagnostics work, where they can
+   share a format with per-request correlation IDs.
+5. **`datumctl proxy` alias.** **Resolved: no alias.** The command ships
+   as `datumctl api proxy` only; the `api` group earns its keep by
+   leaving room for a one-shot `api request` sibling. Revisit only with
+   usage evidence that the extra level hurts.
+6. **Should a bare `datumctl api proxy` ever inherit the active
+   context?** **Resolved: no.** Parity with production paths and freedom
+   from ambient state win (see [Path semantics](#path-semantics)), and
+   the rule is pinned by tests. If interactive users consistently expect
+   inheritance, an explicit `--current-context` opt-in can add the
+   convenience later without changing the default's meaning.
 
 ## Production Readiness Review Questionnaire
 
@@ -791,6 +805,9 @@ Explicitly deferred (in likely priority order):
 - 2026-07-11: V1 implemented with the full test suite from
   [Testing strategy](#testing-strategy); opened as
   [datum-cloud/datumctl#247](https://github.com/datum-cloud/datumctl/pull/247).
+- 2026-07-12: All open questions resolved (see
+  [Resolved Questions](#resolved-questions)); status moved to
+  implementable.
 
 ## Drawbacks
 
