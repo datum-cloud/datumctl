@@ -26,7 +26,6 @@ latest-milestone: "v0.x"
   - [Prior art](#prior-art)
   - [Testing strategy](#testing-strategy)
   - [V1 milestone cut](#v1-milestone-cut)
-- [Resolved Questions](#resolved-questions)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
@@ -137,7 +136,10 @@ Real teams are hitting this today:
 
 ## Proposal
 
-Add a new `api` command group with a single v1 subcommand, `proxy`.
+Add a new `api` command group with a single v1 subcommand, `proxy`. There
+is no top-level `datumctl proxy` alias: the `api` group earns its keep by
+leaving room for a one-shot `api request` sibling, and a hidden alias is
+cheap to add later if usage shows the extra level hurts.
 
 On startup the command:
 
@@ -269,9 +271,9 @@ serves; every request is logged by default, so misuse is visible; the token
 itself is never exposed — a local client can make API calls but cannot
 exfiltrate the credential to use elsewhere, which is a strictly better
 boundary than token-in-env approaches it replaces. A Unix-socket listener
-(file-permission-enforced, same-user-only) is the natural hardening step
-and is first on the deferred list (see
-[Resolved Questions](#resolved-questions)).
+(file-permission-enforced, same-user-only) is the natural hardening step;
+it is deliberately a fast-follow rather than v1 scope, and sits first on
+the deferred list as the designated answer to the shared-machine caveat.
 
 #### Risk: Browsers as confused deputies (DNS rebinding, CSRF)
 
@@ -492,6 +494,10 @@ for v1, deliberately:
   different control planes on different days. Scope, like the session, is
   pinned at startup, explicit in the command line, and shown in the banner.
 
+If interactive users turn out to consistently expect context inheritance,
+an explicit `--current-context` opt-in can add that convenience later
+without changing what a bare invocation means.
+
 Convenience roots serving *both* at once (a reserved `/-/` prefix inside
 the unscoped proxy, e.g. `/-/project/my-proj/…`) are **deferred**: scoped
 mode already delivers the short-URL ergonomics without a reserved
@@ -533,7 +539,12 @@ future addition is non-breaking.
   ```
 
   The same message is logged once to stderr (not per request). An upstream
-  `401`/`403` passes through byte-for-byte with no marker header.
+  `401`/`403` passes through byte-for-byte with no marker header — and is
+  never retried on the client's behalf. A passthrough `401` has to keep
+  meaning "the platform rejected the request the client actually sent";
+  an automatic refresh-and-retry would mask clock-skew and revocation
+  problems while replaying requests the proxy cannot know are idempotent.
+  (`kubectl` makes the same choice.)
 - **Backoff.** After a refresh failure, a cooldown (~5s) short-circuits
   further refresh attempts; requests during the cooldown fail immediately
   with the same 502. Combined with serialized refresh,
@@ -551,9 +562,13 @@ future addition is non-breaking.
 Conservative by default, with the rationale stated so future changes are
 deliberate:
 
-- **Loopback only, no override.** The listener binds `127.0.0.1` (v1 does
-  not bind `::1`; the printed URL is always the IPv4 literal — see
-  [Resolved Questions](#resolved-questions)). There is no flag to bind other
+- **Loopback only, no override.** The listener binds `127.0.0.1` — IPv4
+  only, deliberately: the printed URL is always the IPv4 literal, so
+  anything that follows the startup output never notices; modern clients
+  handed `localhost` fall back between address families on their own; and
+  dual-binding `::1` would double the bind and Host-validation matrix to
+  fix a failure nobody has observed. Worth revisiting only if a real
+  client cannot connect. There is no flag to bind other
   addresses — not even a scary one — because every legitimate "remote
   proxy" story we could name is better served by the user running their own
   tunnel (SSH, tailscale) whose security model they already own. datumctl
@@ -607,6 +622,12 @@ again on stream end with total duration and bytes, so an abruptly closed
 watch is visible. Per-request correlation IDs for the proxy's own log
 lines are part of the deferred richer-diagnostics work; inbound
 `X-Request-ID` passes through to the upstream untouched.
+
+Token-refresh *failures* are the one event the user must act on, so they
+are logged even when `--quiet` silences request lines — once per cooldown
+window, not per request. Log lines for *successful* refreshes (watching
+the refresh machinery work) are deferred with the richer-diagnostics
+work, where they can share a format with per-request correlation IDs.
 
 ### Failure and lifecycle UX
 
@@ -721,44 +742,6 @@ Explicitly deferred (in likely priority order):
 6. Richer diagnostics: per-request log correlation IDs and
    successful-refresh log lines
 
-## Resolved Questions
-
-Questions raised while this proposal was drafted, closed with the v1
-design:
-
-1. **Bind `::1` as well as `127.0.0.1`?** **Resolved: `127.0.0.1` only.**
-   The printed URL — always the IPv4 literal — is the address contract,
-   so anything that follows the startup output never touches the IPv6
-   gap, and modern clients handed `localhost` fall back between address
-   families on their own. Dual-binding would double the bind and
-   Host-validation matrix to fix a failure nobody has observed. Reopen
-   only if a real client cannot connect.
-2. **Retry-once on upstream 401?** **Resolved: never.** A passthrough
-   proxy must preserve the meaning of upstream responses: a `401` always
-   means the platform rejected the request the client actually sent.
-   Auto-retrying would mask clock-skew and revocation problems and replay
-   requests the proxy cannot know are idempotent. `kubectl` behaves the
-   same way.
-3. **Unix-socket mode: fast-follow or v1?** **Resolved: fast-follow.**
-   The same-user loopback trust boundary is accepted for v1 with the
-   documented mitigations; the socket listener stays first on the
-   deferred list as the designated answer to the shared-machine caveat.
-4. **Session liveness UX.** **Resolved: failures now, successes later.**
-   Refresh *failures* — the event a user must act on — are logged once
-   per cooldown window, even with `--quiet`. Log lines for *successful*
-   refreshes join the deferred richer-diagnostics work, where they can
-   share a format with per-request correlation IDs.
-5. **`datumctl proxy` alias.** **Resolved: no alias.** The command ships
-   as `datumctl api proxy` only; the `api` group earns its keep by
-   leaving room for a one-shot `api request` sibling. Revisit only with
-   usage evidence that the extra level hurts.
-6. **Should a bare `datumctl api proxy` ever inherit the active
-   context?** **Resolved: no.** Parity with production paths and freedom
-   from ambient state win (see [Path semantics](#path-semantics)), and
-   the rule is pinned by tests. If interactive users consistently expect
-   inheritance, an explicit `--current-context` opt-in can add the
-   convenience later without changing the default's meaning.
-
 ## Production Readiness Review Questionnaire
 
 ### Feature enablement and rollback
@@ -805,9 +788,8 @@ design:
 - 2026-07-11: V1 implemented with the full test suite from
   [Testing strategy](#testing-strategy); opened as
   [datum-cloud/datumctl#247](https://github.com/datum-cloud/datumctl/pull/247).
-- 2026-07-12: All open questions resolved (see
-  [Resolved Questions](#resolved-questions)); status moved to
-  implementable.
+- 2026-07-12: Open design questions resolved and folded into their
+  sections; status moved to implementable.
 
 ## Drawbacks
 
