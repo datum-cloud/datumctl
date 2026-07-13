@@ -26,10 +26,10 @@ import (
 
 // ServiceAccountCredentials is the on-disk JSON format downloaded from the Datum Cloud portal.
 type ServiceAccountCredentials struct {
-	Type         string `json:"type"`           // "datum_service_account"
-	APIEndpoint  string `json:"api_endpoint"`   // "https://api.datum.net"
-	TokenURI     string `json:"token_uri"`      // "https://auth.datum.net/oauth/v2/token"
-	Scope        string `json:"scope"`          // OAuth2 scope string, e.g. "openid profile email urn:zitadel:..."
+	Type         string `json:"type"`         // "datum_service_account"
+	APIEndpoint  string `json:"api_endpoint"` // "https://api.datum.net"
+	TokenURI     string `json:"token_uri"`    // "https://auth.datum.net/oauth/v2/token"
+	Scope        string `json:"scope"`        // OAuth2 scope string, e.g. "openid profile email urn:zitadel:..."
 	ProjectID    string `json:"project_id"`
 	ClientEmail  string `json:"client_email"`   // identity e-mail, used as display name
 	ClientID     string `json:"client_id"`      // numeric Zitadel user ID (iss / sub)
@@ -205,7 +205,7 @@ func (m *serviceAccountTokenSource) Token() (*oauth2.Token, error) {
 		if readErr != nil {
 			return nil, customerrors.WrapUserErrorWithHint(
 				"failed to read service account private key from "+sa.PrivateKeyPath,
-				"re-run 'datumctl auth login --credentials <file>'; you may need to download a new service account credentials file from the Datum portal if the original is no longer available",
+				"re-run 'datumctl login --credentials <file>'; you may need to download a new service account credentials file from the Datum portal if the original is no longer available",
 				readErr,
 			)
 		}
@@ -213,7 +213,7 @@ func (m *serviceAccountTokenSource) Token() (*oauth2.Token, error) {
 	if pemKey == "" {
 		return nil, customerrors.WrapUserErrorWithHint(
 			"service account session is missing its private key",
-			"re-run 'datumctl auth login --credentials <file>'; you may need to download a new service account credentials file from the Datum portal if the original is no longer available",
+			"re-run 'datumctl login --credentials <file>'; you may need to download a new service account credentials file from the Datum portal if the original is no longer available",
 			nil,
 		)
 	}
@@ -222,7 +222,7 @@ func (m *serviceAccountTokenSource) Token() (*oauth2.Token, error) {
 	if err != nil {
 		return nil, customerrors.WrapUserErrorWithHint(
 			"Failed to mint JWT for service account authentication.",
-			"Please re-authenticate using: `datumctl auth login --credentials <file>`",
+			"Please re-authenticate using: `datumctl login --credentials <file>`",
 			err,
 		)
 	}
@@ -231,7 +231,7 @@ func (m *serviceAccountTokenSource) Token() (*oauth2.Token, error) {
 	if err != nil {
 		return nil, customerrors.WrapUserErrorWithHint(
 			"Failed to exchange JWT for access token.",
-			"Please re-authenticate using: `datumctl auth login --credentials <file>`",
+			"Please re-authenticate using: `datumctl login --credentials <file>`",
 			err,
 		)
 	}

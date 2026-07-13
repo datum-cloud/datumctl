@@ -23,7 +23,7 @@ Advanced — kubectl integration:
   If you use kubectl and want to point it at a Datum Cloud control plane,
   see 'datumctl auth update-kubeconfig --help'.`,
 		Example: `  # Log in to Datum Cloud
-  datumctl auth login
+  datumctl login
 
   # Show all logged-in accounts
   datumctl auth list

@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -34,8 +33,8 @@ type errorClientConfig struct{ err error }
 func (e *errorClientConfig) RawConfig() (clientcmdapi.Config, error) {
 	return clientcmdapi.Config{}, e.err
 }
-func (e *errorClientConfig) ClientConfig() (*rest.Config, error) { return nil, e.err }
-func (e *errorClientConfig) Namespace() (string, bool, error)    { return "default", false, nil }
+func (e *errorClientConfig) ClientConfig() (*rest.Config, error)  { return nil, e.err }
+func (e *errorClientConfig) Namespace() (string, bool, error)     { return "default", false, nil }
 func (e *errorClientConfig) ConfigAccess() clientcmd.ConfigAccess { return nil }
 
 type DatumCloudFactory struct {
@@ -81,7 +80,7 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		config.ServerName = *c.TLSServerName
 	}
 
-	userKey, err := c.resolveUserKey(session)
+	userKey, err := sessionUserKey(session)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +127,11 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 			config.Insecure = true
 		}
 		if len(config.CAData) == 0 && ep.CertificateAuthorityData != "" {
-			decoded, err := base64.StdEncoding.DecodeString(ep.CertificateAuthorityData)
+			epTLS, err := sessionEndpointTLS(session)
 			if err != nil {
-				return nil, fmt.Errorf("decode certificate authority data for session %q: %w", session.Name, err)
+				return nil, err
 			}
-			config.CAData = decoded
+			config.CAData = epTLS.CAData
 		}
 	}
 
@@ -254,25 +253,14 @@ func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.DiscoveredContext, 
 	return ctxEntry, session, nil
 }
 
-func (c *CustomConfigFlags) resolveUserKey(session *datumconfig.Session) (string, error) {
-	if session != nil && session.UserKey != "" {
-		return session.UserKey, nil
-	}
-	return authutil.GetUserKey()
-}
-
+// resolveBaseServer picks the base API server: the --server flag when set,
+// else the shared session-endpoint resolution (session endpoint, falling back
+// to the keyring API hostname).
 func (c *CustomConfigFlags) resolveBaseServer(userKey string, session *datumconfig.Session) (string, error) {
 	if c.APIServer != nil && *c.APIServer != "" {
 		return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(*c.APIServer)), nil
 	}
-	if session != nil && session.Endpoint.Server != "" {
-		return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(session.Endpoint.Server)), nil
-	}
-	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
-	if err != nil {
-		return "", err
-	}
-	return datumconfig.CleanBaseServer(datumconfig.EnsureScheme(apiHostname)), nil
+	return sessionBaseServer(userKey, session)
 }
 
 // ResolvedScope returns the effective project, organization, and platform-wide

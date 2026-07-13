@@ -27,7 +27,7 @@ const KnownUsersKey = "known_users"
 // ErrNoActiveUser indicates that no active user is set in the keyring.
 var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"No active user found.",
-	"Please login first using: `datumctl auth login`",
+	"Please login first using: `datumctl login`",
 )
 
 // IsNoActiveUser reports whether err wraps ErrNoActiveUser.
@@ -117,35 +117,67 @@ func GetStoredCredentials(userKey string) (*StoredCredentials, error) {
 	return &creds, nil
 }
 
-// persistingTokenSource wraps an oauth2.TokenSource and persists token updates to the keyring.
+// persistingTokenSource is an oauth2.TokenSource over the credentials stored
+// in the keyring: it hands out the stored token while it is valid, refreshes
+// it through the session's OAuth endpoints when it is not, and persists
+// refreshed tokens back to the keyring.
 type persistingTokenSource struct {
 	ctx     context.Context
-	source  oauth2.TokenSource
 	userKey string
 	creds   *StoredCredentials
 	mu      sync.Mutex
 }
 
 // Token implements oauth2.TokenSource.
-// It retrieves a token from the underlying source and persists it to the keyring if refreshed.
+//
+// When a refresh is needed, the keyring is re-read first, so long-running
+// consumers (`datumctl api proxy`, MCP) track the stored session across their
+// lifetime: a deleted entry (`datumctl logout`) fails with actionable
+// guidance instead of silently refreshing — and re-persisting — a session the
+// user deliberately ended, and a replaced entry (re-login, or a refresh by
+// another datumctl process) is adopted without a restart.
 func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	currentAccessToken := ""
-	if p.creds.Token != nil {
-		currentAccessToken = p.creds.Token.AccessToken
+	// Fast path: the in-memory token is still fresh.
+	if p.creds.Token.Valid() {
+		return p.creds.Token, nil
 	}
 
-	// Get token from the underlying source (may trigger refresh)
-	newToken, err := p.source.Token()
+	stored, err := GetStoredCredentials(p.userKey)
+	if err != nil {
+		return nil, customerrors.WrapUserErrorWithHint(
+			fmt.Sprintf("The stored credentials for %s are no longer available — the session may have been logged out.", p.userKey),
+			"Run 'datumctl login' to re-authenticate.",
+			err,
+		)
+	}
+	p.creds = stored
+	if p.creds.Token.Valid() {
+		return p.creds.Token, nil
+	}
+
+	// Rebuild the oauth2.Config needed for refreshing from the (possibly
+	// re-read) credentials.
+	conf := &oauth2.Config{
+		ClientID: p.creds.ClientID,
+		Scopes:   p.creds.Scopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  p.creds.EndpointAuthURL,
+			TokenURL: p.creds.EndpointTokenURL,
+		},
+		// RedirectURL not needed for token refresh
+	}
+
+	newToken, err := conf.TokenSource(p.ctx, p.creds.Token).Token()
 	if err != nil {
 		var retrieveErr *oauth2.RetrieveError
 		if errors.As(err, &retrieveErr) {
 			if retrieveErr.ErrorCode == "invalid_grant" || retrieveErr.ErrorCode == "invalid_request" {
 				return nil, customerrors.WrapUserErrorWithHint(
 					"Authentication session has expired or refresh token is no longer valid.",
-					"Please re-authenticate using: `datumctl auth login`",
+					"Please re-authenticate using: `datumctl login`",
 					err,
 				)
 			}
@@ -154,7 +186,7 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 	}
 
 	// Persist the token if it was refreshed
-	if newToken.AccessToken != currentAccessToken {
+	if newToken.AccessToken != p.creds.Token.AccessToken {
 		p.creds.Token = newToken
 
 		credsJSON, marshalErr := json.Marshal(p.creds)
@@ -202,24 +234,10 @@ func tokenSourceFor(ctx context.Context, userKey string, creds *StoredCredential
 		}, nil
 	}
 
-	// Rebuild the oauth2.Config needed for refreshing
-	conf := &oauth2.Config{
-		ClientID: creds.ClientID,
-		Scopes:   creds.Scopes,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  creds.EndpointAuthURL,
-			TokenURL: creds.EndpointTokenURL,
-		},
-		// RedirectURL not needed for token refresh
-	}
-
-	// Create the base TokenSource with the stored token
-	baseSource := conf.TokenSource(ctx, creds.Token)
-
-	// Wrap it with our persisting source
+	// The source re-reads the keyring and rebuilds its refresh config
+	// whenever the stored token needs refreshing.
 	return &persistingTokenSource{
 		ctx:     ctx,
-		source:  baseSource,
 		userKey: userKey,
 		creds:   creds,
 	}, nil

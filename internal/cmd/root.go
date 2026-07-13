@@ -29,6 +29,7 @@ import (
 
 	"go.datum.net/datumctl/internal/client"
 	aicmd "go.datum.net/datumctl/internal/cmd/ai"
+	apicmd "go.datum.net/datumctl/internal/cmd/api"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/console"
 	"go.datum.net/datumctl/internal/cmd/create"
@@ -715,6 +716,10 @@ Specify the resource type and name to view its history.`
 	consoleCmd := console.Command(factory)
 	consoleCmd.GroupID = "other"
 	rootCmd.AddCommand(consoleCmd)
+
+	apiCmd := apicmd.Command(factory)
+	apiCmd.GroupID = "other"
+	rootCmd.AddCommand(apiCmd)
 
 	pluginCommand := plugincmd.Command(factory)
 	pluginCommand.GroupID = "other"
