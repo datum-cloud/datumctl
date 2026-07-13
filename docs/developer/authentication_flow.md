@@ -6,10 +6,10 @@ sidebar:
 
 `datumctl` utilizes OAuth 2.0 Authorization Code Flow with PKCE (Proof Key for
 Code Exchange) for user authentication. This flow is orchestrated by the
-`datumctl auth login` command and leverages OpenID Connect (OIDC) for
+`datumctl login` command and leverages OpenID Connect (OIDC) for
 discovering provider endpoints and verifying user identity.
 
-## Login process (`datumctl auth login`)
+## Login process (`datumctl login`)
 
 The following diagram illustrates the sequence of events during login:
 
@@ -21,7 +21,7 @@ sequenceDiagram
     participant OSKeyring as OS Keyring
     participant DatumAuth as Datum Cloud Auth Server
 
-    User->>+Datumctl: datumctl auth login [--hostname AUTH_HOST]
+    User->>+Datumctl: datumctl login [--hostname AUTH_HOST]
     Datumctl->>DatumAuth: OIDC Discovery (using AUTH_HOST)
     DatumAuth-->>Datumctl: OIDC Endpoints (Authorization, Token)
     Datumctl->>Datumctl: Generate PKCE Code Verifier & Challenge
