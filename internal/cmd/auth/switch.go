@@ -84,11 +84,14 @@ func runSwitch(_ *cobra.Command, args []string) error {
 
 	cfg.ActiveSession = sessionName
 
-	// Restore last context for this session.
-	if session.LastContext != "" {
-		if cfg.ContextByName(session.LastContext) != nil {
-			cfg.CurrentContext = session.LastContext
-		}
+	// Repoint the current context at the new session's last context so whoami
+	// and requests follow the switch. Clear it when the new session has no
+	// usable context, letting the ActiveSession fallback take over rather than
+	// leaving a stale context from the previous environment selected.
+	if session.LastContext != "" && cfg.ContextByName(session.LastContext) != nil {
+		cfg.CurrentContext = session.LastContext
+	} else {
+		cfg.CurrentContext = ""
 	}
 
 	if err := datumconfig.SaveV1Beta1(cfg); err != nil {

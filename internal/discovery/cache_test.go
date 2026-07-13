@@ -34,7 +34,7 @@ func TestUpdateConfigCache_GeneratesOrgAndProjectContexts(t *testing.T) {
 	}
 
 	// Verify org context uses resource name.
-	ctx := cfg.ContextByName("org-acme")
+	ctx := cfg.ContextByName(datumconfig.QualifiedContextName(sessionName, "org-acme"))
 	if ctx == nil {
 		t.Fatal("expected org context 'org-acme', not found")
 	}
@@ -49,7 +49,7 @@ func TestUpdateConfigCache_GeneratesOrgAndProjectContexts(t *testing.T) {
 	}
 
 	// Verify project context uses "orgID/projectID" format.
-	projCtx := cfg.ContextByName("org-acme/proj-infra")
+	projCtx := cfg.ContextByName(datumconfig.QualifiedContextName(sessionName, "org-acme/proj-infra"))
 	if projCtx == nil {
 		t.Fatal("expected project context 'org-acme/proj-infra', not found")
 	}
@@ -64,7 +64,7 @@ func TestUpdateConfigCache_GeneratesOrgAndProjectContexts(t *testing.T) {
 	}
 
 	// Check cross-org project.
-	sandboxCtx := cfg.ContextByName("org-personal/proj-sandbox")
+	sandboxCtx := cfg.ContextByName(datumconfig.QualifiedContextName(sessionName, "org-personal/proj-sandbox"))
 	if sandboxCtx == nil {
 		t.Error("expected project context 'org-personal/proj-sandbox', not found")
 	}
@@ -87,12 +87,12 @@ func TestUpdateConfigCache_FallsBackToIDWhenNoDisplayName(t *testing.T) {
 
 	UpdateConfigCache(cfg, sessionName, orgs, projects)
 
-	orgCtx := cfg.ContextByName("org-123")
+	orgCtx := cfg.ContextByName(datumconfig.QualifiedContextName(sessionName, "org-123"))
 	if orgCtx == nil {
 		t.Error("expected org context 'org-123', not found")
 	}
 
-	projCtx := cfg.ContextByName("org-123/proj-456")
+	projCtx := cfg.ContextByName(datumconfig.QualifiedContextName(sessionName, "org-123/proj-456"))
 	if projCtx == nil {
 		t.Error("expected project context 'org-123/proj-456', not found")
 	}
@@ -130,7 +130,7 @@ func TestUpdateConfigCache_ReplacesExistingSessionContexts(t *testing.T) {
 	}
 
 	// New context uses resource name, not display name.
-	if cfg.ContextByName("org-new") == nil {
+	if cfg.ContextByName(datumconfig.QualifiedContextName(sessionName, "org-new")) == nil {
 		t.Error("new org context 'org-new' should be present")
 	}
 }
@@ -223,10 +223,10 @@ func TestUpdateConfigCache_MultiSession_PreservesOtherSessionCache(t *testing.T)
 	})
 
 	// Sanity: both sessions' data is present.
-	if cfg.OrgDisplayName("org-prod") != "Production" {
+	if cfg.OrgDisplayName(session1, "org-prod") != "Production" {
 		t.Fatal("setup: Production cache missing")
 	}
-	if cfg.OrgDisplayName("org-stg") != "Staging" {
+	if cfg.OrgDisplayName(session2, "org-stg") != "Staging" {
 		t.Fatal("setup: Staging cache missing")
 	}
 
@@ -237,10 +237,10 @@ func TestUpdateConfigCache_MultiSession_PreservesOtherSessionCache(t *testing.T)
 		{Name: "proj-p1", DisplayName: "Production Project", OrgName: "org-prod"},
 	})
 
-	if cfg.OrgDisplayName("org-stg") != "Staging" {
+	if cfg.OrgDisplayName(session2, "org-stg") != "Staging" {
 		t.Error("session2's org cache was wiped by session1 refresh")
 	}
-	if cfg.ProjectDisplayName("proj-s1") != "Staging Project" {
+	if cfg.ProjectDisplayName(session2, "proj-s1") != "Staging Project" {
 		t.Error("session2's project cache was wiped by session1 refresh")
 	}
 }
@@ -266,7 +266,7 @@ func TestGCCache_RemovesUnreferencedEntries(t *testing.T) {
 
 	GCCache(cfg)
 
-	if cfg.OrgDisplayName("org-kept") != "Kept" {
+	if cfg.OrgDisplayName("", "org-kept") != "Kept" {
 		t.Error("referenced org was removed")
 	}
 	if len(cfg.Cache.Organizations) != 1 {
@@ -309,25 +309,93 @@ func TestMergeCacheFromDiscovery(t *testing.T) {
 	t.Parallel()
 
 	cfg := datumconfig.NewV1Beta1()
+	sessionName := "user@api.datum.net"
 	cfg.Cache.Organizations = []datumconfig.CachedOrg{
-		{ID: "org-existing", DisplayName: "Old Name"},
+		{ID: "org-existing", DisplayName: "Old Name", Session: sessionName},
 	}
 
-	MergeCacheFromDiscovery(cfg, []DiscoveredOrg{
+	MergeCacheFromDiscovery(cfg, sessionName, []DiscoveredOrg{
 		{Name: "org-existing", DisplayName: "New Name"},
 		{Name: "org-new", DisplayName: "New Org"},
 	}, nil)
 
-	// Existing was updated.
-	if cfg.OrgDisplayName("org-existing") != "New Name" {
-		t.Errorf("existing org not updated, got %q", cfg.OrgDisplayName("org-existing"))
+	// Existing was updated in place (not duplicated).
+	if cfg.OrgDisplayName(sessionName, "org-existing") != "New Name" {
+		t.Errorf("existing org not updated, got %q", cfg.OrgDisplayName(sessionName, "org-existing"))
+	}
+	if len(cfg.Cache.Organizations) != 2 {
+		t.Errorf("Cache.Organizations len=%d, want 2 (updated existing + one new)", len(cfg.Cache.Organizations))
 	}
 	// New was added.
-	if cfg.OrgDisplayName("org-new") != "New Org" {
+	if cfg.OrgDisplayName(sessionName, "org-new") != "New Org" {
 		t.Errorf("new org not added")
 	}
 	// No contexts should have been created.
 	if len(cfg.Contexts) != 0 {
 		t.Errorf("merge should not touch contexts, got %d", len(cfg.Contexts))
+	}
+}
+
+// TestUpdateConfigCache_OverlappingIDsIsolatedBySession verifies the core fix:
+// two sessions expose the identical ref "datum/datum-cloud" with different
+// display names. Refreshing each in turn must leave both contexts intact with
+// the correct owning session, and neither session's display names may leak into
+// the other.
+func TestUpdateConfigCache_OverlappingIDsIsolatedBySession(t *testing.T) {
+	t.Parallel()
+
+	cfg := datumconfig.NewV1Beta1()
+	const staging = "user@example.com@api.staging.datum.net"
+	const prod = "user@example.com@api.datum.net"
+
+	stagingOrgs := []DiscoveredOrg{{Name: "datum", DisplayName: "Datum Staging"}}
+	stagingProjects := []DiscoveredProject{{Name: "datum-cloud", DisplayName: "Datum Cloud (staging)", OrgName: "datum"}}
+	prodOrgs := []DiscoveredOrg{{Name: "datum", DisplayName: "Datum Production"}}
+	prodProjects := []DiscoveredProject{{Name: "datum-cloud", DisplayName: "Datum Cloud (prod)", OrgName: "datum"}}
+
+	// Discover both environments.
+	UpdateConfigCache(cfg, staging, stagingOrgs, stagingProjects)
+	UpdateConfigCache(cfg, prod, prodOrgs, prodProjects)
+
+	assertBothIntact := func(stage string) {
+		t.Helper()
+		// Both sessions keep their own context for the overlapping ref.
+		stgCtx := cfg.ContextByName(datumconfig.QualifiedContextName(staging, "datum/datum-cloud"))
+		if stgCtx == nil || stgCtx.Session != staging {
+			t.Fatalf("%s: staging context missing or mis-owned: %+v", stage, stgCtx)
+		}
+		prodCtx := cfg.ContextByName(datumconfig.QualifiedContextName(prod, "datum/datum-cloud"))
+		if prodCtx == nil || prodCtx.Session != prod {
+			t.Fatalf("%s: prod context missing or mis-owned: %+v", stage, prodCtx)
+		}
+		// Display names stay pinned to their own environment.
+		if got := cfg.ProjectDisplayName(staging, "datum-cloud"); got != "Datum Cloud (staging)" {
+			t.Errorf("%s: staging project display = %q, want staging label", stage, got)
+		}
+		if got := cfg.ProjectDisplayName(prod, "datum-cloud"); got != "Datum Cloud (prod)" {
+			t.Errorf("%s: prod project display = %q, want prod label", stage, got)
+		}
+		if got := cfg.OrgDisplayName(staging, "datum"); got != "Datum Staging" {
+			t.Errorf("%s: staging org display = %q", stage, got)
+		}
+		if got := cfg.OrgDisplayName(prod, "datum"); got != "Datum Production" {
+			t.Errorf("%s: prod org display = %q", stage, got)
+		}
+	}
+
+	assertBothIntact("after initial discovery")
+
+	// Re-refresh staging — the prod context and its labels must survive untouched.
+	UpdateConfigCache(cfg, staging, stagingOrgs, stagingProjects)
+	assertBothIntact("after staging refresh")
+
+	// Re-refresh prod — likewise for staging.
+	UpdateConfigCache(cfg, prod, prodOrgs, prodProjects)
+	assertBothIntact("after prod refresh")
+
+	// Four contexts total — one org + one project per session — with no
+	// cross-write duplicating or clobbering entries.
+	if len(cfg.Contexts) != 4 {
+		t.Errorf("Contexts len=%d, want 4 (org + project per session)", len(cfg.Contexts))
 	}
 }

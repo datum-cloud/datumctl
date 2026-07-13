@@ -27,15 +27,18 @@ func UpdateConfigCache(
 	now := time.Now().UTC()
 	cfg.Cache.LastRefreshed = &now
 
-	MergeCacheFromDiscovery(cfg, orgs, projects)
+	MergeCacheFromDiscovery(cfg, sessionName, orgs, projects)
 	SyncContextsForSession(cfg, sessionName, orgs, projects)
 	GCCache(cfg)
 }
 
 // MergeCacheFromDiscovery updates the cache with newly discovered orgs and
-// projects. Existing entries are updated; unmentioned entries are preserved.
+// projects for the given session. Existing entries for that session are
+// updated; entries from other sessions are preserved. Stamping each entry with
+// its session keeps overlapping IDs across environments from colliding.
 func MergeCacheFromDiscovery(
 	cfg *datumconfig.ConfigV1Beta1,
+	sessionName string,
 	orgs []DiscoveredOrg,
 	projects []DiscoveredProject,
 ) {
@@ -43,6 +46,7 @@ func MergeCacheFromDiscovery(
 		upsertCachedOrg(&cfg.Cache, datumconfig.CachedOrg{
 			ID:          o.Name,
 			DisplayName: o.DisplayName,
+			Session:     sessionName,
 		})
 	}
 	for _, p := range projects {
@@ -50,6 +54,7 @@ func MergeCacheFromDiscovery(
 			ID:          p.Name,
 			DisplayName: p.DisplayName,
 			OrgID:       p.OrgName,
+			Session:     sessionName,
 		})
 	}
 }
@@ -72,42 +77,46 @@ func SyncContextsForSession(
 	cfg.Contexts = remaining
 
 	for _, o := range orgs {
-		cfg.UpsertContext(datumconfig.DiscoveredContext{
-			Name:           o.Name,
+		ctx := datumconfig.DiscoveredContext{
 			Session:        sessionName,
 			OrganizationID: o.Name,
-		})
+		}
+		ctx.Name = ctx.QualifiedName()
+		cfg.UpsertContext(ctx)
 	}
 
 	for _, p := range projects {
-		cfg.UpsertContext(datumconfig.DiscoveredContext{
-			Name:           fmt.Sprintf("%s/%s", p.OrgName, p.Name),
+		ctx := datumconfig.DiscoveredContext{
 			Session:        sessionName,
 			OrganizationID: p.OrgName,
 			ProjectID:      p.Name,
 			Namespace:      datumconfig.DefaultNamespace,
-		})
+		}
+		ctx.Name = ctx.QualifiedName()
+		cfg.UpsertContext(ctx)
 	}
 }
 
 // GCCache removes cached orgs and projects that are no longer referenced by
-// any DiscoveredContext in the config. This is safe to call at any time and
-// correctly preserves entries referenced by other sessions' contexts.
+// any DiscoveredContext in the config. Reference is matched on (session, id) so
+// that overlapping IDs across environments are garbage-collected independently
+// and one session's refresh never evicts another session's cache.
 func GCCache(cfg *datumconfig.ConfigV1Beta1) {
-	referencedOrgs := make(map[string]bool)
-	referencedProjects := make(map[string]bool)
+	type ref struct{ session, id string }
+	referencedOrgs := make(map[ref]bool)
+	referencedProjects := make(map[ref]bool)
 	for _, ctx := range cfg.Contexts {
 		if ctx.OrganizationID != "" {
-			referencedOrgs[ctx.OrganizationID] = true
+			referencedOrgs[ref{ctx.Session, ctx.OrganizationID}] = true
 		}
 		if ctx.ProjectID != "" {
-			referencedProjects[ctx.ProjectID] = true
+			referencedProjects[ref{ctx.Session, ctx.ProjectID}] = true
 		}
 	}
 
 	keptOrgs := make([]datumconfig.CachedOrg, 0, len(cfg.Cache.Organizations))
 	for _, o := range cfg.Cache.Organizations {
-		if referencedOrgs[o.ID] {
+		if referencedOrgs[ref{o.Session, o.ID}] {
 			keptOrgs = append(keptOrgs, o)
 		}
 	}
@@ -115,7 +124,7 @@ func GCCache(cfg *datumconfig.ConfigV1Beta1) {
 
 	keptProjects := make([]datumconfig.CachedProject, 0, len(cfg.Cache.Projects))
 	for _, p := range cfg.Cache.Projects {
-		if referencedProjects[p.ID] {
+		if referencedProjects[ref{p.Session, p.ID}] {
 			keptProjects = append(keptProjects, p)
 		}
 	}
@@ -159,7 +168,7 @@ func IsCacheStale(cfg *datumconfig.ConfigV1Beta1, maxAge time.Duration) bool {
 
 func upsertCachedOrg(cache *datumconfig.ContextCache, org datumconfig.CachedOrg) {
 	for i := range cache.Organizations {
-		if cache.Organizations[i].ID == org.ID {
+		if cache.Organizations[i].ID == org.ID && cache.Organizations[i].Session == org.Session {
 			cache.Organizations[i] = org
 			return
 		}
@@ -169,7 +178,7 @@ func upsertCachedOrg(cache *datumconfig.ContextCache, org datumconfig.CachedOrg)
 
 func upsertCachedProject(cache *datumconfig.ContextCache, proj datumconfig.CachedProject) {
 	for i := range cache.Projects {
-		if cache.Projects[i].ID == proj.ID {
+		if cache.Projects[i].ID == proj.ID && cache.Projects[i].Session == proj.Session {
 			cache.Projects[i] = proj
 			return
 		}
