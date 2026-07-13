@@ -343,7 +343,7 @@ func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
 		config, err := NewRestConfig(ctx)
 		if err != nil {
 			// Return a broken config so the error surfaces at request time
-			// (e.g. "please run datumctl auth login") rather than crashing
+			// (e.g. "please run datumctl login") rather than crashing
 			// the process — which is especially important during shell completion.
 			return &rest.Config{Host: "http://localhost:0"}
 		}

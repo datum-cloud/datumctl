@@ -64,7 +64,7 @@ DATUM_PROJECT=my-project datumctl get dnszones
 DATUM_ORGANIZATION=my-org datumctl get projects
 ```
 
-`--project` and `--organization` flags work too. For machine-to-machine auth, see `datumctl auth login --credentials` for the machine-account flow.
+`--project` and `--organization` flags work too. For machine-to-machine auth, see `datumctl login --credentials` for the machine-account flow.
 
 ## Agent Skills
 
