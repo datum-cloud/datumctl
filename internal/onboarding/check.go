@@ -199,6 +199,65 @@ func StatusLabel(result Result) string {
 	}
 }
 
+// ColumnLabel returns a short onboarding status suitable for table columns.
+func ColumnLabel(result Result) string {
+	switch result.State {
+	case Complete:
+		return "ready"
+	case NeedsOnboarding:
+		return "no org yet"
+	case OrgIncomplete:
+		return humanReason(result.Reason)
+	default:
+		return "unknown"
+	}
+}
+
+// OrgRef identifies an organization to check, with an optional display name.
+type OrgRef struct {
+	ID          string
+	DisplayName string
+}
+
+// CheckOrgs evaluates onboarding for multiple organizations in parallel.
+// Results are keyed by organization ID. Failed checks are omitted from the
+// map; callers should treat a missing entry as unknown.
+func CheckOrgs(
+	ctx context.Context,
+	apiHostname string,
+	tokenSource oauth2.TokenSource,
+	userID string,
+	orgs []OrgRef,
+) map[string]Result {
+	results := make(map[string]Result, len(orgs))
+	if len(orgs) == 0 {
+		return results
+	}
+
+	type item struct {
+		id     string
+		result Result
+		err    error
+	}
+
+	ch := make(chan item, len(orgs))
+	for _, org := range orgs {
+		go func(org OrgRef) {
+			result, err := CheckOrg(ctx, apiHostname, tokenSource, userID, org.ID, org.DisplayName)
+			ch <- item{id: org.ID, result: result, err: err}
+		}(org)
+	}
+
+	for range orgs {
+		it := <-ch
+		if it.err != nil {
+			continue
+		}
+		results[it.id] = it.result
+	}
+	return results
+}
+
 func organizationRequestURL(apiHostname, userID, orgID string) string {
 	userCP := miloapi.UserControlPlaneURL(apiHostname, userID)
 	return fmt.Sprintf(

@@ -169,3 +169,16 @@ func TestStatusLabel(t *testing.T) {
 		t.Fatalf("StatusLabel(NeedsOnboarding) = %q", got)
 	}
 }
+
+func TestColumnLabel(t *testing.T) {
+	if got := ColumnLabel(Result{State: Complete}); got != "ready" {
+		t.Fatalf("ColumnLabel(Complete) = %q", got)
+	}
+	got := ColumnLabel(Result{
+		State:  OrgIncomplete,
+		Reason: resourcemanagerv1alpha1.OrganizationOnboardingCompleteReasonBillingAccountMissing,
+	})
+	if got != "billing setup needed" {
+		t.Fatalf("ColumnLabel(OrgIncomplete) = %q", got)
+	}
+}

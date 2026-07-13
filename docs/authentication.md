@@ -59,9 +59,11 @@ includes finishing billing setup (contact information, billing account, and
 payment method).
 
 Onboarding is checked **per organization**, based on your active context or
-`--organization` / `--project` flags. User-scoped commands (such as
-`datumctl get organizations`) work without an org context even if another
-organization you belong to is still onboarding.
+`--organization` / `--project` flags. User-scoped discovery commands such as
+`datumctl get organizations` always run against your user control plane, even
+when your active context points at an incomplete organization. That command
+also shows each organization's setup status and portal links for any that
+still need setup.
 
 When the targeted organization is incomplete:
 

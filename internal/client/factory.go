@@ -36,8 +36,8 @@ type errorClientConfig struct{ err error }
 func (e *errorClientConfig) RawConfig() (clientcmdapi.Config, error) {
 	return clientcmdapi.Config{}, e.err
 }
-func (e *errorClientConfig) ClientConfig() (*rest.Config, error) { return nil, e.err }
-func (e *errorClientConfig) Namespace() (string, bool, error)    { return "default", false, nil }
+func (e *errorClientConfig) ClientConfig() (*rest.Config, error)  { return nil, e.err }
+func (e *errorClientConfig) Namespace() (string, bool, error)     { return "default", false, nil }
 func (e *errorClientConfig) ConfigAccess() clientcmd.ConfigAccess { return nil }
 
 type DatumCloudFactory struct {
@@ -47,11 +47,15 @@ type DatumCloudFactory struct {
 
 type CustomConfigFlags struct {
 	*genericclioptions.ConfigFlags
-	Project               *string
-	Organization          *string
-	PlatformWide          *bool
-	Context               context.Context
-	SkipOnboardingCheck   bool
+	Project             *string
+	Organization        *string
+	PlatformWide        *bool
+	Context             context.Context
+	SkipOnboardingCheck bool
+	// ForceUserControlPlane routes the request to the user control plane and
+	// skips org onboarding checks. Used for user-scoped discovery commands
+	// such as listing organization memberships.
+	ForceUserControlPlane bool
 }
 
 func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
@@ -98,7 +102,17 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		return nil, err
 	}
 
-	if !c.SkipOnboardingCheck && !platformWide {
+	if c.ForceUserControlPlane {
+		projectID = ""
+		organizationID = ""
+		platformWide = false
+	}
+
+	// Onboarding is enforced only for org- or project-scoped API calls.
+	// User control plane and platform-wide requests are left open so discovery
+	// commands (for example listing organization memberships) still work when
+	// the active context points at an incomplete organization.
+	if !c.SkipOnboardingCheck && !platformWide && !c.ForceUserControlPlane {
 		if err := c.ensureOnboardingComplete(userKey, tknSrc, projectID, organizationID, ctxEntry); err != nil {
 			return nil, err
 		}
