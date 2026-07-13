@@ -17,7 +17,7 @@ latest-milestone: "v0.x"
 - [Design Details](#design-details)
   - [CLI surface](#cli-surface)
   - [Resolving the session and upstream](#resolving-the-session-and-upstream)
-  - [The proxy engine and streaming design](#the-proxy-engine-and-streaming-design)
+  - [Streaming design](#streaming-design)
   - [Path semantics](#path-semantics)
   - [Token lifecycle](#token-lifecycle)
   - [Security model](#security-model)
@@ -61,13 +61,10 @@ $ datumctl api proxy --port 8001 --project my-project
 $ curl http://127.0.0.1:8001/apis/networking.datumapis.com/v1alpha/dnszones
 ```
 
-All of the machinery this needs already exists in datumctl: keyring-backed
-credential storage, an auto-refreshing, self-persisting
-`oauth2.TokenSource` (`internal/authutil/credentials.go`), and per-session
-endpoint resolution (`internal/client/factory.go`,
-`internal/datumconfig`). This enhancement wraps that machinery in a small,
-conservative HTTP server, in the spirit of `kubectl proxy` and
-`cloud-sql-proxy`.
+Everything this needs already exists in datumctl: stored sessions,
+automatic token refresh, and per-session endpoint resolution. This
+enhancement wraps that machinery in a small, conservative local proxy, in
+the spirit of `kubectl proxy` and `cloud-sql-proxy`.
 
 ## Motivation
 
@@ -78,8 +75,7 @@ options, all of which push token plumbing onto the tool:
   environment variables or config — and re-thread it when it expires,
   because a static token dies mid-session.
 - Be a datumctl *plugin*, and use the `DATUM_CREDENTIALS_HELPER` exec
-  protocol (`internal/plugindispatch/dispatch.go`) — which only works for
-  processes datumctl itself spawns.
+  protocol — which only works for processes datumctl itself spawns.
 - Re-implement OAuth refresh against the keyring — nobody should do this.
 
 Real teams are hitting this today:
@@ -105,10 +101,10 @@ Real teams are hitting this today:
 
 - One command that gives any local HTTP client an authenticated view of the
   active session's Datum Cloud API endpoint.
-- Transparent token injection and refresh, reusing the existing
-  `authutil` token sources — including service-account sessions — with
-  refreshed tokens persisted back to the keyring exactly as other commands
-  do.
+- Transparent token injection and refresh, reusing datumctl's existing
+  credential machinery — including service-account sessions — with
+  refreshed tokens persisted back to the stored session exactly as other
+  commands do.
 - Unbuffered passthrough of streaming responses (watch, SSE, chunked
   transfer) suitable for long-lived watch clients.
 - A conservative security posture: loopback-only, Host-header validation,
@@ -141,23 +137,18 @@ Real teams are hitting this today:
 
 ## Proposal
 
-Add a new `api` command group with a single v1 subcommand, `proxy`,
-implemented as a custom command under `internal/cmd/api/` and registered in
-`internal/cmd/root.go` like the other custom commands (login, logout, ctx,
-docs). The proxy engine itself lives in a new `internal/apiproxy` package so
-it can be tested without Cobra, the keyring, or a real network.
+Add a new `api` command group with a single v1 subcommand, `proxy`.
 
 On startup the command:
 
 1. Resolves a session — the active session by default, or one pinned with
-   `--session` — and from it the user key, the upstream endpoint, and any
-   endpoint TLS settings, using the same resolution the request factory in
-   `internal/client/factory.go` performs today.
+   `--session` — and from it the upstream endpoint and any endpoint TLS
+   settings, using the same resolution every other datumctl command
+   performs today.
 2. Resolves the proxy root: the endpoint root by default, or a single
    control plane when `--project`/`--organization`/`--platform-wide` is
    given (see [Path semantics](#path-semantics)).
-3. Builds the auto-refreshing token source via
-   `authutil.GetTokenSourceForUser`.
+3. Prepares the same auto-refreshing credentials the rest of the CLI uses.
 4. Binds a loopback listener (random free port by default, `--port` to fix
    it), prints a human banner to stderr and the bare proxy URL as a single
    line to stdout, and serves until interrupted.
@@ -213,12 +204,13 @@ reads the URL from the first line of stdout as its readiness signal, and
 passes it to every test worker. No test process ever holds a credential.
 Teardown is killing one process.
 
-```go
-cmd := exec.Command("datumctl", "api", "proxy", "--quiet", "--project", testProject)
-stdout, _ := cmd.StdoutPipe()
-_ = cmd.Start()
-apiURL, _ := bufio.NewReader(stdout).ReadString('\n') // first line = ready + address
+```console
+$ datumctl api proxy --quiet --project e2e-project
+http://127.0.0.1:52713
 ```
+
+The harness spawns the proxy, reads that first stdout line as both the
+readiness signal and the address, and hands it to the test workers.
 
 #### Story 4: Pinning a non-active session
 
@@ -235,8 +227,8 @@ repoint Sam's staging proxy — the session is pinned at startup.
 
 ### Notes/Constraints/Caveats
 
-- **The proxy pins its session at startup.** `datumctl auth switch` mutates
-  `ActiveSession` in the on-disk config (`internal/cmd/auth/switch.go`); a
+- **The proxy pins its session at startup.** `datumctl auth switch` changes
+  which session is active in the local configuration; a
   proxy that followed the active session would change identity *and
   endpoint* under a running dev server mid-request-stream. The proxy
   resolves the session once, states it in the banner, and never re-reads
@@ -245,9 +237,8 @@ repoint Sam's staging proxy — the session is pinned at startup.
   This is a feature: anything recorded against the real API (docs examples,
   HAR files, client SDK output) replays against the proxy unchanged.
 - **Scoping is explicit and pinned, never inherited from the current
-  context.** For resource commands, `resolveScope` in
-  `internal/client/factory.go` falls back to the active context when no
-  flag is given; the proxy deliberately does **not**. A proxy whose URLs
+  context.** Resource commands fall back to the active context when no
+  scope flag is given; the proxy deliberately does **not**. A proxy whose URLs
   silently mean something different depending on which context was active
   at launch (or worse, changes with `datumctl ctx use`) is a footgun for
   the tools pointed at it — and the flagship portal use case requires the
@@ -256,9 +247,8 @@ repoint Sam's staging proxy — the session is pinned at startup.
   scope, pinned at startup and shown in the banner, exactly like the
   session.
 - **A new built-in `api` command shadows any user plugin named `api`.**
-  Plugin dispatch only fires for non-built-in names
-  (`internal/cmd/root.go`, `plugindispatch.IsBuiltIn`). No known plugin
-  uses the name; worth a release-note line.
+  Plugin dispatch only fires for names that are not built-in commands. No
+  known plugin uses the name; worth a release-note line.
 - **Response bodies are not rewritten.** Kubernetes-style APIs return
   relative `selfLink`-free bodies, so passthrough is safe. If some platform
   endpoint ever embeds absolute API URLs in response bodies, clients will
@@ -311,8 +301,8 @@ response-duration timeout exists anywhere in the path.
 A polling dev server multiplies requests; if the refresh token is dead,
 each request could trigger a fresh refresh attempt against the auth server.
 
-*Mitigations:* refresh is already single-flight — `persistingTokenSource`
-serializes on a mutex (`internal/authutil/credentials.go`). The proxy adds
+*Mitigations:* token refresh is already serialized inside datumctl's
+credential layer, so concurrent requests share one attempt. The proxy adds
 a short failure cooldown: after a refresh failure, requests fail fast with
 the same actionable error for a few seconds instead of re-attempting
 refresh per request.
@@ -349,24 +339,14 @@ Flags:
   -q, --quiet               Suppress per-request log lines
 ```
 
-`--project`, `--organization`, and `--platform-wide` are the root command's
-existing persistent flags (`DatumCloudFactory.AddFlags`,
-`internal/client/factory.go`), already mutually exclusive; the proxy reads
-them at launch rather than defining its own. Unlike resource commands, the
-proxy does **not** fall back to the active context when no flag is given —
-see [Path semantics](#path-semantics).
+`--project`, `--organization`, and `--platform-wide` are the same global
+scope flags every datumctl command accepts, already mutually exclusive;
+the proxy reads them at launch rather than defining its own. Unlike
+resource commands, the proxy does **not** fall back to the active context
+when no flag is given — see [Path semantics](#path-semantics).
 
-Registered in `internal/cmd/root.go` as a custom command group:
-
-```go
-apiCmd := apicmd.Command()   // internal/cmd/api
-apiCmd.GroupID = "other"
-rootCmd.AddCommand(apiCmd)
-```
-
-`Long` and `Example` use `templates.LongDesc()` / `templates.Examples()`
-per repo convention, reference only `datumctl` and Datum Cloud resources,
-and never mention kubectl:
+Help text and examples reference only `datumctl` and Datum Cloud
+resources, and never mention kubectl:
 
 ```console
   # Start a proxy on a fixed port for a dev server
@@ -396,125 +376,70 @@ Flag decisions:
   assume a well-known port that another local program may squat. Random
   never fails at startup; stable configurations opt in with `--port 8001`.
   The bound URL is always printed, so nothing is guessing.
-- **`--session` names a session** (format `email@api-hostname`, from
-  `datumconfig.SessionName`), mirroring the existing `--session` flag on
-  `datumctl auth get-token` (`internal/cmd/auth/get_token.go`). No separate
-  `--user` flag: emails can match multiple endpoints
-  (`SessionByEmail` returns a slice), and the session name is the
-  unambiguous handle `auth list` already shows.
+- **`--session` names a session** exactly as `datumctl auth list` shows it
+  (format `email@api-hostname`), mirroring the existing `--session` flag
+  on `datumctl auth get-token`. No separate `--user` flag: the same email
+  can be logged in to multiple endpoints, and the session name is the
+  unambiguous handle.
 - **No `--listen`/`--address` flag in v1.** Loopback-only is a design
   guarantee, not a default (see [Security model](#security-model)).
 
 ### Resolving the session and upstream
 
-The command reuses the exact resolution chain the request factory performs
-in `internal/client/factory.go`, minus the org/project scoping (the proxy
-targets the endpoint root):
+The proxy resolves its identity and destination exactly the way every
+other datumctl command does — the same session selection, the same
+endpoint lookup, the same per-session TLS settings (staging endpoints with
+private certificate authorities included), and the same auto-refreshing
+credentials, covering both interactive logins and machine accounts. It
+simply performs that resolution once, at startup, and pins the result.
 
-1. `datumconfig.LoadAuto()` +
-   `authutil.EnsureUserKeysMigrated` — load the v1beta1 config, as
-   `CustomConfigFlags.loadDatumContext` does (factory.go).
-2. Pick the session: `cfg.SessionByName(--session)` if pinned, else
-   `cfg.ActiveSessionEntry()`; fall back to the keyring active user
-   (`authutil.GetActiveCredentials`) for pre-session setups, matching
-   `resolveUserKey`.
-3. Upstream base URL: `session.Endpoint.Server` →
-   `datumconfig.CleanBaseServer(datumconfig.EnsureScheme(...))`, falling
-   back to `authutil.GetAPIHostnameForUser(userKey)` — the same order as
-   `resolveBaseServer` (factory.go).
-4. Upstream TLS: honor the session's `Endpoint.TLSServerName`,
-   `Endpoint.InsecureSkipTLSVerify`, and base64
-   `Endpoint.CertificateAuthorityData`, exactly as `ToRESTConfig` applies
-   them (factory.go) — required for staging endpoints with private CAs.
-5. Scoped mode: if `--project`/`--organization`/`--platform-wide` is set,
-   compute the proxy root with `miloapi.ProjectControlPlaneURL` /
-   `OrgControlPlaneURL` (or the base itself for `--platform-wide`) —
-   mirroring the `switch` in `ToRESTConfig` (factory.go), *without* its
-   env-var and active-context fallbacks.
-6. Token source: `authutil.GetTokenSourceForUser(ctx, userKey)`
-   (`internal/authutil/credentials.go`), which transparently handles both
-   interactive OAuth refresh (`persistingTokenSource`, persists refreshed
-   tokens to the keyring) and service-account JWT re-mint
-   (`serviceAccountTokenSource`). The proxy inherits machine-account
-   support for free.
+Two guarantees fall out of this:
 
-Steps 2–4 duplicate logic currently private to `CustomConfigFlags`. Rather
-than copy it, extract a small shared helper (e.g.
-`client.ResolveSessionEndpoint(cfg, sessionName) (userKey, baseURL,
-tlsConfig, error)`) used by both `ToRESTConfig` and the proxy, so the
-kubectl-wrapped path and the proxy path cannot drift.
+- **No drift.** The proxy and the resource commands share one resolution
+  path, so they can never disagree about which endpoint or identity a
+  session maps to.
+- **No surprises.** If `datumctl get` works, the proxy works — there is no
+  proxy-specific configuration to set up or debug.
 
-Proposed layout:
+In scoped mode the proxy root is the same control-plane address the
+resource commands would target for that `--project` or `--organization`,
+with none of the active-context or environment-variable fallbacks those
+commands apply (see [Path semantics](#path-semantics)).
 
-```
-internal/apiproxy/           # engine, no Cobra/keyring imports
-  proxy.go                   # Server{Upstream, TokenSource, TLS, Logger}; ReverseProxy setup
-  handler.go                 # host validation, header hygiene, error mapping
-  logging.go                 # request log lines, redaction rules
-internal/cmd/api/
-  api.go                     # parent 'api' group command
-  proxy.go                   # flags, session resolution, banner, signal handling
-```
+### Streaming design
 
-### The proxy engine and streaming design
+Watch responses, server-sent events, and chunked transfers must flow
+through the proxy as if it weren't there. The guarantees:
 
-The engine is a `net/http/httputil.ReverseProxy` — the same primitive
-kubectl proxy is built on — configured for unbuffered streaming:
-
-```go
-proxy := &httputil.ReverseProxy{
-    Rewrite: func(r *httputil.ProxyRequest) {
-        r.Out.URL.Scheme = upstream.Scheme
-        r.Out.URL.Host = upstream.Host
-        r.Out.Host = upstream.Host
-        // Never forward a locally supplied credential upstream; the
-        // oauth2.Transport below sets the real one.
-        r.Out.Header.Del("Authorization")
-    },
-    Transport: &oauth2.Transport{
-        Source: tokenSource,     // from authutil.GetTokenSourceForUser
-        Base:   upstreamTransport,
-    },
-    FlushInterval: -1,           // flush every write immediately: watch/SSE
-    ErrorHandler:  writeProxyError,
-}
-```
-
-Key properties:
-
-- **`FlushInterval: -1`** flushes each upstream write to the local client
-  immediately — this is the entire unbuffered-streaming design, and it is
-  the setting kubectl proxy uses for watch support. Chunked
-  transfer-encoding and `text/event-stream` need no additional handling.
-- **Token injection via `oauth2.Transport`** is byte-for-byte the pattern
-  `CustomConfigFlags.ToRESTConfig` already uses
-  (`config.WrapTransport = ... &oauth2.Transport{Source: tknSrc, Base: rt}`
-  in factory.go). If the token source fails, the request is never sent and
-  the error surfaces in `ErrorHandler`.
+- **Every byte the platform sends is flushed to the local client
+  immediately.** There is no proxy-side buffering — this is the entire
+  streaming design, and it is how `kubectl proxy` supports watches.
+  Chunked transfer-encoding and `text/event-stream` need no additional
+  handling on top of it.
+- **Credentials are attached per request by the same machinery the rest
+  of the CLI uses.** If the session cannot produce a token, the request
+  is never sent upstream and the client gets the actionable error
+  described in [Token lifecycle](#token-lifecycle).
 - **Timeouts are asymmetric by design.** Connection setup is bounded
-  (dial ~10s, TLS handshake ~10s, response headers ~30s); response
-  *duration* is unbounded — watches are infinite on purpose. The local
-  `http.Server` sets only `ReadHeaderTimeout` (slowloris hygiene; loopback
-  makes it low-stakes) and a keep-alive `IdleTimeout`; no `ReadTimeout` or
-  `WriteTimeout`, which would kill streams.
-- **Upgrades (WebSockets)** pass through via `ReverseProxy`'s built-in
-  `Connection: Upgrade` handling. v1 treats this as best-effort
-  passthrough, not a tested guarantee: the bearer token is injected at
-  handshake time only, and post-expiry connection lifetime is upstream
-  policy. The motivating watch client uses chunked HTTP, not WebSockets.
-- **HTTP/2 upstream** is fine (multiplexed watches share a connection);
-  the local side is HTTP/1.1, which every target client (curl, Node fetch,
-  Go clients) handles, and which chunked watch streaming works over.
+  (dialing, TLS handshake, first response headers); response *duration*
+  is unbounded — watches are infinite on purpose. Nothing on the local
+  side imposes a read or write deadline that would kill a long stream.
+- **Upgrades (WebSockets)** pass through on a best-effort basis, not as a
+  tested guarantee: the bearer token is attached at handshake time only,
+  and post-expiry connection lifetime is upstream policy. The motivating
+  watch client uses chunked HTTP, not WebSockets.
+- **The local side speaks plain HTTP/1.1**, which every target client
+  (curl, Node fetch, Go clients) handles and which chunked watch
+  streaming works over.
 - **Compression is passed through**, not re-encoded: the client's
   `Accept-Encoding` travels upstream and the response body is relayed
   verbatim.
-- **Header hygiene:** hop-by-hop headers are stripped by `ReverseProxy`
-  per RFC 7230; inbound `Authorization` is deleted (above) so a local
-  client can never smuggle an alternate credential upstream or trick the
-  proxy into forwarding a stale one; no `X-Forwarded-*` headers are added
-  (`Rewrite` without `SetXForwarded` — the upstream gains nothing from
-  knowing about 127.0.0.1). All other headers, including inbound
-  `X-Request-ID`, pass through untouched.
+- **Header hygiene:** hop-by-hop headers are stripped per the HTTP
+  standard; inbound `Authorization` is deleted so a local client can
+  never smuggle an alternate credential upstream or trick the proxy into
+  forwarding a stale one; no `X-Forwarded-*` headers are added — the
+  upstream gains nothing from knowing about 127.0.0.1. All other headers,
+  including inbound `X-Request-ID`, pass through untouched.
 
 ### Path semantics
 
@@ -522,10 +447,9 @@ The proxy has exactly one knob: **what its root maps to**. Requests are
 otherwise forwarded verbatim — path and query untouched.
 
 **Default: the endpoint root (pure passthrough).** Because scoped control
-planes are just path prefixes under the endpoint —
-`internal/miloapi/urls.go` builds them as
-`/apis/resourcemanager.miloapis.com/v1alpha1/projects/{id}/control-plane`
-(and the org/user equivalents) — every control plane is reachable through
+planes are just path prefixes under the endpoint (e.g.
+`/apis/resourcemanager.miloapis.com/v1alpha1/projects/{id}/control-plane`,
+with org and user equivalents), every control plane is reachable through
 one unscoped proxy:
 
 | Local request path | Meaning |
@@ -536,8 +460,8 @@ one unscoped proxy:
 | `/apis/iam.miloapis.com/v1alpha1/users/{uid}/control-plane/…` | user control plane |
 
 **Scoped mode: `--project` / `--organization` / `--platform-wide`
-re-base the proxy root at that control plane**, using the same
-`miloapi.*ControlPlaneURL` helpers `ToRESTConfig` uses (factory.go). A
+re-base the proxy root at that control plane** — the same address the
+resource commands target for those flags. A
 scoped proxy presents a complete, single API-server surface at `/` —
 discovery under `/apis`, resources at their natural short paths — so a
 generic Kubernetes-style client library can be pointed at
@@ -550,7 +474,7 @@ $ curl "http://127.0.0.1:8001/apis/networking.datumapis.com/v1alpha/dnszones?wat
 
 **Why scoping is explicit rather than inherited from the current
 context.** It is tempting to default to the active context (as resource
-commands do via `resolveScope`), making URLs short out of the box. Rejected
+commands do), making URLs short out of the box. Rejected
 for v1, deliberately:
 
 - *Dev/prod parity is the flagship requirement.* The cloud portal talks to
@@ -575,13 +499,12 @@ future addition is non-breaking.
 
 ### Token lifecycle
 
-- **Refresh-ahead-of-expiry.** `oauth2`'s reuse semantics refresh a token
-  shortly before its recorded expiry on the next request; refreshed tokens
-  are persisted to the keyring by `persistingTokenSource`
-  (`internal/authutil/credentials.go`), so a long proxy run keeps the
-  user's stored session fresh for every other datumctl command too.
-  Service-account sessions re-mint their JWT and re-exchange on expiry via
-  `serviceAccountTokenSource` — no proxy-specific code.
+- **Refresh-ahead-of-expiry.** Tokens refresh shortly before their
+  recorded expiry on the next request, and refreshed tokens are persisted
+  back to the stored session — so a long proxy run keeps the user's
+  session fresh for every other datumctl command too. Service-account
+  sessions re-mint and re-exchange on expiry exactly as they do
+  everywhere else in datumctl; nothing is proxy-specific.
 - **Mid-stream expiry.** Requests are authenticated at request start; the
   proxy never interrupts a response because the token that opened it has
   since expired. Whether a long-lived watch outlives its token is upstream
@@ -590,10 +513,9 @@ future addition is non-breaking.
   opens a new request, which gets a fresh token. This matches how
   Kubernetes-ecosystem clients already behave and requires nothing from
   the proxy.
-- **Refresh failure.** `persistingTokenSource` already maps `invalid_grant`
-  / `invalid_request` to a `UserError` with the hint to re-run
-  `datumctl login`. The proxy's `ErrorHandler` turns any token-source
-  failure into a synthesized **`502 Bad Gateway`** — deliberately *not*
+- **Refresh failure.** When the stored session can no longer be refreshed
+  (an expired or revoked refresh token), the proxy turns the failure into
+  a synthesized **`502 Bad Gateway`** — deliberately *not*
   `401`: a passthrough `401` must mean "the platform rejected this
   request," so client-side re-auth logic never misfires on a proxy-local
   problem. The body is a Kubernetes-style `Status` object (the dialect the
@@ -613,15 +535,15 @@ future addition is non-breaking.
   `401`/`403` passes through byte-for-byte with no marker header.
 - **Backoff.** After a refresh failure, a cooldown (~5s) short-circuits
   further refresh attempts; requests during the cooldown fail immediately
-  with the same 502. Combined with the mutex in `persistingTokenSource`,
+  with the same 502. Combined with serialized refresh,
   the auth server sees at most one refresh attempt per cooldown window no
   matter how hot the local client polls.
 - **Credentials deleted mid-run** (`datumctl logout`): the next refresh
   fails and the proxy degrades to the 502-with-hint behavior. It stays up
   — a dev server pointed at it keeps getting actionable errors instead of
   connection refused — and recovers without restart if the user logs back
-  in to the same session (the token source re-reads the keyring on
-  refresh).
+  in to the same session (the proxy re-reads the stored session the next
+  time it needs to refresh).
 
 ### Security model
 
@@ -632,9 +554,9 @@ deliberate:
   not bind `::1`; see Open Questions). There is no flag to bind other
   addresses — not even a scary one — because every legitimate "remote
   proxy" story we could name is better served by the user running their own
-  tunnel (SSH, tailscale) whose security model they already own. Loopback
-  binding also has in-repo precedent: the PKCE login flow's callback server
-  binds `localhost:0` (`internal/authutil/login.go`).
+  tunnel (SSH, tailscale) whose security model they already own. datumctl
+  already follows this posture elsewhere: the browser login flow runs its
+  own loopback-only local server.
 - **Same-user loopback is the trust boundary — with eyes open.** Like
   `kubectl proxy` and cloud-sql-proxy, the proxy does not authenticate
   local clients: requiring a local secret would just recreate the token
@@ -665,9 +587,9 @@ deliberate:
   debugging needs `?watch=true&resourceVersion=…`) with a defensive
   redaction pass for token-shaped parameter names (`access_token`, `token`,
   `authorization`), even though the platform API never puts credentials in
-  queries. Headers are never logged at default verbosity; `-v 6+` HTTP
-  dumps go through client-go's `transport.DebugWrappers` (already wired in
-  `root.go`'s `PersistentPreRunE`), which masks bearer tokens.
+  queries. Headers are never logged at default verbosity, and
+  higher-verbosity HTTP debugging masks bearer tokens the same way it
+  does across the rest of datumctl.
 
 ### Request logging
 
@@ -705,7 +627,7 @@ passes through to the upstream untouched.
   is printed as the **first and only line on stdout**, after the listener
   is bound and serving. Harnesses read one line and go; no port files, no
   sleep-and-retry.
-- **Startup failures are `UserError`s** (`internal/errors`) with hints:
+- **Startup failures are actionable errors with hints:**
   no session → "run `datumctl login`"; unknown `--session` → list names via
   `datumctl auth list`; port in use → suggest another `--port` or omitting
   the flag.
@@ -722,47 +644,45 @@ passes through to the upstream untouched.
 
 | Tool | Take | Leave |
 | --- | --- | --- |
-| `kubectl proxy` | `ReverseProxy` + `FlushInterval: -1` for watch streaming; loopback default; Host-header acceptance as rebinding defense | Fixed default port 8001 (collides); configurable `--accept-hosts`/`--address` foot-guns (documented rebinding incidents when loosened); path-filter machinery (`--reject-paths`) we don't need — Datum's surface has no exec/attach-style local-effect endpoints; `--www` static file serving (scope creep) |
+| `kubectl proxy` | Flush-every-write unbuffered streaming for watch support; loopback default; Host-header acceptance as rebinding defense | Fixed default port 8001 (collides); configurable `--accept-hosts`/`--address` foot-guns (documented rebinding incidents when loosened); path-filter machinery (`--reject-paths`) we don't need — Datum's surface has no exec/attach-style local-effect endpoints; `--www` static file serving (scope creep) |
 | cloud-sql-proxy | Explicit machine-readable readiness signal; pin the target at startup; background credential refresh as a first-class lifecycle concern | TCP-level opacity — being HTTP-level lets us inject headers, validate Host, and log requests |
 | `gh api` | Proof that "CLI owns auth, tool speaks plain HTTP" is the right developer contract; the `api` command-group naming | It's per-invocation — useless as an `API_URL` for a dev server; a future `datumctl api request` sibling can cover the one-shot case |
 | aws-vault (`--server` / ECS-metadata mode) | The cautionary tale: it serves *raw credentials* over loopback HTTP, so any local requester can exfiltrate them; aws-vault added a random-token handshake to patch this | Our proxy never serves the token — local processes can act *through* it while it runs, but can't take the credential with them. Keep `auth get-token` (process-exec gated) as the only raw-token path |
 
 ### Testing strategy
 
-The engine takes an injected `oauth2.TokenSource` and upstream URL, so unit
-and integration tests need no keyring, no Cobra, and no network beyond
-`httptest`.
+The proxy core is exercised against fake credentials and a fake in-process
+upstream, so the suite needs no stored sessions and no real network.
 
-- **Passthrough unit tests** (`internal/apiproxy`, httptest upstream):
+- **Passthrough tests:**
   bearer token injected; inbound `Authorization` never reaches upstream;
   method/body/query/`X-Request-ID` pass through; hop-by-hop headers
   stripped; no CORS headers on responses; `Host: evil.example` → 403 and
   the upstream sees nothing; upstream 401 passes through without
   `X-Datum-Proxy-Error`.
-- **Watch/streaming integration test — the load-bearing one.** The
-  httptest upstream emulates a Kubernetes-style watch: writes one JSON
-  watch event, flushes (`http.Flusher`), waits on a channel, repeats. The
+- **Watch/streaming integration test — the load-bearing one.** A fake
+  upstream emulates a Kubernetes-style watch: it emits one JSON watch
+  event, then blocks until the test has observed it, and repeats. The
   test client reads through the proxy and asserts each event is received
   **before** the test unblocks the next write — proving no proxy-side
   buffering with zero timing flakiness (the upstream cannot even produce
   event N+1 until the client has observed event N). Variants: chunked
   JSON watch, `text/event-stream`, and a slow trickle with small writes.
-- **Token lifecycle tests.** A fake `TokenSource` with a controllable
+- **Token lifecycle tests.** Fake credentials with a controllable
   clock: (a) token refreshed at most once across N concurrent requests
   (single-flight); (b) a stream opened before expiry survives expiry
   mid-stream; the next new request carries the refreshed token; (c)
   refresh failure → 502 with `Status` body, `X-Datum-Proxy-Error: true`,
   and at most one refresh attempt per cooldown window under concurrent
   load.
-- **Lifecycle tests** (`internal/cmd/api`): with `--port 0`, the first
+- **Lifecycle tests:** with a random port, the first
   stdout line parses as a URL and a request to it succeeds; SIGINT
-  terminates within the grace period with a clean exit; `--session
-  bogus` and no-active-session produce `UserError`s with the documented
-  hints.
-- **Resolution tests**: the shared session-endpoint resolver honors
-  `Endpoint.TLSServerName` / `CertificateAuthorityData` /
-  `InsecureSkipTLSVerify` identically to `ToRESTConfig` (table test over a
-  fixture `ConfigV1Beta1`), pinning the no-drift guarantee.
+  terminates within the grace period with a clean exit; an unknown
+  `--session` and a missing active session produce the documented
+  actionable errors.
+- **Resolution tests**: session resolution honors per-session TLS
+  settings and endpoint precedence identically to the rest of the CLI,
+  pinning the no-drift guarantee.
 - **Scoped-mode tests**: with `--project`, local `/apis/...` paths arrive
   upstream under the project control-plane prefix (and the watch streaming
   test re-runs against a scoped proxy); with no scope flag and an active
@@ -840,8 +760,8 @@ Explicitly deferred (in likely priority order):
 ### Monitoring and supportability
 
 - Per-request log lines (with streaming start/end markers) are the primary
-  diagnostic; `-v 6+` reuses the existing client-go debug transport wiring
-  in `root.go` with token masking.
+  diagnostic; higher-verbosity HTTP debugging reuses datumctl's existing
+  token-masking debug output.
 - Proxy-synthesized errors are distinguishable from upstream errors by the
   `X-Datum-Proxy-Error` header and `Status.reason`, so support can tell
   "your session is dead" from "the platform said no" from a single client
@@ -849,8 +769,8 @@ Explicitly deferred (in likely priority order):
 
 ### Dependencies
 
-- Standard library `net/http/httputil` and the already-vendored
-  `golang.org/x/oauth2`. No new third-party dependencies.
+- No new third-party dependencies; the proxy is built from the standard
+  library and dependencies datumctl already ships.
 - Runtime dependencies are the existing keyring and datum config; both are
   already required for every authenticated command.
 
@@ -868,10 +788,9 @@ Explicitly deferred (in likely priority order):
 ## Implementation History
 
 - 2026-07-11: Provisional proposal drafted.
-- 2026-07-11: V1 implemented (`internal/apiproxy` engine, `internal/cmd/api`
-  command, shared `internal/client/session_endpoint.go` resolver, docs page
-  at `docs/api-proxy.md`) with the full test suite from
-  [Testing strategy](#testing-strategy); not yet merged.
+- 2026-07-11: V1 implemented with the full test suite from
+  [Testing strategy](#testing-strategy); opened as
+  [datum-cloud/datumctl#247](https://github.com/datum-cloud/datumctl/pull/247).
 
 ## Drawbacks
 
@@ -880,11 +799,11 @@ Explicitly deferred (in likely priority order):
   the price of removing token plumbing, shared with every tool in the
   prior-art table; mitigations and the Unix-socket path are covered above.
 - **Another long-running surface to support.** Streaming, timeout, and
-  shutdown behavior must be defended against regressions (Go version bumps
-  can change `ReverseProxy`/HTTP2 details); the watch integration test is
+  shutdown behavior must be defended against regressions (runtime upgrades
+  can change HTTP streaming details); the watch integration test is
   the tripwire.
 - **`api` becomes a reserved name**, shadowing any user plugin called
-  `api` via the dispatch path in `internal/cmd/root.go`.
+  `api`.
 - **Passthrough honesty has edges**: response bodies embedding absolute
   upstream URLs (none known today) would leak the real endpoint to clients
   configured only with the proxy URL.
@@ -896,7 +815,7 @@ Explicitly deferred (in likely priority order):
   value exposed to the whole process tree) and the watch case (no refresh
   across reconnects without re-running the CLI).
 - **The plugin credentials-helper protocol** (`DATUM_CREDENTIALS_HELPER`
-  exec, `internal/plugindispatch/dispatch.go`): right answer for datumctl
+  exec): right answer for datumctl
   plugins, unavailable to processes datumctl didn't spawn (the portal dev
   server, curl), and requires client-side integration code the proxy makes
   unnecessary.
