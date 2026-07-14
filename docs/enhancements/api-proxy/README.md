@@ -4,7 +4,7 @@ stage: alpha
 latest-milestone: "v0.x"
 ---
 
-# A Local Authenticated API Proxy: `datumctl api proxy`
+# A Local Front Door to the Datum Cloud API
 
 - [Summary](#summary)
 - [Motivation](#motivation)
