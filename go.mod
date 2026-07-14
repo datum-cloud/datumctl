@@ -21,6 +21,7 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	go.miloapis.com/activity v0.7.1
 	go.miloapis.com/milo v0.29.3
+	go.miloapis.com/service-catalog v0.3.2-0.20260714000123-a002414738b7
 	golang.org/x/mod v0.37.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.44.0
