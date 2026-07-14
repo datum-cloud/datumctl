@@ -1,6 +1,7 @@
 package whoami
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -8,6 +9,7 @@ import (
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/onboarding"
 )
 
 // Command returns the top-level "whoami" command.
@@ -20,7 +22,7 @@ func Command() *cobra.Command {
 	}
 }
 
-func runWhoami(_ *cobra.Command, _ []string) error {
+func runWhoami(cmd *cobra.Command, _ []string) error {
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
 		return err
@@ -51,6 +53,8 @@ func runWhoami(_ *cobra.Command, _ []string) error {
 
 	fmt.Printf("User:         %s (%s)\n", userName, userEmail)
 
+	printOnboardingStatus(cmd.Context(), cfg, session)
+
 	// Show endpoint only when multiple endpoints are in use.
 	if cfg.HasMultipleEndpoints() {
 		fmt.Printf("Endpoint:     %s\n", datumconfig.StripScheme(session.Endpoint.Server))
@@ -61,11 +65,11 @@ func runWhoami(_ *cobra.Command, _ []string) error {
 		fmt.Printf("Context:      %s\n", ctxEntry.Ref())
 
 		fmt.Printf("Organization: %s\n", datumconfig.FormatWithID(
-			cfg.OrgDisplayName(ctxEntry.OrganizationID), ctxEntry.OrganizationID))
+			cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID), ctxEntry.OrganizationID))
 
 		if ctxEntry.ProjectID != "" {
 			fmt.Printf("Project:      %s\n", datumconfig.FormatWithID(
-				cfg.ProjectDisplayName(ctxEntry.ProjectID), ctxEntry.ProjectID))
+				cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID), ctxEntry.ProjectID))
 		}
 	} else {
 		fmt.Println("Context:      (none)")
@@ -81,5 +85,36 @@ func runWhoami(_ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+func printOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) {
+	orgID := onboarding.ResolveEffectiveOrgID(cfg, os.Getenv("DATUM_PROJECT"), os.Getenv("DATUM_ORGANIZATION"))
+	if orgID == "" {
+		return
+	}
+
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, session.UserKey)
+	if err != nil {
+		return
+	}
+	userID, err := authutil.GetUserIDFromTokenForUser(session.UserKey)
+	if err != nil {
+		return
+	}
+	apiHostname, err := authutil.GetAPIHostnameForUser(session.UserKey)
+	if err != nil {
+		return
+	}
+
+	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(session.Name, orgID))
+	if err != nil {
+		fmt.Println("Onboarding:   couldn't check")
+		return
+	}
+
+	fmt.Printf("Onboarding:   %s\n", onboarding.StatusLabel(result))
+	if result.State != onboarding.Complete {
+		fmt.Printf("  Finish setup at %s\n", result.ActionURL)
+	}
 }
 

@@ -12,16 +12,23 @@ import (
 )
 
 func listCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "list",
 		Short:   "List available contexts",
+		Long: `List the contexts for the active session.
+
+By default only the active session's contexts are shown. Use --all to list
+every session's contexts grouped by account and endpoint — useful when the
+same organization or project name exists in more than one environment.`,
 		Aliases: []string{"ls"},
 		Args:    cobra.NoArgs,
 		RunE:    runList,
 	}
+	cmd.Flags().Bool("all", false, "List contexts from every session, grouped by account and endpoint")
+	return cmd
 }
 
-func runList(_ *cobra.Command, _ []string) error {
+func runList(cmd *cobra.Command, _ []string) error {
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
 		return err
@@ -32,7 +39,17 @@ func runList(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	printContextTree(os.Stdout, cfg)
+	all, _ := cmd.Flags().GetBool("all")
+	if all {
+		printAllContexts(os.Stdout, cfg)
+		return nil
+	}
+
+	activeSession := ""
+	if s := cfg.ActiveSessionEntry(); s != nil {
+		activeSession = s.Name
+	}
+	printContextTree(os.Stdout, cfg, activeSession)
 	return nil
 }
 
@@ -42,13 +59,34 @@ type orgGroup struct {
 	projects []*datumconfig.DiscoveredContext
 }
 
-func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1) {
+// printAllContexts lists every session's contexts, grouped by account and
+// endpoint so overlapping refs across environments stay distinguishable.
+func printAllContexts(w io.Writer, cfg *datumconfig.ConfigV1Beta1) {
+	for i := range cfg.Sessions {
+		s := &cfg.Sessions[i]
+		if len(cfg.ContextsForSession(s.Name)) == 0 {
+			continue
+		}
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintf(w, "%s  (%s)\n", s.UserEmail, datumconfig.StripScheme(s.Endpoint.Server))
+		printContextTree(w, cfg, s.Name)
+	}
+}
+
+// printContextTree prints the contexts owned by sessionName as an org/project
+// tree. Display names are resolved within that session.
+func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1, sessionName string) {
 	// Group contexts by org.
 	groups := make(map[string]*orgGroup)
 	var orgOrder []string
 
 	for i := range cfg.Contexts {
 		ctx := &cfg.Contexts[i]
+		if ctx.Session != sessionName {
+			continue
+		}
 		orgID := ctx.OrganizationID
 
 		g, ok := groups[orgID]
@@ -83,7 +121,7 @@ func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1) {
 			if cfg.CurrentContext == g.orgCtx.Name {
 				current = "*"
 			}
-			tbl.AddRow(cfg.OrgDisplayName(orgID), orgID, "org", current)
+			tbl.AddRow(cfg.OrgDisplayName(sessionName, orgID), orgID, "org", current)
 		}
 
 		for _, p := range g.projects {
@@ -91,7 +129,7 @@ func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1) {
 			if cfg.CurrentContext == p.Name {
 				current = "*"
 			}
-			tbl.AddRow("  "+cfg.ProjectDisplayName(p.ProjectID), p.Ref(), "project", current)
+			tbl.AddRow("  "+cfg.ProjectDisplayName(sessionName, p.ProjectID), p.Ref(), "project", current)
 		}
 	}
 

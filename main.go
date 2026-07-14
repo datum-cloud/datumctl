@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/cmd"
 	customerrors "go.datum.net/datumctl/internal/errors"
+	"go.miloapis.com/service-catalog/pkg/activation"
 	"k8s.io/component-base/cli"
 	"k8s.io/component-base/logs"
 	kubectlcmd "k8s.io/kubectl/pkg/cmd"
@@ -19,6 +23,14 @@ import (
 func main() {
 	logs.GlogSetter(kubectlcmd.GetLogVerbosity(os.Args))
 	rootCmd := cmd.RootCmd()
+
+	// Wire SIGINT/SIGTERM to a cancellable context so long interactive waits
+	// (e.g. the login callback/device-code polling) can be interrupted with
+	// ^C. cli.RunNoErrOutput calls cmd.Execute(), and Cobra honors a context
+	// set via SetContext, so the signal-derived context reaches cmd.Context().
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	rootCmd.SetContext(ctx)
 
 	// Route kubectl's internal fatal errors (from util.CheckErr) through the
 	// same Format helper so --error-format applies uniformly. In human mode
@@ -38,9 +50,27 @@ func main() {
 	})
 
 	if err := cli.RunNoErrOutput(rootCmd); err != nil {
-		customerrors.Format(os.Stderr, err, formatFor(rootCmd), verbosity())
-		os.Exit(1)
+		code, interrupted := exitCodeForError(err)
+		if interrupted {
+			// The user interrupted (^C / SIGTERM). Exit quietly instead of
+			// printing a spurious "context canceled" error.
+			fmt.Fprintln(os.Stderr, "\nAborted.")
+		} else {
+			customerrors.Format(os.Stderr, err, formatFor(rootCmd), verbosity())
+		}
+		os.Exit(code)
 	}
+}
+
+// exitCodeForError maps a command error to a process exit code. interrupted is
+// true when the error was a user interrupt (^C / SIGTERM), which surfaces as a
+// canceled context and should be reported quietly with the conventional
+// 128+SIGINT exit code rather than as an error.
+func exitCodeForError(err error) (code int, interrupted bool) {
+	if errors.Is(err, context.Canceled) {
+		return 130, true
+	}
+	return activation.ExitCodeOf(err), false
 }
 
 // formatFor reads --error-format off the parsed root command, falling back to

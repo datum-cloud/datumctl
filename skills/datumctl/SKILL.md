@@ -26,7 +26,7 @@ commands directly.
 
 - Authenticate with `datumctl login` for interactive use.
 - For headless or automation workflows, prefer machine-account authentication
-  via `datumctl auth login --credentials <file>`.
+  via `datumctl login --credentials <file>`.
 - Most resource commands need either an active context or explicit
   `--organization` / `--project` flags.
 - Prefer `-o json` or `-o yaml` when another tool or agent needs structured

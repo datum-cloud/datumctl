@@ -75,7 +75,7 @@ func buildTree(cfg *datumconfig.ConfigV1Beta1) []treeEntry {
 
 	var entries []treeEntry
 	for _, orgID := range orgOrder {
-		orgName := cfg.OrgDisplayName(orgID)
+		orgName := cfg.OrgDisplayName(activeSession, orgID)
 		entries = append(entries, treeEntry{isHeader: true, label: orgName})
 		for i := range cfg.Contexts {
 			ctx := &cfg.Contexts[i]
@@ -87,7 +87,7 @@ func buildTree(cfg *datumconfig.ConfigV1Beta1) []treeEntry {
 			}
 			var label string
 			if ctx.ProjectID != "" {
-				label = cfg.ProjectDisplayName(ctx.ProjectID)
+				label = cfg.ProjectDisplayName(ctx.Session, ctx.ProjectID)
 			} else {
 				label = "(org-wide)"
 			}
