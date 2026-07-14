@@ -331,8 +331,9 @@ Use the --organization or --project flags to target a specific context.
 Use 'datumctl api-resources' to see all available resource types.
 
 Tip: 'datumctl get organizations' lists your organization memberships and
-does not require an --organization or --project flag. All other resource
-types require one of these flags to specify the target context.
+does not require an --organization or --project flag. It also shows each
+organization's setup status. All other resource types require one of
+these flags (or an active context) to specify the target context.
 The 'organizations' shorthand also works with 'datumctl delete', 'datumctl edit',
 and 'datumctl describe'.`
 	getCmd.Example = `  # List your organization memberships (no context required)
@@ -362,7 +363,7 @@ and 'datumctl describe'.`
 	)
 	// kubectl sets this in cmd.go rather than NewCmdGet, so we must set it here.
 	getCmd.ValidArgsFunction = utilcomp.ResourceTypeAndNameCompletionFunc(factory)
-	rootCmd.AddCommand(WrapResourceCommand(getCmd))
+	rootCmd.AddCommand(WrapGetCommand(getCmd, factory, ioStreams))
 
 	deleteCmd := delcmd.NewCmdDelete(factory, ioStreams)
 	deleteCmd.Short = "Delete Datum Cloud resources"
@@ -631,6 +632,24 @@ the server.`
 
   # Print version in JSON format
   datumctl version -o json`
+	versionPreRun := versionCmd.PreRunE
+	versionCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if clientOnly, _ := cmd.Flags().GetBool("client"); clientOnly {
+			factory.ConfigFlags.SkipOnboardingCheck = true
+		}
+		if versionPreRun != nil {
+			return versionPreRun(cmd, args)
+		}
+		return nil
+	}
+	versionPostRun := versionCmd.PostRunE
+	versionCmd.PostRunE = func(cmd *cobra.Command, args []string) error {
+		factory.ConfigFlags.SkipOnboardingCheck = false
+		if versionPostRun != nil {
+			return versionPostRun(cmd, args)
+		}
+		return nil
+	}
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
 

@@ -12,7 +12,9 @@ import (
 	"github.com/spf13/pflag"
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/miloapi"
+	"go.datum.net/datumctl/internal/onboarding"
 	"golang.org/x/oauth2"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -34,8 +36,8 @@ type errorClientConfig struct{ err error }
 func (e *errorClientConfig) RawConfig() (clientcmdapi.Config, error) {
 	return clientcmdapi.Config{}, e.err
 }
-func (e *errorClientConfig) ClientConfig() (*rest.Config, error) { return nil, e.err }
-func (e *errorClientConfig) Namespace() (string, bool, error)    { return "default", false, nil }
+func (e *errorClientConfig) ClientConfig() (*rest.Config, error)  { return nil, e.err }
+func (e *errorClientConfig) Namespace() (string, bool, error)     { return "default", false, nil }
 func (e *errorClientConfig) ConfigAccess() clientcmd.ConfigAccess { return nil }
 
 type DatumCloudFactory struct {
@@ -45,10 +47,15 @@ type DatumCloudFactory struct {
 
 type CustomConfigFlags struct {
 	*genericclioptions.ConfigFlags
-	Project      *string
-	Organization *string
-	PlatformWide *bool
-	Context      context.Context
+	Project             *string
+	Organization        *string
+	PlatformWide        *bool
+	Context             context.Context
+	SkipOnboardingCheck bool
+	// ForceUserControlPlane routes the request to the user control plane and
+	// skips org onboarding checks. Used for user-scoped discovery commands
+	// such as listing organization memberships.
+	ForceUserControlPlane bool
 }
 
 func (factory *DatumCloudFactory) AddFlags(flags *pflag.FlagSet) {
@@ -90,16 +97,32 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		return nil, err
 	}
 
+	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.ForceUserControlPlane {
+		projectID = ""
+		organizationID = ""
+		platformWide = false
+	}
+
+	// Onboarding is enforced only for org- or project-scoped API calls.
+	// User control plane and platform-wide requests are left open so discovery
+	// commands (for example listing organization memberships) still work when
+	// the active context points at an incomplete organization.
+	if !c.SkipOnboardingCheck && !platformWide && !c.ForceUserControlPlane {
+		if err := c.ensureOnboardingComplete(userKey, tknSrc, projectID, organizationID, ctxEntry); err != nil {
+			return nil, err
+		}
+	}
+
 	config.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
 		return &oauth2.Transport{Source: tknSrc, Base: rt}
 	}
 
 	baseServer, err := c.resolveBaseServer(userKey, session)
-	if err != nil {
-		return nil, err
-	}
-
-	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +358,58 @@ func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext
 	}
 
 	return projectID, organizationID, platformWide, nil
+}
+
+func (c *CustomConfigFlags) ensureOnboardingComplete(
+	userKey string,
+	tknSrc oauth2.TokenSource,
+	projectID, organizationID string,
+	ctxEntry *datumconfig.DiscoveredContext,
+) error {
+	orgID := onboarding.ResolveOrgID(projectID, organizationID, ctxEntry, c.loadConfigForScope())
+	if orgID == "" {
+		return nil
+	}
+
+	userID, err := authutil.GetUserIDFromTokenForUser(userKey)
+	if err != nil {
+		return fmt.Errorf("failed to get user ID from token: %w", err)
+	}
+
+	apiHostname, err := authutil.GetAPIHostnameForUser(userKey)
+	if err != nil {
+		return err
+	}
+
+	cfg := c.loadConfigForScope()
+	orgDisplayName := ""
+	if cfg != nil {
+		sessionName := ""
+		if ctxEntry != nil {
+			sessionName = ctxEntry.Session
+		} else if cfg.ActiveSession != "" {
+			sessionName = cfg.ActiveSession
+		}
+		orgDisplayName = cfg.OrgDisplayName(sessionName, orgID)
+	}
+
+	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)
+	if err != nil {
+		return customerrors.WrapUserErrorWithHint(
+			"We couldn't check whether this organization is ready yet.",
+			"If you just finished setup in the portal, wait a moment and try again.",
+			err,
+		)
+	}
+	return onboarding.UserError(result)
+}
+
+func (c *CustomConfigFlags) loadConfigForScope() *datumconfig.ConfigV1Beta1 {
+	cfg, err := datumconfig.LoadAuto()
+	if err != nil {
+		return nil
+	}
+	return cfg
 }
 
 func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
