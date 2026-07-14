@@ -50,16 +50,27 @@ func main() {
 	})
 
 	if err := cli.RunNoErrOutput(rootCmd); err != nil {
-		// A canceled context means the user interrupted (^C / SIGTERM).
-		// Exit quietly with the conventional 128+SIGINT code instead of
-		// printing a spurious "context canceled" error.
-		if errors.Is(err, context.Canceled) {
+		code, interrupted := exitCodeForError(err)
+		if interrupted {
+			// The user interrupted (^C / SIGTERM). Exit quietly instead of
+			// printing a spurious "context canceled" error.
 			fmt.Fprintln(os.Stderr, "\nAborted.")
-			os.Exit(130)
+		} else {
+			customerrors.Format(os.Stderr, err, formatFor(rootCmd), verbosity())
 		}
-		customerrors.Format(os.Stderr, err, formatFor(rootCmd), verbosity())
-		os.Exit(activation.ExitCodeOf(err))
+		os.Exit(code)
 	}
+}
+
+// exitCodeForError maps a command error to a process exit code. interrupted is
+// true when the error was a user interrupt (^C / SIGTERM), which surfaces as a
+// canceled context and should be reported quietly with the conventional
+// 128+SIGINT exit code rather than as an error.
+func exitCodeForError(err error) (code int, interrupted bool) {
+	if errors.Is(err, context.Canceled) {
+		return 130, true
+	}
+	return activation.ExitCodeOf(err), false
 }
 
 // formatFor reads --error-format off the parsed root command, falling back to
