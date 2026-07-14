@@ -69,15 +69,16 @@ and copying it again when it expires, because tokens are short-lived by
 design. Every team building against the platform locally rediscovers this
 friction:
 
-1. **Cloud-portal local development.** The portal's dev server needs
-   platform credentials on every request. With the proxy, a developer
-   sets `API_URL=http://127.0.0.1:8001` once and datumctl owns
+1. **Local development of apps built on the platform.** A web app or
+   service under development needs platform credentials on every request
+   its dev server makes. With the proxy, a developer points the app's API
+   base URL at `http://127.0.0.1:8001` once and datumctl owns
    authentication for the whole workday — no tokens in `.env` files, no
    mystery "unauthorized" failures an hour into work.
-2. **The portal's plugin registry.** The portal keeps a live watch open
-   so new plugins appear the moment they are registered. Watches deliver
-   results piece by piece over a long-lived request; a proxy that held
-   results back until the request ended would silently break them.
+2. **Live-updating clients.** Dashboards, controllers, and registries
+   keep a *watch* open so changes appear the moment they happen. Watches
+   deliver results piece by piece over a long-lived request; a proxy that
+   held results back until the request ended would silently break them.
    **Delivering live results in real time is a hard requirement**, not an
    optimization.
 3. **End-to-end test suites.** A harness starts a proxy, reads the
@@ -86,6 +87,11 @@ friction:
    stopping one process.
 4. **Scripting and exploration.** `curl` or a notebook against a local
    address beats copy-pasting tokens that expire mid-investigation.
+
+None of these are hypothetical — Datum's own cloud portal, whose dev
+server calls the platform on every request and keeps live watches open,
+is simply the first consumer. The friction is the same for anything
+built against the platform.
 
 ### Goals
 
@@ -147,11 +153,11 @@ and every response flows back in real time.
 
 ### User Stories
 
-#### Story 1: A portal developer stops thinking about tokens
+#### Story 1: An app developer stops thinking about tokens
 
-Maya works on the cloud portal. Today her dev server needs a platform
-token injected per session, and when it expires she restarts things and
-mutters. Now her dev script assumes a proxy:
+Maya builds a web app on Datum Cloud. Today her dev server needs a
+platform token injected per session, and when it expires she restarts
+things and mutters. Now her dev script assumes a proxy:
 
 ```console
 $ datumctl api proxy --port 8001
@@ -160,25 +166,25 @@ $ datumctl api proxy --port 8001
   Listening:  http://127.0.0.1:8001
 ```
 
-She sets `API_URL=http://127.0.0.1:8001` once in `.env.local`. The portal
+She sets `API_URL=http://127.0.0.1:8001` once in `.env.local`. The app
 sends ordinary requests; datumctl owns auth for the whole workday. If her
 session ever genuinely needs a re-login, the proxy says exactly that — in
-its log and in the error the portal receives — and `datumctl login` fixes
+its log and in the error the app receives — and `datumctl login` fixes
 it without restarting anything.
 
-#### Story 2: The portal watches for new plugins through the proxy
+#### Story 2: A dashboard watches for changes through the proxy
 
-The portal's plugin registry keeps a watch open on a project. Through the
-proxy it uses exactly the URL it uses in production — only the host
-changes — and each update arrives the moment the platform sends it. When
-the platform eventually ends the watch (they are periodically recycled by
-design), the portal's normal reconnect opens a new one, which
-automatically carries freshly refreshed credentials. Nobody wrote any
-auth code.
+A team dashboard keeps a watch open on a project so changes show up the
+moment they happen. Through the proxy it uses exactly the URL it uses in
+production — only the host changes — and each update arrives as the
+platform sends it. When the platform eventually ends the watch (they are
+periodically recycled by design), the dashboard's normal reconnect opens
+a new one, which automatically carries freshly refreshed credentials.
+Nobody wrote any auth code.
 
-If the registry client prefers a dedicated base URL, a proxy started with
+If the client prefers a dedicated base URL, a proxy started with
 `--project my-project` serves that project at its root and the watch URL
-shrinks to `/apis/portal.miloapis.com/v1alpha1/portalplugins?watch=true`.
+shrinks to `/apis/networking.datumapis.com/v1alpha/dnszones?watch=true`.
 
 #### Story 3: An E2E suite gets auth for free
 
@@ -253,9 +259,10 @@ addresses, and known tricks exist for smuggling responses back.
 *Mitigations:* the proxy uses both standard defenses. It refuses any
 request that does not address it by its own local name, which defeats the
 smuggling tricks; and it never opts into cross-site sharing, so browsers
-block web pages from reading its responses. The cloud-portal use case is
-unaffected — the portal's *dev server* talks to the proxy, not the
-browser. Browser-direct use would need an explicit opt-in flag, deferred.
+block web pages from reading its responses. Local web development is
+unaffected — it is the app's *dev server* that talks to the proxy, not
+the browser. Browser-direct use would need an explicit opt-in flag,
+deferred.
 
 #### Risk: Buffering silently breaks watch clients
 
@@ -373,10 +380,10 @@ as its base URL with no path assembly at all.
 tempting to default to the active context, the way resource commands do,
 so URLs are short out of the box. Rejected, deliberately:
 
-- *Matching production is the flagship requirement.* The portal talks to
-  the real API in production; swapping in the proxy via `API_URL` only
-  works if the proxy accepts the very same URLs. A context-scoped default
-  would make development URLs differ from production URLs.
+- *Matching production is the flagship requirement.* An app talks to the
+  real API in production; swapping in the proxy with one base-URL change
+  only works if the proxy accepts the very same URLs. A context-scoped
+  default would make development URLs differ from production URLs.
 - *The most obvious first request would break.* Listing organizations
   happens at the top of the API, not inside any project; a project-scoped
   default would turn the natural first `curl` into "not found."
@@ -481,7 +488,7 @@ One line per request, on by default, silenced by `--quiet`:
 
 ```
 10:42:03 GET  /apis/resourcemanager.miloapis.com/v1alpha1/organizations 200 143ms 8.1kB
-10:42:05 GET  /apis/…/portalplugins?watch=true 200 …streaming
+10:42:05 GET  /apis/…/dnszones?watch=true 200 …streaming
 ```
 
 Streaming responses log once when they start (marked `…streaming`) and
@@ -654,13 +661,13 @@ Deferred, in likely priority order:
   case (nothing refreshes credentials across reconnects).
 - **The plugin credentials-helper protocol.** Right answer for datumctl
   plugins, but only available to processes datumctl itself launches — not
-  the portal dev server, not `curl` — and requires integration code in
+  an app's dev server, not `curl` — and requires integration code in
   every client that the proxy makes unnecessary.
 - **A one-shot `datumctl api request <path>`.** Solves scripting, not the
   dev-server or watch cases; remains a good future sibling.
-- **Teach the portal dev server to invoke datumctl itself.** Couples one
-  consumer to CLI internals and helps no other tool; the proxy solves the
-  whole class.
+- **Teach each app to invoke datumctl itself.** Couples every consumer to
+  CLI internals, one integration at a time; the proxy solves the whole
+  class at once.
 - **`auth update-kubeconfig` plus an external kubectl proxy.** For
   kubectl users only, and drags Kubernetes tooling into a workflow this
   product deliberately keeps Kubernetes-free.
