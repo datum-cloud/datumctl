@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -52,4 +53,83 @@ func TestPollDeviceToken_ContextCancel(t *testing.T) {
 	if atomic.LoadInt32(&calls) == 0 {
 		t.Fatal("expected at least one poll attempt before cancel")
 	}
+}
+
+// TestWatchReaderEOF_CancelsOnEOF verifies the ^D fix: reaching EOF on the
+// watched stream cancels the derived context, which aborts the login wait.
+func TestWatchReaderEOF_CancelsOnEOF(t *testing.T) {
+	r, w := mustPipe(t)
+	defer r.Close()
+
+	ctx, stop := watchReaderEOF(context.Background(), r)
+	defer stop()
+
+	// Closing the write end delivers EOF to the reader, as ^D does at a tty.
+	_ = w.Close()
+
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", ctx.Err())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("context was not canceled after EOF")
+	}
+}
+
+// TestWatchReaderEOF_DiscardsInputThenEOF verifies that input received during
+// the wait is consumed and discarded, and a subsequent EOF still cancels.
+func TestWatchReaderEOF_DiscardsInputThenEOF(t *testing.T) {
+	r, w := mustPipe(t)
+	defer r.Close()
+
+	ctx, stop := watchReaderEOF(context.Background(), r)
+	defer stop()
+
+	if _, err := w.Write([]byte("noise typed during the wait\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = w.Close()
+
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", ctx.Err())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("context was not canceled after input+EOF")
+	}
+}
+
+// TestWatchReaderEOF_NoCancelBeforeEOFOrStop verifies the watcher does not
+// cancel while the stream is open and idle (no ^D), so a successful login is
+// not spuriously aborted; stop() then releases it.
+func TestWatchReaderEOF_NoCancelBeforeEOFOrStop(t *testing.T) {
+	r, w := mustPipe(t)
+	defer r.Close()
+	defer w.Close()
+
+	ctx, stop := watchReaderEOF(context.Background(), r)
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("context canceled while stream open and idle")
+	case <-time.After(600 * time.Millisecond): // spans a couple read-deadline cycles
+	}
+
+	stop()
+	select {
+	case <-ctx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("stop() did not cancel the context")
+	}
+}
+
+func mustPipe(t *testing.T) (*os.File, *os.File) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	return r, w
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -208,6 +209,11 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 
 	fmt.Println("\nWaiting for authentication callback...")
 
+	// Cancel the wait if the user sends EOF (^D) on stdin, in addition to
+	// the ^C/SIGTERM cancellation carried by ctx.
+	waitCtx, stopEOF := watchStdinEOF(ctx)
+	defer stopEOF()
+
 	var authCode string
 	select {
 	case code := <-codeChan:
@@ -220,9 +226,9 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 		}()
 	case err := <-errChan:
 		return nil, fmt.Errorf("authentication failed: %w", err)
-	case <-ctx.Done():
+	case <-waitCtx.Done():
 		go server.Shutdown(context.Background())
-		return nil, ctx.Err()
+		return nil, waitCtx.Err()
 	}
 
 	token, err := conf.Exchange(ctx, authCode,
@@ -469,7 +475,92 @@ func runDeviceFlow(ctx context.Context, providerURL string, clientID string, sco
 
 	fmt.Println("Waiting for authorization...")
 
-	return pollDeviceToken(ctx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
+	// Cancel the poll if the user sends EOF (^D) on stdin, in addition to
+	// the ^C/SIGTERM cancellation carried by ctx.
+	waitCtx, stopEOF := watchStdinEOF(ctx)
+	defer stopEOF()
+
+	return pollDeviceToken(waitCtx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
+}
+
+// deadlineReader is a stream that supports read deadlines, satisfied by
+// *os.File (including os.Stdin and os.Pipe ends).
+type deadlineReader interface {
+	io.Reader
+	SetReadDeadline(time.Time) error
+}
+
+// watchStdinEOF returns a context derived from parent that is canceled when
+// stdin reaches EOF (e.g. the user presses ^D at an empty line). See
+// watchReaderEOF for the behavior and the contract around the returned stop
+// function.
+func watchStdinEOF(parent context.Context) (context.Context, context.CancelFunc) {
+	return watchReaderEOF(parent, os.Stdin)
+}
+
+// watchReaderEOF returns a context derived from parent that is canceled when
+// in reaches EOF. The returned stop function must be called when the wait
+// completes so the background reader releases the stream and does not consume
+// input intended for a later interactive prompt.
+//
+// Input received during the wait is read and discarded — nothing else reads
+// the stream while login is blocking on the auth callback or device poll. On
+// streams where read deadlines are unsupported the watcher falls back to a
+// single blocking read; EOF still cancels, and any leftover reader is
+// abandoned rather than stealing later input in the common (deadline-capable)
+// case.
+func watchReaderEOF(parent context.Context, in deadlineReader) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+
+	go func() {
+		// Ensure the stream has no lingering read deadline once the watcher
+		// exits, so a later reader (e.g. the interactive picker) is not
+		// tripped by a stale deadline this goroutine may have re-armed after
+		// stop() cleared it.
+		defer in.SetReadDeadline(time.Time{}) //nolint:errcheck
+		buf := make([]byte, 1)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+
+			if err := in.SetReadDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
+				// Deadlines unsupported for this stream; fall back to a
+				// single blocking read. EOF cancels; anything else ends the
+				// watcher to avoid a busy loop.
+				if _, rerr := in.Read(buf); errors.Is(rerr, io.EOF) {
+					cancel()
+				}
+				return
+			}
+
+			_, err := in.Read(buf)
+			switch {
+			case err == nil:
+				// Discard input received during the wait and keep watching.
+				continue
+			case errors.Is(err, os.ErrDeadlineExceeded):
+				continue
+			case errors.Is(err, io.EOF):
+				cancel()
+				return
+			default:
+				// Unexpected read error; stop watching.
+				return
+			}
+		}
+	}()
+
+	return ctx, func() {
+		close(done)
+		// Clear the deadline so a later reader (e.g. the interactive picker)
+		// is not affected by a stale one.
+		_ = in.SetReadDeadline(time.Time{})
+		cancel()
+	}
 }
 
 func requestDeviceAuthorization(ctx context.Context, endpoint string, clientID string, scopes []string) (*deviceAuthorizationResponse, error) {
