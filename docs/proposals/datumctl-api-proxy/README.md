@@ -15,17 +15,16 @@ latest-milestone: "v0.x"
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [CLI surface](#cli-surface)
-  - [Resolving the session and upstream](#resolving-the-session-and-upstream)
-  - [Streaming design](#streaming-design)
-  - [Path semantics](#path-semantics)
-  - [Token lifecycle](#token-lifecycle)
+  - [The command](#the-command)
+  - [What the local address serves](#what-the-local-address-serves)
+  - [Live results arrive in real time](#live-results-arrive-in-real-time)
+  - [Credentials and errors](#credentials-and-errors)
   - [Security model](#security-model)
-  - [Request logging](#request-logging)
-  - [Failure and lifecycle UX](#failure-and-lifecycle-ux)
+  - [The request log](#the-request-log)
+  - [Starting and stopping](#starting-and-stopping)
   - [Prior art](#prior-art)
-  - [Testing strategy](#testing-strategy)
-  - [V1 milestone cut](#v1-milestone-cut)
+  - [How we know it works](#how-we-know-it-works)
+  - [The first release](#the-first-release)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
@@ -34,137 +33,125 @@ latest-milestone: "v0.x"
 
 ## Summary
 
-`datumctl api proxy` starts a local HTTP proxy bound to the loopback
-interface that forwards every request to the Datum Cloud API endpoint of the
-user's datumctl session, injecting a valid `Authorization: Bearer` token on
-each request and transparently refreshing it when it expires. Any local tool
-— a dev server, a test harness, `curl` — can then talk to the platform with
-zero token plumbing:
+`datumctl api proxy` gives every tool on your machine an authenticated
+front door to the Datum Cloud API. It starts a small local server that
+forwards each request it receives to the API, signed in as you.
+Credentials are attached automatically and kept fresh in the background,
+so the tools behind the proxy never see a token, never store one, and
+never break when one expires:
 
 ```console
 $ datumctl api proxy --port 8001
 $ curl http://127.0.0.1:8001/apis/resourcemanager.miloapis.com/v1alpha1/organizations
 ```
 
-By default the proxy is a pure passthrough of the platform API surface: the
-same paths that work against `https://api.datum.net` work against the local
-port, including the scoped org/project control-plane prefixes and —
-critically — long-lived streaming responses (Kubernetes-style watches,
-server-sent events, chunked transfer), which pass through unbuffered. With
-an explicit `--project` or `--organization` flag, the proxy instead
-re-bases itself at that control plane, so it looks like a single dedicated
-API server on localhost and URLs lose the long control-plane prefix:
+By default the local address is a faithful stand-in for the real API: any
+request that works against `https://api.datum.net` works against
+`http://127.0.0.1:8001` unchanged — including live *watch* requests, whose
+updates arrive the instant the platform sends them. Alternatively, point
+the proxy at a single project or organization and URLs get much shorter:
 
 ```console
 $ datumctl api proxy --port 8001 --project my-project
 $ curl http://127.0.0.1:8001/apis/networking.datumapis.com/v1alpha/dnszones
 ```
 
-Everything this needs already exists in datumctl: stored sessions,
-automatic token refresh, and per-session endpoint resolution. This
-enhancement wraps that machinery in a small, conservative local proxy, in
-the spirit of `kubectl proxy` and `cloud-sql-proxy`.
+datumctl already knows who you are, which environment you use, and how to
+keep your credentials current. This feature puts all of that behind one
+local address, in the spirit of `kubectl proxy` and `cloud-sql-proxy`.
 
 ## Motivation
 
-Today, a local tool that wants to call the Datum Cloud API has three
-options, all of which push token plumbing onto the tool:
+Today, a local tool that calls the Datum Cloud API has to manage
+credentials itself. In practice that means copying a token out of
+`datumctl auth get-token` into an environment variable or a config file —
+and copying it again when it expires, because tokens are short-lived by
+design. Every team building against the platform locally rediscovers this
+friction:
 
-- Run `datumctl auth get-token` and thread the raw bearer token through
-  environment variables or config — and re-thread it when it expires,
-  because a static token dies mid-session.
-- Be a datumctl *plugin*, and use the `DATUM_CREDENTIALS_HELPER` exec
-  protocol — which only works for processes datumctl itself spawns.
-- Re-implement OAuth refresh against the keyring — nobody should do this.
-
-Real teams are hitting this today:
-
-1. **Cloud-portal local development.** The portal dev server needs a
-   platform bearer token per request (session-injected today). With the
-   proxy, a developer sets `API_URL=http://127.0.0.1:8001` and datumctl
-   owns authentication and refresh for the whole dev session. No token in
-   `.env` files, no expiry-induced mystery 401s an hour into work.
-2. **The portal's plugin-registry watch client.** The portal watches CRDs
-   (e.g. `portalplugins.portal.miloapis.com`) on a control plane. Watches
-   are long-lived chunked HTTP responses; a proxy that buffers them is
-   useless. **Unbuffered streaming passthrough is a hard requirement**, not
-   an optimization.
-3. **E2E test harnesses.** A test suite can start a proxy on a random free
-   port, read the URL from stdout, point every test at it, and never
-   distribute credentials into test processes at all. Auth setup for an
-   entire suite becomes one spawned process.
-4. **Scripting and exploration.** `curl`, `httpie`, or a notebook against
-   `localhost` beats copy-pasting tokens that expire mid-investigation.
+1. **Cloud-portal local development.** The portal's dev server needs
+   platform credentials on every request. With the proxy, a developer
+   sets `API_URL=http://127.0.0.1:8001` once and datumctl owns
+   authentication for the whole workday — no tokens in `.env` files, no
+   mystery "unauthorized" failures an hour into work.
+2. **The portal's plugin registry.** The portal keeps a live watch open
+   so new plugins appear the moment they are registered. Watches deliver
+   results piece by piece over a long-lived request; a proxy that held
+   results back until the request ended would silently break them.
+   **Delivering live results in real time is a hard requirement**, not an
+   optimization.
+3. **End-to-end test suites.** A harness starts a proxy, reads the
+   address it prints, and points every test at it. No test process ever
+   holds a credential, and tearing down auth for the whole suite means
+   stopping one process.
+4. **Scripting and exploration.** `curl` or a notebook against a local
+   address beats copy-pasting tokens that expire mid-investigation.
 
 ### Goals
 
-- One command that gives any local HTTP client an authenticated view of the
-  active session's Datum Cloud API endpoint.
-- Transparent token injection and refresh, reusing datumctl's existing
-  credential machinery — including service-account sessions — with
-  refreshed tokens persisted back to the stored session exactly as other
-  commands do.
-- Unbuffered passthrough of streaming responses (watch, SSE, chunked
-  transfer) suitable for long-lived watch clients.
-- A conservative security posture: loopback-only, Host-header validation,
-  local `Authorization` headers never forwarded upstream, tokens never
-  logged.
-- Predictable lifecycle: the session is pinned when the proxy starts, the
-  bound URL is machine-readable, failures produce actionable messages.
+- One command that gives any local tool an authenticated view of the
+  Datum Cloud API for the user's session.
+- Credentials handled entirely by datumctl — attached per request,
+  refreshed before they expire, machine accounts included — with
+  refreshed credentials saved back to the session exactly as every other
+  command does.
+- Live results (watches and other streaming responses) delivered to the
+  local client the moment the platform sends them.
+- A conservative security posture: reachable only from the local machine,
+  protected against malicious websites, credentials never exposed to the
+  tools behind the proxy and never written to logs.
+- A predictable lifecycle: the session is pinned when the proxy starts,
+  the address is printed in a machine-readable way, and failures say what
+  to do next.
 
 ### Non-Goals
 
-- **Exposing the proxy beyond the local machine.** No flag to bind
-  non-loopback addresses ships in v1 (see [Security model](#security-model)).
-  Users who want remote access can build their own tunnel and own that
-  decision.
-- **Being an API gateway.** No caching, no rewriting of response bodies, no
-  rate limiting, no request transformation beyond auth injection and
-  standard proxy header hygiene.
-- **Serving raw tokens over HTTP.** `datumctl auth get-token` exists for
-  that, gated by process execution rather than an open local port
-  (aws-vault's metadata-server mode shows why serving credentials over
-  loopback HTTP is a weaker boundary).
-- **Implicit scoping from the current context.** Easy URLs come from the
-  explicit `--project`/`--organization` scoped mode, never from silently
-  reading the active context; a mixed-mode `/-/` convenience prefix inside
-  the unscoped proxy is also deferred (see
-  [Path semantics](#path-semantics)).
-- **A general-purpose one-shot request command** (`gh api` style). That is a
-  natural sibling under the same `api` command group, but a separate
+- **Exposing the proxy beyond the local machine.** There is no option to
+  do so (see [Security model](#security-model)). Users who want remote
+  access can run their own tunnel and own that decision.
+- **Being an API gateway.** No caching, no rewriting of responses, no
+  rate limiting — the proxy adds credentials and otherwise stays out of
+  the way.
+- **Serving raw tokens.** `datumctl auth get-token` exists for that, and
+  handing a token to the program that asked is a deliberately narrower
+  door than serving it to anything that can reach a local port.
+- **Guessing scope from the current context.** Short URLs come from the
+  explicit `--project`/`--organization` mode, never from silently reading
+  the active context (see
+  [What the local address serves](#what-the-local-address-serves)).
+- **A one-shot request command** (in the style of `gh api`). A natural
+  future sibling under the same `api` command group, but a separate
   enhancement.
 
 ## Proposal
 
-Add a new `api` command group with a single v1 subcommand, `proxy`. There
-is no top-level `datumctl proxy` alias: the `api` group earns its keep by
-leaving room for a one-shot `api request` sibling, and a hidden alias is
-cheap to add later if usage shows the extra level hurts.
+Add a new `api` command group with a single subcommand, `proxy`. There is
+no top-level `datumctl proxy` shortcut: the `api` group earns its keep by
+leaving room for a one-shot `api request` sibling, and a shortcut is cheap
+to add later if usage shows the extra word hurts.
 
-On startup the command:
+When the command starts it:
 
-1. Resolves a session — the active session by default, or one pinned with
-   `--session` — and from it the upstream endpoint and any endpoint TLS
-   settings, using the same resolution every other datumctl command
-   performs today.
-2. Resolves the proxy root: the endpoint root by default, or a single
-   control plane when `--project`/`--organization`/`--platform-wide` is
-   given (see [Path semantics](#path-semantics)).
-3. Prepares the same auto-refreshing credentials the rest of the CLI uses.
-4. Binds a loopback listener (random free port by default, `--port` to fix
-   it), prints a human banner to stderr and the bare proxy URL as a single
-   line to stdout, and serves until interrupted.
+1. Picks a session — the active one by default, or one named with
+   `--session` — and from it the API environment to talk to, resolved the
+   same way every other datumctl command resolves it.
+2. Decides what its root address means: the whole API by default, or a
+   single project/organization when a scope flag is given.
+3. Prepares the same self-refreshing credentials the rest of the CLI uses.
+4. Starts listening on the local machine (a random free port unless
+   `--port` says otherwise), prints a human-readable banner and a
+   machine-readable URL, and serves until interrupted.
 
-Every proxied request gets a fresh-enough bearer token injected; every
-response streams back unbuffered.
+From then on every request is forwarded with fresh credentials attached,
+and every response flows back in real time.
 
 ### User Stories
 
 #### Story 1: A portal developer stops thinking about tokens
 
-Maya works on the cloud portal. Today her dev server needs a platform token
-injected per session, and when it expires she restarts things and mutters.
-Now her `package.json` dev script assumes a proxy:
+Maya works on the cloud portal. Today her dev server needs a platform
+token injected per session, and when it expires she restarts things and
+mutters. Now her dev script assumes a proxy:
 
 ```console
 $ datumctl api proxy --port 8001
@@ -174,45 +161,38 @@ $ datumctl api proxy --port 8001
 ```
 
 She sets `API_URL=http://127.0.0.1:8001` once in `.env.local`. The portal
-sends plain HTTP requests; datumctl owns auth for the whole workday,
-refreshing the token in the background. When her session eventually needs a
-real re-login, the proxy tells her exactly that on stderr and in the error
-body, and `datumctl login` fixes it without restarting the dev server.
+sends ordinary requests; datumctl owns auth for the whole workday. If her
+session ever genuinely needs a re-login, the proxy says exactly that — in
+its log and in the error the portal receives — and `datumctl login` fixes
+it without restarting anything.
 
-#### Story 2: The portal watches a CRD through the proxy
+#### Story 2: The portal watches for new plugins through the proxy
 
-The portal's plugin registry watches `portalplugins.portal.miloapis.com` on
-a project control plane. Through the proxy this is just:
+The portal's plugin registry keeps a watch open on a project. Through the
+proxy it uses exactly the URL it uses in production — only the host
+changes — and each update arrives the moment the platform sends it. When
+the platform eventually ends the watch (they are periodically recycled by
+design), the portal's normal reconnect opens a new one, which
+automatically carries freshly refreshed credentials. Nobody wrote any
+auth code.
 
-```
-GET /apis/resourcemanager.miloapis.com/v1alpha1/projects/my-project/control-plane/apis/portal.miloapis.com/v1alpha1/portalplugins?watch=true
-```
-
-Each watch event flushes through to the client the moment the upstream
-sends it. The watch runs for as long as the upstream allows; when the
-server ends it (watch timeout, token expiry), the portal's standard
-watch-reconnect logic re-establishes it and the new request carries a
-freshly refreshed token. Nobody wrote any auth code.
-
-If the registry client prefers a dedicated base URL over path assembly, a
-second proxy started with `--project my-project` serves that control plane
-at its root, and the watch path shrinks to
-`/apis/portal.miloapis.com/v1alpha1/portalplugins?watch=true`.
+If the registry client prefers a dedicated base URL, a proxy started with
+`--project my-project` serves that project at its root and the watch URL
+shrinks to `/apis/portal.miloapis.com/v1alpha1/portalplugins?watch=true`.
 
 #### Story 3: An E2E suite gets auth for free
 
-An E2E harness starts `datumctl api proxy` (no `--port`: random free port),
-reads the URL from the first line of stdout as its readiness signal, and
-passes it to every test worker. No test process ever holds a credential.
-Teardown is killing one process.
+An E2E harness starts `datumctl api proxy` with no `--port`, so it gets a
+random free port and can never collide with another suite:
 
 ```console
 $ datumctl api proxy --quiet --project e2e-project
 http://127.0.0.1:52713
 ```
 
-The harness spawns the proxy, reads that first stdout line as both the
-readiness signal and the address, and hands it to the test workers.
+The harness reads that first line as both its readiness signal and the
+address, and hands it to every test worker. No test process ever holds a
+credential; teardown is stopping one process.
 
 #### Story 4: Pinning a non-active session
 
@@ -229,90 +209,80 @@ repoint Sam's staging proxy — the session is pinned at startup.
 
 ### Notes/Constraints/Caveats
 
-- **The proxy pins its session at startup.** `datumctl auth switch` changes
-  which session is active in the local configuration; a
-  proxy that followed the active session would change identity *and
-  endpoint* under a running dev server mid-request-stream. The proxy
-  resolves the session once, states it in the banner, and never re-reads
-  the config. Users who want the new session restart the proxy.
-- **Pure passthrough means the local client speaks real platform paths.**
-  This is a feature: anything recorded against the real API (docs examples,
-  HAR files, client SDK output) replays against the proxy unchanged.
-- **Scoping is explicit and pinned, never inherited from the current
-  context.** Resource commands fall back to the active context when no
-  scope flag is given; the proxy deliberately does **not**. A proxy whose URLs
-  silently mean something different depending on which context was active
-  at launch (or worse, changes with `datumctl ctx use`) is a footgun for
-  the tools pointed at it — and the flagship portal use case requires the
-  unscoped endpoint so dev paths match production paths exactly. No flags →
-  endpoint root; `--project`/`--organization`/`--platform-wide` → that
-  scope, pinned at startup and shown in the banner, exactly like the
-  session.
+- **The proxy pins its session at startup.** A proxy that followed the
+  active session would change identity *and* environment under a running
+  dev server. The proxy states its session in the banner and serves that
+  identity until it exits; users who want a different session restart it.
+- **The default mode is a faithful stand-in for the real API.** Anything
+  recorded against the real API — docs examples, captured traffic, SDK
+  output — replays against the proxy unchanged. This is what makes
+  `API_URL` swapping work.
+- **Scope is explicit and pinned, never inherited from the current
+  context.** Rationale in
+  [What the local address serves](#what-the-local-address-serves).
 - **A new built-in `api` command shadows any user plugin named `api`.**
-  Plugin dispatch only fires for names that are not built-in commands. No
-  known plugin uses the name; worth a release-note line.
-- **Response bodies are not rewritten.** Kubernetes-style APIs return
-  relative `selfLink`-free bodies, so passthrough is safe. If some platform
-  endpoint ever embeds absolute API URLs in response bodies, clients will
-  see upstream URLs — acceptable and documented, not silently rewritten.
+  No known plugin uses the name; worth a release-note line.
+- **Responses are never rewritten.** If some platform response ever
+  embedded a full API URL in its body, clients would see the real
+  endpoint's address — acceptable and documented, not silently patched.
 
 ### Risks and Mitigations
 
-#### Risk: Any local process can act as the user while the proxy runs
+#### Risk: Anything on the machine can act as the user while the proxy runs
 
-The proxy deliberately does not authenticate local clients — same-user
-loopback is the trust boundary, matching `kubectl proxy`, cloud-sql-proxy,
-and gcloud emulators. But loopback is reachable by *every* local process,
-including other users on a shared machine.
+The proxy deliberately does not ask local programs to authenticate —
+requiring a local password would just recreate the credential plumbing
+this command exists to remove. That is the same trust boundary as
+`kubectl proxy` and `cloud-sql-proxy`, but it means any local program
+(or another user on a shared machine) can use the proxy while it runs.
 
-*Mitigations:* loopback-only binding with no override flag; the proxy only
-exists while the user runs it, and its startup banner names the identity it
-serves; every request is logged by default, so misuse is visible; the token
-itself is never exposed — a local client can make API calls but cannot
-exfiltrate the credential to use elsewhere, which is a strictly better
-boundary than token-in-env approaches it replaces. A Unix-socket listener
-(file-permission-enforced, same-user-only) is the natural hardening step;
-it is deliberately a fast-follow rather than v1 scope, and sits first on
-the deferred list as the designated answer to the shared-machine caveat.
+*Mitigations:* the proxy is reachable only from the local machine and
+only exists while the user runs it; its banner names the identity it
+serves; every request is logged by default, so misuse is visible; and the
+credential itself is never exposed — a local program can act *through*
+the proxy but cannot take the token with it, which is strictly safer than
+the token-in-environment practice it replaces. A follow-up will add a
+socket-based mode that only the same OS user can reach; it is first on
+the deferred list as the designated answer for shared machines.
 
-#### Risk: Browsers as confused deputies (DNS rebinding, CSRF)
+#### Risk: Malicious websites probing the local proxy
 
-A malicious web page can make a victim's browser send requests to
-`127.0.0.1`, and DNS rebinding can defeat the same-origin policy if the
-proxy answers arbitrary `Host` headers.
+A hostile web page can make a visitor's browser send requests to local
+addresses, and known tricks exist for smuggling responses back.
 
-*Mitigations:* the proxy rejects any request whose `Host` is not
-`localhost`, `127.0.0.1`, or `[::1]` (with the bound port) — this defeats
-DNS rebinding. It emits **no** CORS headers, so same-origin policy blocks
-scripted reads from web pages. The cloud-portal use case is unaffected: the
-portal's *dev server* (a local non-browser process) calls the proxy;
-browsers talk to the dev server. Browser-direct use would need an explicit
-opt-in CORS flag, deferred.
+*Mitigations:* the proxy uses both standard defenses. It refuses any
+request that does not address it by its own local name, which defeats the
+smuggling tricks; and it never opts into cross-site sharing, so browsers
+block web pages from reading its responses. The cloud-portal use case is
+unaffected — the portal's *dev server* talks to the proxy, not the
+browser. Browser-direct use would need an explicit opt-in flag, deferred.
 
 #### Risk: Buffering silently breaks watch clients
 
-An innocent-looking default (a buffered reverse proxy, a response timeout)
-would make watches appear to "hang" and fail only under real use.
+An innocent-looking default — collecting a response before relaying it,
+or a response time limit — would make watches appear to hang, and only
+under real use.
 
-*Mitigations:* unbuffered flush is a stated hard requirement with a
-dedicated integration test that fails if events do not arrive
-incrementally (see [Testing strategy](#testing-strategy)); no
-response-duration timeout exists anywhere in the path.
+*Mitigations:* real-time delivery is a stated hard requirement with a
+dedicated test designed to fail if results are held back even slightly
+(see [How we know it works](#how-we-know-it-works)), and nothing in the
+proxy limits how long a response may last.
 
-#### Risk: Refresh storms against the token endpoint
+#### Risk: A dead session causing a flood of sign-in attempts
 
-A polling dev server multiplies requests; if the refresh token is dead,
-each request could trigger a fresh refresh attempt against the auth server.
+A polling dev server can send many requests per second; if the session's
+refresh credential has been revoked, each request could trigger a fresh
+sign-in attempt against the auth service.
 
-*Mitigations:* token refresh is already serialized inside datumctl's
-credential layer, so concurrent requests share one attempt. The proxy adds
-a short failure cooldown: after a refresh failure, requests fail fast with
-the same actionable error for a few seconds instead of re-attempting
-refresh per request.
+*Mitigations:* refresh attempts are shared — concurrent requests wait on
+one attempt rather than starting their own — and after a failure the
+proxy waits a few seconds before trying again, answering requests in the
+meantime with the same actionable error. However hard the local client
+polls, the auth service sees at most one attempt per cooldown.
 
 ## Design Details
 
-### CLI surface
+### The command
 
 ```console
 $ datumctl api proxy --help
@@ -342,15 +312,6 @@ Flags:
   -q, --quiet               Suppress per-request log lines
 ```
 
-`--project`, `--organization`, and `--platform-wide` are the same global
-scope flags every datumctl command accepts, already mutually exclusive;
-the proxy reads them at launch rather than defining its own. Unlike
-resource commands, the proxy does **not** fall back to the active context
-when no flag is given — see [Path semantics](#path-semantics).
-
-Help text and examples reference only `datumctl` and Datum Cloud
-resources, and never mention kubectl:
-
 ```console
   # Start a proxy on a fixed port for a dev server
   datumctl api proxy --port 8001
@@ -361,10 +322,7 @@ resources, and never mention kubectl:
   # List organizations through the proxy
   curl http://127.0.0.1:8001/apis/resourcemanager.miloapis.com/v1alpha1/organizations
 
-  # Watch DNS zones on a project control plane through the proxy
-  curl "http://127.0.0.1:8001/apis/resourcemanager.miloapis.com/v1alpha1/projects/my-project/control-plane/apis/networking.datumapis.com/v1alpha/dnszones?watch=true"
-
-  # Serve one project's control plane directly, for shorter URLs
+  # Serve one project directly, for shorter URLs
   datumctl api proxy --port 8001 --project my-project
   curl "http://127.0.0.1:8001/apis/networking.datumapis.com/v1alpha/dnszones?watch=true"
 
@@ -372,267 +330,174 @@ resources, and never mention kubectl:
   datumctl api proxy --session sam@datum.net@api.staging.env.datum.net
 ```
 
-Flag decisions:
+Three flag decisions worth stating:
 
-- **`--port` defaults to 0 (random free port).** A fixed default (kubectl
-  proxy's 8001) fails on the second concurrent proxy and trains tools to
-  assume a well-known port that another local program may squat. Random
-  never fails at startup; stable configurations opt in with `--port 8001`.
-  The bound URL is always printed, so nothing is guessing.
-- **`--session` names a session** exactly as `datumctl auth list` shows it
-  (format `email@api-hostname`), mirroring the existing `--session` flag
-  on `datumctl auth get-token`. No separate `--user` flag: the same email
-  can be logged in to multiple endpoints, and the session name is the
-  unambiguous handle.
-- **No `--listen`/`--address` flag in v1.** Loopback-only is a design
-  guarantee, not a default (see [Security model](#security-model)).
+- **`--port` defaults to a random free port.** A fixed default fails the
+  moment a second proxy starts and trains tools to assume a well-known
+  port. Random never fails at startup, and the chosen address is always
+  printed, so nothing is guessing. Stable setups opt in with `--port`.
+- **`--session` names a session** exactly as `datumctl auth list` shows
+  it, matching the existing `--session` flag on `datumctl auth get-token`.
+  The same email can be logged in to several environments, so the session
+  name — not the email — is the unambiguous handle.
+- **`--project`/`--organization`/`--platform-wide` are the same scope
+  flags every datumctl command accepts**, read at launch. Unlike resource
+  commands, the proxy does not fall back to the active context when no
+  flag is given — see the next section.
 
-### Resolving the session and upstream
+### What the local address serves
 
-The proxy resolves its identity and destination exactly the way every
-other datumctl command does — the same session selection, the same
-endpoint lookup, the same per-session TLS settings (staging endpoints with
-private certificate authorities included), and the same auto-refreshing
-credentials, covering both interactive logins and machine accounts. It
-simply performs that resolution once, at startup, and pins the result.
+The proxy picks its session and environment the way every other datumctl
+command does — same session selection, same endpoint lookup, same
+settings for staging environments, same credentials. It does that once,
+at startup, and pins the result. Two guarantees follow: the proxy can
+never disagree with the rest of the CLI about where a session points, and
+if `datumctl get` works, the proxy works — there is nothing
+proxy-specific to configure or debug.
 
-Two guarantees fall out of this:
+The only real choice is what the *root* of the local address means.
+Everything after the root is forwarded exactly as the client sent it.
 
-- **No drift.** The proxy and the resource commands share one resolution
-  path, so they can never disagree about which endpoint or identity a
-  session maps to.
-- **No surprises.** If `datumctl get` works, the proxy works — there is no
-  proxy-specific configuration to set up or debug.
+**Default: the whole API.** Organizations, projects, and their individual
+control planes are all reachable as paths under the one API endpoint, so
+one unscoped proxy reaches everything — and every URL matches the real
+API exactly.
 
-In scoped mode the proxy root is the same control-plane address the
-resource commands would target for that `--project` or `--organization`,
-with none of the active-context or environment-variable fallbacks those
-commands apply (see [Path semantics](#path-semantics)).
+**Scoped: one project or organization.** With
+`--project`/`--organization`/`--platform-wide`, the proxy serves just
+that scope at its root, behaving like a dedicated API server for it:
+short paths, and a client library can be handed `http://127.0.0.1:PORT`
+as its base URL with no path assembly at all.
 
-### Streaming design
+**Scope is explicit, never inherited from the current context.** It is
+tempting to default to the active context, the way resource commands do,
+so URLs are short out of the box. Rejected, deliberately:
 
-Watch responses, server-sent events, and chunked transfers must flow
-through the proxy as if it weren't there. The guarantees:
-
-- **Every byte the platform sends is flushed to the local client
-  immediately.** There is no proxy-side buffering — this is the entire
-  streaming design, and it is how `kubectl proxy` supports watches.
-  Chunked transfer-encoding and `text/event-stream` need no additional
-  handling on top of it.
-- **Credentials are attached per request by the same machinery the rest
-  of the CLI uses.** If the session cannot produce a token, the request
-  is never sent upstream and the client gets the actionable error
-  described in [Token lifecycle](#token-lifecycle).
-- **Timeouts are asymmetric by design.** Connection setup is bounded
-  (dialing, TLS handshake, first response headers); response *duration*
-  is unbounded — watches are infinite on purpose. Nothing on the local
-  side imposes a read or write deadline that would kill a long stream.
-- **Upgrades (WebSockets)** pass through on a best-effort basis, not as a
-  tested guarantee: the bearer token is attached at handshake time only,
-  and post-expiry connection lifetime is upstream policy. The motivating
-  watch client uses chunked HTTP, not WebSockets.
-- **The local side speaks plain HTTP/1.1**, which every target client
-  (curl, Node fetch, Go clients) handles and which chunked watch
-  streaming works over.
-- **Compression is passed through**, not re-encoded: the client's
-  `Accept-Encoding` travels upstream and the response body is relayed
-  verbatim.
-- **Header hygiene:** hop-by-hop headers are stripped per the HTTP
-  standard; inbound `Authorization` is deleted so a local client can
-  never smuggle an alternate credential upstream or trick the proxy into
-  forwarding a stale one; no `X-Forwarded-*` headers are added — the
-  upstream gains nothing from knowing about 127.0.0.1. All other headers,
-  including inbound `X-Request-ID`, pass through untouched.
-
-### Path semantics
-
-The proxy has exactly one knob: **what its root maps to**. Requests are
-otherwise forwarded verbatim — path and query untouched.
-
-**Default: the endpoint root (pure passthrough).** Because scoped control
-planes are just path prefixes under the endpoint (e.g.
-`/apis/resourcemanager.miloapis.com/v1alpha1/projects/{id}/control-plane`,
-with org and user equivalents), every control plane is reachable through
-one unscoped proxy:
-
-| Local request path | Meaning |
-| --- | --- |
-| `/apis/…/organizations` | platform root (endpoint root) |
-| `/apis/resourcemanager.miloapis.com/v1alpha1/organizations/{org}/control-plane/…` | org control plane |
-| `/apis/resourcemanager.miloapis.com/v1alpha1/projects/{proj}/control-plane/…` | project control plane |
-| `/apis/iam.miloapis.com/v1alpha1/users/{uid}/control-plane/…` | user control plane |
-
-**Scoped mode: `--project` / `--organization` / `--platform-wide`
-re-base the proxy root at that control plane** — the same address the
-resource commands target for those flags. A
-scoped proxy presents a complete, single API-server surface at `/` —
-discovery under `/apis`, resources at their natural short paths — so a
-generic Kubernetes-style client library can be pointed at
-`http://127.0.0.1:PORT` as its base URL with no path assembly at all:
-
-```console
-$ datumctl api proxy --project my-project --port 8001
-$ curl "http://127.0.0.1:8001/apis/networking.datumapis.com/v1alpha/dnszones?watch=true"
-```
-
-**Why scoping is explicit rather than inherited from the current
-context.** It is tempting to default to the active context (as resource
-commands do), making URLs short out of the box. Rejected
-for v1, deliberately:
-
-- *Dev/prod parity is the flagship requirement.* The cloud portal talks to
-  `https://api.datum.net` in production using full paths; `API_URL`
-  swapping only works if the proxy accepts those same paths. A
-  context-scoped default would force portal code to use different paths in
-  development than in production.
-- *The default example would break.* `…/organizations` is served at the
-  platform root, not under a project control plane; a project-scoped
-  default turns the most obvious first request into a 404.
-- *Ambient state is the enemy of a proxy.* Tools cache the proxy URL. If
-  its meaning depended on whatever context was active at launch — or
-  followed `datumctl ctx use` live — the same URL would silently address
-  different control planes on different days. Scope, like the session, is
-  pinned at startup, explicit in the command line, and shown in the banner.
+- *Matching production is the flagship requirement.* The portal talks to
+  the real API in production; swapping in the proxy via `API_URL` only
+  works if the proxy accepts the very same URLs. A context-scoped default
+  would make development URLs differ from production URLs.
+- *The most obvious first request would break.* Listing organizations
+  happens at the top of the API, not inside any project; a project-scoped
+  default would turn the natural first `curl` into "not found."
+- *Ambient state is poison for a proxy.* Tools cache the proxy URL. If
+  its meaning depended on whichever context happened to be active at
+  launch — or worse, followed `datumctl ctx use` live — the same URL
+  would quietly mean different things on different days. Scope, like the
+  session, is pinned at startup, stated on the command line, and shown in
+  the banner.
 
 If interactive users turn out to consistently expect context inheritance,
-an explicit `--current-context` opt-in can add that convenience later
-without changing what a bare invocation means.
+an explicit opt-in flag can add that convenience later without changing
+what a bare invocation means. A mixed mode — one proxy serving short
+paths for several scopes at once — is deferred, with a URL prefix (`/-/`)
+reserved so adding it later breaks nothing.
 
-Convenience roots serving *both* at once (a reserved `/-/` prefix inside
-the unscoped proxy, e.g. `/-/project/my-proj/…`) are **deferred**: scoped
-mode already delivers the short-URL ergonomics without a reserved
-namespace or rewrite rules. The `/-/` prefix is noted as reserved so a
-future addition is non-breaking.
+### Live results arrive in real time
 
-### Token lifecycle
+Watches and other streaming responses must flow through the proxy as if
+it weren't there:
 
-- **Refresh-ahead-of-expiry.** Tokens refresh shortly before their
-  recorded expiry on the next request, and refreshed tokens are persisted
-  back to the stored session — so a long proxy run keeps the user's
-  session fresh for every other datumctl command too. Service-account
-  sessions re-mint and re-exchange on expiry exactly as they do
-  everywhere else in datumctl; nothing is proxy-specific.
-- **Mid-stream expiry.** Requests are authenticated at request start; the
-  proxy never interrupts a response because the token that opened it has
-  since expired. Whether a long-lived watch outlives its token is upstream
-  policy. When the upstream ends the stream — token expiry, watch timeout,
-  anything — the client's normal watch-reconnect (resourceVersion resume)
-  opens a new request, which gets a fresh token. This matches how
-  Kubernetes-ecosystem clients already behave and requires nothing from
-  the proxy.
-- **Refresh failure.** When the stored session can no longer be refreshed
-  (an expired or revoked refresh token), the proxy turns the failure into
-  a synthesized **`502 Bad Gateway`** — deliberately *not*
-  `401`: a passthrough `401` must mean "the platform rejected this
-  request," so client-side re-auth logic never misfires on a proxy-local
-  problem. The body is a Kubernetes-style `Status` object (the dialect the
-  target clients parse), plus a marker header:
+- **Every piece of a response is passed to the local client the moment it
+  arrives.** The proxy never collects a response before relaying it. This
+  single property is the entire streaming design; it is the same approach
+  `kubectl proxy` uses to support watches.
+- **Nothing limits how long a response may last.** Time limits apply only
+  to *starting* a request (connecting, waiting for the first response);
+  an open watch can run for hours. Watches are infinite on purpose.
+- **Credentials are checked before a request is sent, never mid-response.**
+  An open stream is never cut off just because the token that started it
+  has since expired; when the platform itself ends a long watch (they are
+  recycled by design), the client's normal reconnect gets fresh
+  credentials automatically.
 
-  ```
-  HTTP/1.1 502 Bad Gateway
-  Content-Type: application/json
-  X-Datum-Proxy-Error: true
+### Credentials and errors
 
-  {"kind":"Status","apiVersion":"v1","status":"Failure","code":502,
-   "reason":"ProxyAuthenticationFailed",
-   "message":"datumctl session expired or revoked — run 'datumctl login' to re-authenticate"}
-  ```
-
-  The same message is logged once to stderr (not per request). An upstream
-  `401`/`403` passes through byte-for-byte with no marker header — and is
-  never retried on the client's behalf. A passthrough `401` has to keep
-  meaning "the platform rejected the request the client actually sent";
-  an automatic refresh-and-retry would mask clock-skew and revocation
-  problems while replaying requests the proxy cannot know are idempotent.
+- **Fresh before expiry.** Tokens are refreshed shortly before they
+  expire, and the refreshed token is saved back to the session — so a
+  long proxy run keeps the user's session fresh for every other datumctl
+  command too. Machine accounts renew the same way they do everywhere
+  else in datumctl; nothing is proxy-specific.
+- **A dead session produces one clear answer.** When the session can no
+  longer be refreshed — revoked, or expired for good — the proxy answers
+  with an error of its own that names the problem and the fix: run
+  `datumctl login`. That error is explicitly marked as coming from the
+  proxy, and it deliberately does *not* imitate a platform "unauthorized"
+  response: when a tool behind the proxy is told its request was
+  rejected, that answer must genuinely come from the platform, or every
+  client's re-auth logic becomes untrustworthy.
+- **Platform rejections pass through untouched — and are never retried.**
+  If the platform says no, the proxy relays exactly that, and does not
+  refresh-and-retry on the client's behalf: the proxy cannot know a
+  request is safe to replay, and silent retries would mask real problems.
   (`kubectl` makes the same choice.)
-- **Backoff.** After a refresh failure, a cooldown (~5s) short-circuits
-  further refresh attempts; requests during the cooldown fail immediately
-  with the same 502. Combined with serialized refresh,
-  the auth server sees at most one refresh attempt per cooldown window no
-  matter how hot the local client polls.
-- **Credentials deleted mid-run** (`datumctl logout`): the next refresh
-  fails and the proxy degrades to the 502-with-hint behavior. It stays up
-  — a dev server pointed at it keeps getting actionable errors instead of
-  connection refused — and recovers without restart if the user logs back
-  in to the same session (the proxy re-reads the stored session the next
-  time it needs to refresh).
+- **Failure is polite under load.** After a failed refresh, the proxy
+  waits a few seconds before trying again and answers requests in the
+  meantime with the same actionable error — fast, and without hammering
+  the sign-in service.
+- **Logging out doesn't strand the proxy.** After `datumctl logout` the
+  proxy stays up and serves the actionable error instead of vanishing
+  mid-workday; if the user logs back in to the same session, the proxy
+  picks it up again without a restart.
 
 ### Security model
 
-Conservative by default, with the rationale stated so future changes are
+Conservative by default, with the reasoning stated so future changes are
 deliberate:
 
-- **Loopback only, no override.** The listener binds `127.0.0.1` — IPv4
-  only, deliberately: the printed URL is always the IPv4 literal, so
-  anything that follows the startup output never notices; modern clients
-  handed `localhost` fall back between address families on their own; and
-  dual-binding `::1` would double the bind and Host-validation matrix to
-  fix a failure nobody has observed. Worth revisiting only if a real
-  client cannot connect. There is no flag to bind other
-  addresses — not even a scary one — because every legitimate "remote
-  proxy" story we could name is better served by the user running their own
-  tunnel (SSH, tailscale) whose security model they already own. datumctl
-  already follows this posture elsewhere: the browser login flow runs its
-  own loopback-only local server.
-- **Same-user loopback is the trust boundary — with eyes open.** Like
-  `kubectl proxy` and cloud-sql-proxy, the proxy does not authenticate
-  local clients: requiring a local secret would just recreate the token
-  plumbing this command exists to remove. The residual risk (any local
-  process, or another user on a shared host, can use the proxy while it
-  runs) is bounded by proxy lifetime, named in the docs, mitigated by
-  default request logging, and — unlike token-in-env — never exposes the
-  credential itself. A Unix-socket mode with `0600` permissions is the
-  documented hardening path, first on the deferred list.
-- **Host-header validation** (DNS-rebinding defense): requests whose
-  `Host` is not `localhost`, `127.0.0.1`, or `[::1]` — with or without the
-  bound port — are rejected with `403` before proxying. This is the same
-  defense kubectl proxy's default `--accept-hosts` regex provides, made
-  non-configurable.
-- **No CORS headers, ever, in v1.** Without `Access-Control-Allow-Origin`,
-  browsers refuse scripted cross-origin reads of proxy responses, closing
-  the malicious-web-page vector. The cloud-portal case is server-to-server
-  and unaffected. If browser-direct access is ever wanted, it arrives as an
-  explicit `--cors-allow-origin` flag in a later revision — off by
-  default, exact-origin only, no `*`.
-- **Auth header discipline.** Inbound `Authorization` is stripped
-  unconditionally before the real token is injected — local clients cannot
-  smuggle credentials upstream through the proxy, and stale tokens baked
-  into a client config are ignored rather than half-working. No other
-  identity-bearing headers are synthesized by the proxy.
-- **Tokens never appear in logs.** The request log records method, path,
-  status, duration, and byte counts. Query strings are logged (watch
-  debugging needs `?watch=true&resourceVersion=…`) with a defensive
-  redaction pass for token-shaped parameter names (`access_token`, `token`,
-  `authorization`), even though the platform API never puts credentials in
-  queries. Headers are never logged at default verbosity, and
-  higher-verbosity HTTP debugging masks bearer tokens the same way it
-  does across the rest of datumctl.
+- **Local machine only, no exceptions.** The proxy listens on the local
+  address `127.0.0.1` and there is no flag to open it wider — not even a
+  scary one — because every legitimate "remote proxy" story is better
+  served by the user running their own tunnel, whose security model they
+  already own. (It binds the IPv4 local address specifically: that is the
+  address it prints, clients told `localhost` connect fine on their own,
+  and doubling the setup for a failure nobody has observed isn't worth
+  it. Revisit only if a real client cannot connect.) datumctl already
+  takes this posture elsewhere: the browser login flow runs its own
+  local-only listener.
+- **Same-user trust, eyes open.** The proxy does not ask local programs
+  to authenticate — see
+  [Risks and Mitigations](#risks-and-mitigations) for why, what that
+  exposes, and the socket-based hardening follow-up.
+- **Web pages get nothing.** Both standard browser defenses are on and
+  not configurable: requests that don't address the proxy by its local
+  name are refused, and cross-site sharing is never enabled, so browsers
+  block web pages from reading proxy responses. If browser-direct access
+  is ever wanted, it arrives as an explicit opt-in flag — off by default,
+  exact origins only.
+- **Local clients cannot smuggle credentials.** Any credentials a local
+  client attaches to its request are dropped before the session's own are
+  added — a stale token baked into some tool's config is ignored rather
+  than half-working, and nothing a client sends can impersonate anyone.
+- **Tokens never appear in output.** The request log records method,
+  path, status, timing, and size — never credentials. Anything
+  token-shaped in a URL is redacted defensively, and the higher-verbosity
+  debug output masks credentials the same way it does across the rest of
+  datumctl.
 
-### Request logging
+### The request log
 
-One line per request to stderr, on by default, silenced by `--quiet`:
+One line per request, on by default, silenced by `--quiet`:
 
 ```
 10:42:03 GET  /apis/resourcemanager.miloapis.com/v1alpha1/organizations 200 143ms 8.1kB
-10:42:05 GET  /apis/…/projects/my-project/control-plane/…/portalplugins?watch=true 200 …streaming
+10:42:05 GET  /apis/…/portalplugins?watch=true 200 …streaming
 ```
 
-Streaming responses log when headers are sent (marked `…streaming`) and
-again on stream end with total duration and bytes, so an abruptly closed
-watch is visible. Per-request correlation IDs for the proxy's own log
-lines are part of the deferred richer-diagnostics work; inbound
-`X-Request-ID` passes through to the upstream untouched.
+Streaming responses log once when they start (marked `…streaming`) and
+again when they end, with total duration and size — so an abruptly closed
+watch is visible, not mysterious.
 
-Token-refresh *failures* are the one event the user must act on, so they
-are logged even when `--quiet` silences request lines — once per cooldown
-window, not per request. Log lines for *successful* refreshes (watching
-the refresh machinery work) are deferred with the richer-diagnostics
-work, where they can share a format with per-request correlation IDs.
+A failed credential refresh is the one event the user must act on, so it
+is logged even under `--quiet` — once per cooldown, not once per request.
+Log lines for *successful* refreshes, and per-request correlation IDs,
+are deferred to a richer-diagnostics follow-up.
 
-### Failure and lifecycle UX
+### Starting and stopping
 
-- **Startup banner** (stderr) names the identity, upstream, and address —
-  the things a user must be able to verify at a glance:
+- **The banner** (on the log side of the output) names the three things a
+  user should be able to verify at a glance — who, where, and at what
+  address:
 
   ```
     Session:    maya@datum.net (api.datum.net)
@@ -643,195 +508,172 @@ work, where they can share a format with per-request correlation IDs.
     Press Ctrl+C to stop. Requests are logged below (silence with --quiet).
   ```
 
-  In scoped mode the `Scope` line names the control plane (e.g.
-  `project my-project`) and `Upstream` shows the full control-plane URL.
+  In scoped mode the `Scope` line names the project or organization and
+  `Upstream` shows its full address.
 
-- **Machine-readable readiness:** the bare URL (`http://127.0.0.1:52347`)
-  is printed as the **first and only line on stdout**, after the listener
-  is bound and serving. Harnesses read one line and go; no port files, no
-  sleep-and-retry.
-- **Startup failures are actionable errors with hints:**
-  no session → "run `datumctl login`"; unknown `--session` → list names via
-  `datumctl auth list`; port in use → suggest another `--port` or omitting
-  the flag.
-- **Graceful shutdown:** on SIGINT/SIGTERM the listener closes, in-flight
-  non-streaming requests get a ~2s grace, and long-lived streams are then
-  cut — watch clients treat that as a normal stream end and reconnect
-  (to a dead port, failing cleanly). A second signal exits immediately.
-- **`datumctl auth switch` while running:** no effect, by design — the
-  session was pinned at startup (see
-  [Notes/Constraints/Caveats](#notesconstraintscaveats)). The banner is the
-  contract: the proxy serves the identity it printed until it exits.
+- **The address doubles as the readiness signal.** The bare URL is
+  printed as the first and only line on standard output, after the proxy
+  is actually accepting requests. Scripts and harnesses read one line and
+  go — no port files, no retry loops.
+- **Startup failures say what to do next:** not logged in → run
+  `datumctl login`; unknown `--session` → check `datumctl auth list`;
+  port already in use → pick another `--port` or omit the flag.
+- **Ctrl+C stops cleanly.** In-flight ordinary requests get a moment to
+  finish; open watches are then closed, which watch clients treat as a
+  normal stream end. A second Ctrl+C exits immediately.
+- **`datumctl auth switch` has no effect on a running proxy** — by
+  design. The banner is the contract: the proxy serves the identity it
+  printed until it exits.
 
 ### Prior art
 
 | Tool | Take | Leave |
 | --- | --- | --- |
-| `kubectl proxy` | Flush-every-write unbuffered streaming for watch support; loopback default; Host-header acceptance as rebinding defense | Fixed default port 8001 (collides); configurable `--accept-hosts`/`--address` foot-guns (documented rebinding incidents when loosened); path-filter machinery (`--reject-paths`) we don't need — Datum's surface has no exec/attach-style local-effect endpoints; `--www` static file serving (scope creep) |
-| cloud-sql-proxy | Explicit machine-readable readiness signal; pin the target at startup; background credential refresh as a first-class lifecycle concern | TCP-level opacity — being HTTP-level lets us inject headers, validate Host, and log requests |
-| `gh api` | Proof that "CLI owns auth, tool speaks plain HTTP" is the right developer contract; the `api` command-group naming | It's per-invocation — useless as an `API_URL` for a dev server; a future `datumctl api request` sibling can cover the one-shot case |
-| aws-vault (`--server` / ECS-metadata mode) | The cautionary tale: it serves *raw credentials* over loopback HTTP, so any local requester can exfiltrate them; aws-vault added a random-token handshake to patch this | Our proxy never serves the token — local processes can act *through* it while it runs, but can't take the credential with them. Keep `auth get-token` (process-exec gated) as the only raw-token path |
+| `kubectl proxy` | Real-time watch streaming; local-only default; refusing requests that misname the proxy | Fixed default port (collides); flags that loosen the local-only posture (documented incidents when used); path-filtering machinery Datum's API doesn't need |
+| `cloud-sql-proxy` | Machine-readable readiness; pin the target at startup; background credential refresh as a first-class concern | Its tunnel is opaque — working at the request level lets us attach credentials, refuse bad requests, and log usefully |
+| `gh api` | Proof that "the CLI owns auth, tools speak plain HTTP" is the right developer contract; the `api` command-group naming | It's one request per invocation — useless as a dev server's `API_URL`; a future `datumctl api request` can cover that case |
+| aws-vault's credential server | The cautionary tale: it serves the *credential itself* over a local port, so anything local can steal it | Our proxy never serves the token — local programs can act through it, but can't take the credential with them |
 
-### Testing strategy
+### How we know it works
 
-The proxy core is exercised against fake credentials and a fake in-process
-upstream, so the suite needs no stored sessions and no real network.
+The whole suite runs against stand-in credentials and a stand-in API, so
+it needs no real account and no network access.
 
-- **Passthrough tests:**
-  bearer token injected; inbound `Authorization` never reaches upstream;
-  method/body/query/`X-Request-ID` pass through; hop-by-hop headers
-  stripped; no CORS headers on responses; `Host: evil.example` → 403 and
-  the upstream sees nothing; upstream 401 passes through without
-  `X-Datum-Proxy-Error`.
-- **Watch/streaming integration test — the load-bearing one.** A fake
-  upstream emulates a Kubernetes-style watch: it emits one JSON watch
-  event, then blocks until the test has observed it, and repeats. The
-  test client reads through the proxy and asserts each event is received
-  **before** the test unblocks the next write — proving no proxy-side
-  buffering with zero timing flakiness (the upstream cannot even produce
-  event N+1 until the client has observed event N). Variants: chunked
-  JSON watch, `text/event-stream`, and a slow trickle with small writes.
-- **Token lifecycle tests.** Fake credentials with a controllable
-  clock: (a) token refreshed at most once across N concurrent requests
-  (single-flight); (b) a stream opened before expiry survives expiry
-  mid-stream; the next new request carries the refreshed token; (c)
-  refresh failure → 502 with `Status` body, `X-Datum-Proxy-Error: true`,
-  and at most one refresh attempt per cooldown window under concurrent
-  load.
-- **Lifecycle tests:** with a random port, the first
-  stdout line parses as a URL and a request to it succeeds; SIGINT
-  terminates within the grace period with a clean exit; an unknown
-  `--session` and a missing active session produce the documented
-  actionable errors.
-- **Resolution tests**: session resolution honors per-session TLS
-  settings and endpoint precedence identically to the rest of the CLI,
-  pinning the no-drift guarantee.
-- **Scoped-mode tests**: with `--project`, local `/apis/...` paths arrive
-  upstream under the project control-plane prefix (and the watch streaming
-  test re-runs against a scoped proxy); with no scope flag and an active
-  project context in the fixture config, the proxy root is still the
-  endpoint root — pinning the no-context-inheritance rule.
-- **Manual verification** against staging
-  (`--hostname auth.staging.env.datum.net` login): a real
-  `datumctl get dnszones --watch` equivalent via `curl` through the proxy,
-  left running past a token expiry.
+The load-bearing test is the streaming one: the stand-in API sends a
+single watch update and then refuses to produce the next one until the
+test has seen the first arrive through the proxy. If the proxy held
+results back even slightly, the test would deadlock and fail — real-time
+delivery is proven by construction, with no timing luck involved. The
+same test runs against a scoped proxy.
 
-### V1 milestone cut
+Around it, the suite pins every promise this document makes: credentials
+are attached upstream and never revealed to local clients; whatever
+credentials a client sends are dropped; requests that misname the proxy
+are refused; platform rejections pass through unmarked while
+proxy-generated errors are clearly marked and actionable; a session that
+can't refresh produces at most one sign-in attempt per cooldown no matter
+how hard clients poll; the printed address is usable the moment it
+appears; Ctrl+C exits cleanly; session resolution matches the rest of the
+CLI exactly; and a bare invocation ignores the active context even when
+one is set.
 
-In scope for the first release:
+Before release, the proxy is verified manually against staging with a
+real watch left running past a token expiry.
+
+### The first release
+
+In scope:
 
 - `datumctl api proxy` with `--port`, `--session`, `--quiet`, and
   launch-time scoping via `--project`/`--organization`/`--platform-wide`
-- Pure passthrough by default; scoped mode re-basing at one control plane;
-  unbuffered streaming (chunked + SSE); best-effort Upgrade passthrough
-- Token injection, refresh, keyring persistence, service-account support,
-  502-with-hint on refresh failure, refresh cooldown
-- Loopback-only bind, Host validation, no CORS, Authorization stripping,
-  redacting request log
-- Banner + stdout URL readiness contract, graceful shutdown, pinned session
-- The test suite above; docs page under `docs/`
+- Faithful passthrough by default; scoped mode serving one control plane;
+  real-time streaming
+- Automatic credential attachment, refresh, and persistence; machine
+  accounts; clearly-marked actionable errors when the session dies;
+  refresh cooldown
+- Local-only listener, browser defenses, client-credential stripping,
+  credential-free request log
+- Banner, machine-readable address line, graceful shutdown, pinned session
+- The validation suite above and a user-facing docs page
 
-Explicitly deferred (in likely priority order):
+Deferred, in likely priority order:
 
-1. `--unix-socket` listener (strongest same-user boundary; also nice for
-   hermetic E2E)
-2. Convenience scoped roots under the reserved `/-/` prefix
-3. `--cors-allow-origin` for browser-direct use
-4. `datumctl api request` one-shot sibling (`gh api` analog)
-5. Tested WebSocket guarantee, if a platform feature comes to need it
-6. Richer diagnostics: per-request log correlation IDs and
-   successful-refresh log lines
+1. A socket-based listener only the same OS user can reach (the
+   shared-machine hardening step; also nice for hermetic E2E)
+2. Serving several scopes' short paths from one proxy (the reserved `/-/`
+   prefix)
+3. Opt-in browser access for browser-direct use cases
+4. `datumctl api request` — a one-shot sibling in the style of `gh api`
+5. A tested WebSocket guarantee, if a platform feature comes to need one
+6. Richer diagnostics: per-request correlation IDs and successful-refresh
+   log lines
 
 ## Production Readiness Review Questionnaire
 
 ### Feature enablement and rollback
 
 - **How can this feature be enabled / disabled?** It is a new opt-in
-  command; not running it disables it. No config flags, no state left
-  behind after exit (the only persistent side effect — refreshed tokens in
-  the keyring — is identical to running any other datumctl command).
+  command; not running it disables it. It leaves no state behind after
+  exit — the only persistent side effect (refreshed credentials saved to
+  the session) is identical to running any other datumctl command.
 - **Can the feature be rolled back?** Yes; removing the command removes
-  the feature. Local tools pointed at a dead proxy fail with connection
-  refused, which is the same failure mode as the proxy simply not running.
+  the feature. Tools pointed at a stopped proxy fail the same way they
+  would if it had simply never been started.
 
 ### Monitoring and supportability
 
-- Per-request log lines (with streaming start/end markers) are the primary
-  diagnostic; higher-verbosity HTTP debugging reuses datumctl's existing
-  token-masking debug output.
-- Proxy-synthesized errors are distinguishable from upstream errors by the
-  `X-Datum-Proxy-Error` header and `Status.reason`, so support can tell
-  "your session is dead" from "the platform said no" from a single client
-  screenshot.
+- The request log (with streaming start/end markers) is the primary
+  diagnostic; higher-verbosity debugging reuses datumctl's existing
+  credential-masking output.
+- Errors generated by the proxy are explicitly marked as such, so support
+  can tell "your session is dead" from "the platform said no" from a
+  single client screenshot.
 
 ### Dependencies
 
-- No new third-party dependencies; the proxy is built from the standard
-  library and dependencies datumctl already ships.
-- Runtime dependencies are the existing keyring and datum config; both are
-  already required for every authenticated command.
+- No new third-party dependencies, services, or endpoints; the proxy is
+  built entirely from what datumctl already ships and requires only the
+  same local state every authenticated command already uses.
 
 ### Security
 
-- See [Security model](#security-model). Summary of the reviewed posture:
-  loopback-only without override, Host-header validation, no CORS, no
-  local-client authentication (accepted, documented trust boundary),
-  inbound Authorization stripped, tokens never logged, raw tokens never
-  served. The threat model change vs. status quo is that a credential
-  formerly exposed *as a value* (token in env/config for the dev server) is
-  replaced by an *ambient capability* scoped to proxy lifetime — an
-  intentional improvement.
+- See [Security model](#security-model): local machine only with no
+  override, browser defenses on and not configurable, local programs
+  trusted (documented, with a hardening follow-up), client credentials
+  stripped, tokens never logged or served. Versus the status quo, a
+  credential formerly exposed *as a value* (a token pasted into a dev
+  server's environment) becomes an ability to act that exists only while
+  the proxy runs — an intentional improvement.
 
 ## Implementation History
 
 - 2026-07-11: Provisional proposal drafted.
-- 2026-07-11: V1 implemented with the full test suite from
-  [Testing strategy](#testing-strategy); opened as
+- 2026-07-11: V1 implemented with the validation suite from
+  [How we know it works](#how-we-know-it-works); opened as
   [datum-cloud/datumctl#247](https://github.com/datum-cloud/datumctl/pull/247).
 - 2026-07-12: Open design questions resolved and folded into their
   sections; status moved to implementable.
+- 2026-07-14: Rewritten for a product audience; no design changes.
 
 ## Drawbacks
 
-- **A standing ambient capability on loopback.** While the proxy runs, any
-  local process can act as the user against the pinned endpoint. This is
-  the price of removing token plumbing, shared with every tool in the
-  prior-art table; mitigations and the Unix-socket path are covered above.
-- **Another long-running surface to support.** Streaming, timeout, and
-  shutdown behavior must be defended against regressions (runtime upgrades
-  can change HTTP streaming details); the watch integration test is
-  the tripwire.
+- **A standing capability on the local machine.** While the proxy runs,
+  anything local can act as the user against the pinned environment. This
+  is the price of removing credential plumbing, shared with every tool in
+  the prior-art table; the mitigations and the hardening follow-up are
+  covered above.
+- **A long-running surface to support.** Streaming and shutdown behavior
+  must be defended against regressions; the streaming test is the
+  tripwire.
 - **`api` becomes a reserved name**, shadowing any user plugin called
   `api`.
-- **Passthrough honesty has edges**: response bodies embedding absolute
-  upstream URLs (none known today) would leak the real endpoint to clients
-  configured only with the proxy URL.
+- **Faithful passthrough has edges:** a response that embedded the real
+  API's address in its body (none known today) would show clients that
+  address rather than the proxy's.
 
 ## Alternatives
 
-- **Status quo: `datumctl auth get-token` + env var.** Works for
-  one-shots; fails the dev-server case (token expires mid-session, token
-  value exposed to the whole process tree) and the watch case (no refresh
-  across reconnects without re-running the CLI).
-- **The plugin credentials-helper protocol** (`DATUM_CREDENTIALS_HELPER`
-  exec): right answer for datumctl
-  plugins, unavailable to processes datumctl didn't spawn (the portal dev
-  server, curl), and requires client-side integration code the proxy makes
-  unnecessary.
-- **A one-shot `datumctl api request <path>`** (`gh api` model): solves
-  scripting, not the `API_URL=`-for-a-dev-server or watch cases; remains a
-  good future sibling.
-- **Teach the portal dev server to exec datumctl itself:** couples one
+- **Status quo: `datumctl auth get-token` plus an environment variable.**
+  Works for one-shots; fails the dev-server case (the token expires
+  mid-session and is exposed to the whole process tree) and the watch
+  case (nothing refreshes credentials across reconnects).
+- **The plugin credentials-helper protocol.** Right answer for datumctl
+  plugins, but only available to processes datumctl itself launches — not
+  the portal dev server, not `curl` — and requires integration code in
+  every client that the proxy makes unnecessary.
+- **A one-shot `datumctl api request <path>`.** Solves scripting, not the
+  dev-server or watch cases; remains a good future sibling.
+- **Teach the portal dev server to invoke datumctl itself.** Couples one
   consumer to CLI internals and helps no other tool; the proxy solves the
-  class.
-- **`auth update-kubeconfig` + an external kubectl proxy:** kubectl-users
-  only, drags Kubernetes tooling into a workflow this product deliberately
-  keeps Kubernetes-free, and still lacks session pinning against datumctl's
-  own config.
-- **Serve the token itself on loopback** (aws-vault-metadata style):
-  strictly weaker boundary — a local requester keeps the credential after
-  the proxy exits. Rejected on principle; `auth get-token` remains the
-  only raw-token path, gated by process execution.
+  whole class.
+- **`auth update-kubeconfig` plus an external kubectl proxy.** For
+  kubectl users only, and drags Kubernetes tooling into a workflow this
+  product deliberately keeps Kubernetes-free.
+- **Serve the token itself on a local port** (aws-vault's model).
+  Strictly weaker: anything local could steal the credential and keep it
+  after the proxy exits. Rejected on principle; `auth get-token` remains
+  the only raw-token path, granted per invocation rather than to an open
+  port.
 
 ## Infrastructure Needed
 
