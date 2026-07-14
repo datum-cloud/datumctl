@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/cmd"
@@ -20,6 +23,14 @@ import (
 func main() {
 	logs.GlogSetter(kubectlcmd.GetLogVerbosity(os.Args))
 	rootCmd := cmd.RootCmd()
+
+	// Wire SIGINT/SIGTERM to a cancellable context so long interactive waits
+	// (e.g. the login callback/device-code polling) can be interrupted with
+	// ^C. cli.RunNoErrOutput calls cmd.Execute(), and Cobra honors a context
+	// set via SetContext, so the signal-derived context reaches cmd.Context().
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	rootCmd.SetContext(ctx)
 
 	// Route kubectl's internal fatal errors (from util.CheckErr) through the
 	// same Format helper so --error-format applies uniformly. In human mode
@@ -39,6 +50,13 @@ func main() {
 	})
 
 	if err := cli.RunNoErrOutput(rootCmd); err != nil {
+		// A canceled context means the user interrupted (^C / SIGTERM).
+		// Exit quietly with the conventional 128+SIGINT code instead of
+		// printing a spurious "context canceled" error.
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, "\nAborted.")
+			os.Exit(130)
+		}
 		customerrors.Format(os.Stderr, err, formatFor(rootCmd), verbosity())
 		os.Exit(activation.ExitCodeOf(err))
 	}
