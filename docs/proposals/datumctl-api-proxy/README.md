@@ -627,13 +627,10 @@ Deferred, in likely priority order:
 
 ## Implementation History
 
-- 2026-07-11: Provisional proposal drafted.
-- 2026-07-11: V1 implemented with the validation suite from
-  [How we know it works](#how-we-know-it-works); opened as
+- 2026-07-11: Proposal drafted.
+- 2026-07-11: Implementation opened as
   [datum-cloud/datumctl#247](https://github.com/datum-cloud/datumctl/pull/247).
-- 2026-07-12: Open design questions resolved and folded into their
-  sections; status moved to implementable.
-- 2026-07-14: Rewritten for a product audience; no design changes.
+- 2026-07-12: Design questions resolved; status moved to implementable.
 
 ## Drawbacks
 
