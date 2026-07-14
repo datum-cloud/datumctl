@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/cmd"
 	customerrors "go.datum.net/datumctl/internal/errors"
+	"go.miloapis.com/service-catalog/pkg/activation"
 	"k8s.io/component-base/cli"
 	"k8s.io/component-base/logs"
 	kubectlcmd "k8s.io/kubectl/pkg/cmd"
@@ -39,7 +40,7 @@ func main() {
 
 	if err := cli.RunNoErrOutput(rootCmd); err != nil {
 		customerrors.Format(os.Stderr, err, formatFor(rootCmd), verbosity())
-		os.Exit(1)
+		os.Exit(activation.ExitCodeOf(err))
 	}
 }
 

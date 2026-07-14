@@ -384,7 +384,13 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 	cfg := c.loadConfigForScope()
 	orgDisplayName := ""
 	if cfg != nil {
-		orgDisplayName = cfg.OrgDisplayName(orgID)
+		sessionName := ""
+		if ctxEntry != nil {
+			sessionName = ctxEntry.Session
+		} else if cfg.ActiveSession != "" {
+			sessionName = cfg.ActiveSession
+		}
+		orgDisplayName = cfg.OrgDisplayName(sessionName, orgID)
 	}
 
 	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)

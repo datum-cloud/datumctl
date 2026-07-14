@@ -34,18 +34,34 @@ func runUse(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Contexts are addressed relative to the active session, since the same
+	// org/project ref can exist in more than one environment.
+	activeSession := ""
+	if s := cfg.ActiveSessionEntry(); s != nil {
+		activeSession = s.Name
+	}
+	sessionContexts := cfg.ContextsForSession(activeSession)
+
 	var resolved *datumconfig.DiscoveredContext
 
 	if len(args) == 1 {
-		resolved = cfg.ResolveContext(args[0])
+		resolved = cfg.ResolveContextInSession(args[0], activeSession)
 		if resolved == nil {
+			// The ref may belong to a different environment's session — point the
+			// user at that session rather than a bare "not found".
+			if owner := cfg.FindContextOwner(args[0], activeSession); owner != nil {
+				return customerrors.NewUserErrorWithHint(
+					fmt.Sprintf("Context %q belongs to the session for %s, which is not active.", args[0], owner.UserEmail),
+					fmt.Sprintf("Run 'datumctl auth switch %s' first, then 'datumctl ctx use %s'.", owner.UserEmail, args[0]),
+				)
+			}
 			return customerrors.NewUserErrorWithHint(
 				fmt.Sprintf("Context %q not found.", args[0]),
 				"Run 'datumctl ctx' to see available contexts.",
 			)
 		}
 	} else {
-		selected, err := picker.SelectContext(cfg.Contexts, cfg)
+		selected, err := picker.SelectContext(sessionContexts, cfg)
 		if err != nil {
 			return err
 		}
@@ -57,6 +73,9 @@ func runUse(_ *cobra.Command, args []string) error {
 	}
 
 	cfg.CurrentContext = resolved.Name
+	// The active session is always the current context's session; keep the
+	// stored fallback in lockstep so whoami and requests never diverge.
+	cfg.ActiveSession = resolved.Session
 
 	if s := cfg.SessionByName(resolved.Session); s != nil {
 		s.LastContext = resolved.Name

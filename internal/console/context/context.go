@@ -45,10 +45,10 @@ func FromConfig(cfg *datumconfig.ConfigV1Beta1) TUIContext {
 		tc.UserName = session.UserName
 	}
 
-	tc.OrgName = cfg.OrgDisplayName(ctx.OrganizationID)
+	tc.OrgName = cfg.OrgDisplayName(ctx.Session, ctx.OrganizationID)
 
 	if ctx.ProjectID != "" {
-		tc.ProjectName = cfg.ProjectDisplayName(ctx.ProjectID)
+		tc.ProjectName = cfg.ProjectDisplayName(ctx.Session, ctx.ProjectID)
 	}
 
 	return tc

@@ -65,11 +65,11 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("Context:      %s\n", ctxEntry.Ref())
 
 		fmt.Printf("Organization: %s\n", datumconfig.FormatWithID(
-			cfg.OrgDisplayName(ctxEntry.OrganizationID), ctxEntry.OrganizationID))
+			cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID), ctxEntry.OrganizationID))
 
 		if ctxEntry.ProjectID != "" {
 			fmt.Printf("Project:      %s\n", datumconfig.FormatWithID(
-				cfg.ProjectDisplayName(ctxEntry.ProjectID), ctxEntry.ProjectID))
+				cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID), ctxEntry.ProjectID))
 		}
 	} else {
 		fmt.Println("Context:      (none)")
@@ -106,7 +106,7 @@ func printOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, 
 		return
 	}
 
-	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(orgID))
+	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(session.Name, orgID))
 	if err != nil {
 		fmt.Println("Onboarding:   couldn't check")
 		return

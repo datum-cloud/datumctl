@@ -10,7 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 	activity "go.miloapis.com/activity/pkg/cmd"
+	servicescmd "go.miloapis.com/service-catalog/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	componentversion "k8s.io/component-base/version"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
@@ -727,6 +729,19 @@ Specify the resource type and name to view its history.`
 	}
 	rootCmd.AddCommand(activityCmd)
 
+	servicesCatalogCfg, servicesProjectCfg := servicesRESTConfigs(factory)
+	servicesCmd := servicescmd.NewServicesCommand(servicescmd.ServicesCommandOptions{
+		IOStreams:         ioStreams,
+		CatalogRESTConfig: servicesCatalogCfg,
+		ProjectRESTConfig: servicesProjectCfg,
+		Project: func() (string, error) {
+			project, _, _, err := factory.ConfigFlags.ResolvedScope()
+			return project, err
+		},
+	})
+	servicesCmd.GroupID = "other"
+	rootCmd.AddCommand(servicesCmd)
+
 	docsCmd := docs.Command(rootCmd)
 	docsCmd.GroupID = "other"
 	rootCmd.AddCommand(docsCmd)
@@ -755,6 +770,25 @@ Specify the resource type and name to view its history.`
 // launched and when its result is consumed within PersistentPreRunE. Keyed by
 // the root command pointer so concurrent test invocations don't collide.
 var activeUpdateChecker = map[*cobra.Command]*updatecheck.Checker{}
+
+// servicesRESTConfigs builds the two lazy REST-config resolvers the services
+// command needs from one factory: Service lives only at the platform-wide root
+// while ServiceEntitlement lives only in a project VCP, so there is no single
+// scope that serves both. The catalog resolver temporarily forces
+// platform-wide scope on the shared flags and restores them afterward.
+func servicesRESTConfigs(factory *client.DatumCloudFactory) (catalog, project func() (*rest.Config, error)) {
+	flags := factory.ConfigFlags
+	catalog = func() (*rest.Config, error) {
+		origProject, origOrg, origPlatform := *flags.Project, *flags.Organization, *flags.PlatformWide
+		*flags.Project, *flags.Organization, *flags.PlatformWide = "", "", true
+		defer func() { *flags.Project, *flags.Organization, *flags.PlatformWide = origProject, origOrg, origPlatform }()
+		return flags.ToRESTConfig()
+	}
+	project = func() (*rest.Config, error) {
+		return flags.ToRESTConfig()
+	}
+	return
+}
 
 func startUpdateCheck(cmd *cobra.Command) {
 	if updatecheck.SkipFromEnvironment() {

@@ -19,8 +19,9 @@ func Command() *cobra.Command {
 		Short: "View and switch contexts",
 		Long: `List and switch between organizations and projects.
 
-Running 'datumctl ctx' without a subcommand lists all available contexts
-for the current user. Use --refresh to update the context cache from the API.`,
+Running 'datumctl ctx' without a subcommand lists the active session's
+contexts. Use --all to list every session's contexts grouped by account and
+endpoint, or --refresh to update the context cache from the API.`,
 		Aliases: []string{"context"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if refresh {
@@ -40,6 +41,7 @@ for the current user. Use --refresh to update the context cache from the API.`,
 	}
 
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "Refresh the context cache from the API before listing")
+	cmd.Flags().Bool("all", false, "List contexts from every session, grouped by account and endpoint")
 
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(useCmd())

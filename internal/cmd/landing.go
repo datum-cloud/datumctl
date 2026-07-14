@@ -83,10 +83,10 @@ func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.C
 	if ctxEntry != nil {
 		var ctxLine string
 		if ctxEntry.ProjectID != "" {
-			projName := cfg.ProjectDisplayName(ctxEntry.ProjectID)
+			projName := cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID)
 			ctxLine = fmt.Sprintf("%q project (%s)", projName, ctxEntry.Ref())
 		} else {
-			orgName := cfg.OrgDisplayName(ctxEntry.OrganizationID)
+			orgName := cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID)
 			ctxLine = fmt.Sprintf("%q org (%s)", orgName, ctxEntry.OrganizationID)
 		}
 		fmt.Fprintf(out, "  Context        %s\n", ctxLine)
@@ -302,7 +302,7 @@ func checkOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, 
 	if err != nil {
 		return onboarding.Result{}, false
 	}
-	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(orgID))
+	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(session.Name, orgID))
 	if err != nil {
 		return onboarding.Result{}, false
 	}

@@ -49,8 +49,13 @@ type Endpoint struct {
 	CertificateAuthorityData string `json:"certificate-authority-data,omitempty" yaml:"certificate-authority-data,omitempty"`
 }
 
-// DiscoveredContext is a context entry derived from the API. Names follow the
-// format "orgID" for org-scoped or "orgID/projectID" for project-scoped.
+// DiscoveredContext is a context entry derived from the API.
+//
+// Name is a session-qualified unique key of the form "session/ref" (see
+// QualifiedContextName). Because org and project IDs overlap across
+// environments — staging and production can both expose "datum/datum-cloud" —
+// the bare Ref() is only unique within a single session, so the stored Name
+// carries the owning session to keep entries from different logins distinct.
 type DiscoveredContext struct {
 	Name           string `json:"name" yaml:"name"`
 	Session        string `json:"session" yaml:"session"`
@@ -59,14 +64,27 @@ type DiscoveredContext struct {
 	Namespace      string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
 }
 
-// Ref returns the canonical reference string for this context — "orgID" for org
-// contexts or "orgID/projectID" for project contexts. This is the value users
-// pass to "datumctl ctx use".
+// Ref returns the canonical, session-relative reference string for this context
+// — "orgID" for org contexts or "orgID/projectID" for project contexts. This is
+// the value users pass to "datumctl ctx use". It is unique only within a
+// session; use Name (or QualifiedContextName) for a globally-unique key.
 func (c *DiscoveredContext) Ref() string {
 	if c.ProjectID != "" {
 		return c.OrganizationID + "/" + c.ProjectID
 	}
 	return c.OrganizationID
+}
+
+// QualifiedContextName builds the session-qualified unique key for a context
+// from its owning session name and its session-relative ref. Session names
+// never contain "/", so the first segment always recovers the session.
+func QualifiedContextName(sessionName, ref string) string {
+	return sessionName + "/" + ref
+}
+
+// QualifiedName returns the session-qualified unique key for this context.
+func (c *DiscoveredContext) QualifiedName() string {
+	return QualifiedContextName(c.Session, c.Ref())
 }
 
 // FormatWithID returns "displayName (resourceID)" when the display name differs
@@ -81,26 +99,14 @@ func FormatWithID(displayName, resourceID string) string {
 
 // DisplayRef returns a human-friendly label for this context, using cached
 // display names where available. Falls back to Ref() when no display names
-// are cached.
+// are cached. Display names are resolved within the context's own session so
+// overlapping IDs across environments never borrow each other's labels.
 func (c *ConfigV1Beta1) DisplayRef(ctx *DiscoveredContext) string {
-	orgLabel := ctx.OrganizationID
-	for _, o := range c.Cache.Organizations {
-		if o.ID == ctx.OrganizationID && o.DisplayName != "" {
-			orgLabel = o.DisplayName
-			break
-		}
-	}
+	orgLabel := c.OrgDisplayName(ctx.Session, ctx.OrganizationID)
 	if ctx.ProjectID == "" {
 		return orgLabel
 	}
-	projLabel := ctx.ProjectID
-	for _, p := range c.Cache.Projects {
-		if p.ID == ctx.ProjectID && p.DisplayName != "" {
-			projLabel = p.DisplayName
-			break
-		}
-	}
-	return orgLabel + "/" + projLabel
+	return orgLabel + "/" + c.ProjectDisplayName(ctx.Session, ctx.ProjectID)
 }
 
 // ContextDescription returns a human-friendly description of the context type
@@ -111,28 +117,37 @@ func (c *ConfigV1Beta1) DisplayRef(ctx *DiscoveredContext) string {
 //	org Datum Technology, Inc (datum)
 //	project Datum Cloud in Datum Technology, Inc (datum/datum-cloud)
 func (c *ConfigV1Beta1) ContextDescription(ctx *DiscoveredContext) string {
-	orgName := c.OrgDisplayName(ctx.OrganizationID)
+	orgName := c.OrgDisplayName(ctx.Session, ctx.OrganizationID)
 	if ctx.ProjectID == "" {
 		return fmt.Sprintf("org %s (%s)", orgName, ctx.OrganizationID)
 	}
-	projName := c.ProjectDisplayName(ctx.ProjectID)
+	projName := c.ProjectDisplayName(ctx.Session, ctx.ProjectID)
 	return fmt.Sprintf("project %s in %s (%s)", projName, orgName, ctx.Ref())
 }
 
-// OrgDisplayName returns the cached display name for an org, or the ID if none.
-func (c *ConfigV1Beta1) OrgDisplayName(orgID string) string {
+// sessionMatches reports whether a cache/context entry owned by have belongs to
+// the requested session want. An empty want means "any session" — used by the
+// session-unaware lookups that predate session-scoped resolution.
+func sessionMatches(want, have string) bool {
+	return want == "" || want == have
+}
+
+// OrgDisplayName returns the cached display name for an org within the given
+// session, or the ID if none. An empty sessionName matches any session.
+func (c *ConfigV1Beta1) OrgDisplayName(sessionName, orgID string) string {
 	for _, o := range c.Cache.Organizations {
-		if o.ID == orgID && o.DisplayName != "" {
+		if o.ID == orgID && sessionMatches(sessionName, o.Session) && o.DisplayName != "" {
 			return o.DisplayName
 		}
 	}
 	return orgID
 }
 
-// ProjectDisplayName returns the cached display name for a project, or the ID if none.
-func (c *ConfigV1Beta1) ProjectDisplayName(projectID string) string {
+// ProjectDisplayName returns the cached display name for a project within the
+// given session, or the ID if none. An empty sessionName matches any session.
+func (c *ConfigV1Beta1) ProjectDisplayName(sessionName, projectID string) string {
 	for _, p := range c.Cache.Projects {
-		if p.ID == projectID && p.DisplayName != "" {
+		if p.ID == projectID && sessionMatches(sessionName, p.Session) && p.DisplayName != "" {
 			return p.DisplayName
 		}
 	}
@@ -146,17 +161,23 @@ type ContextCache struct {
 	LastRefreshed *time.Time      `json:"last-refreshed,omitempty" yaml:"last-refreshed,omitempty"`
 }
 
-// CachedOrg is an API-discovered organization.
+// CachedOrg is an API-discovered organization. Session records which login
+// discovered it, so overlapping org IDs across environments keep distinct
+// display names.
 type CachedOrg struct {
 	ID          string `json:"id" yaml:"id"`
 	DisplayName string `json:"display-name,omitempty" yaml:"display-name,omitempty"`
+	Session     string `json:"session,omitempty" yaml:"session,omitempty"`
 }
 
-// CachedProject is an API-discovered project under an org.
+// CachedProject is an API-discovered project under an org. Session records which
+// login discovered it, so overlapping project IDs across environments keep
+// distinct display names.
 type CachedProject struct {
 	ID          string `json:"id" yaml:"id"`
 	DisplayName string `json:"display-name,omitempty" yaml:"display-name,omitempty"`
 	OrgID       string `json:"org-id" yaml:"org-id"`
+	Session     string `json:"session,omitempty" yaml:"session,omitempty"`
 }
 
 func NewV1Beta1() *ConfigV1Beta1 {
@@ -216,8 +237,40 @@ func (c *ConfigV1Beta1) ContextByName(name string) *DiscoveredContext {
 	return nil
 }
 
-// ResolveContext finds a context by flexible matching. Resource IDs always
-// take precedence over display names. It tries, in order:
+// ResolveContext finds a context by flexible matching across every session. It
+// is session-unaware, so with overlapping IDs across environments the result is
+// undefined; prefer ResolveContextInSession when a session is known.
+func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
+	return c.resolveContext(query, "")
+}
+
+// ResolveContextInSession is the session-scoped analog of ResolveContext: it
+// considers only contexts owned by sessionName and resolves display names within
+// that session. This is the correct entry point once a session is known, since
+// org and project IDs (and their display names) can collide across environments.
+func (c *ConfigV1Beta1) ResolveContextInSession(query, sessionName string) *DiscoveredContext {
+	return c.resolveContext(query, sessionName)
+}
+
+// FindContextOwner returns the session that owns a context matching query in
+// some session other than excludeSession, or nil. It powers the "switch
+// sessions first" hint when a ref lives only in another environment.
+func (c *ConfigV1Beta1) FindContextOwner(query, excludeSession string) *Session {
+	for i := range c.Sessions {
+		s := &c.Sessions[i]
+		if s.Name == excludeSession {
+			continue
+		}
+		if c.ResolveContextInSession(query, s.Name) != nil {
+			return s
+		}
+	}
+	return nil
+}
+
+// resolveContext finds a context by flexible matching. Resource IDs always take
+// precedence over display names. When sessionName is non-empty, only contexts
+// and cache entries owned by that session are considered. It tries, in order:
 //
 //  1. Exact context name match
 //  2. orgID/projectID match (for "org/project" queries)
@@ -227,18 +280,27 @@ func (c *ConfigV1Beta1) ContextByName(name string) *DiscoveredContext {
 //  6. Display-name-only org or project match (unambiguous)
 //
 // Returns nil if no match, or if a display-name match is ambiguous.
-func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
-	// 1. Exact name match.
-	if ctx := c.ContextByName(query); ctx != nil {
-		return ctx
+func (c *ConfigV1Beta1) resolveContext(query, sessionName string) *DiscoveredContext {
+	// Restrict the search to the requested session (all contexts when empty).
+	var contexts []*DiscoveredContext
+	for i := range c.Contexts {
+		if sessionMatches(sessionName, c.Contexts[i].Session) {
+			contexts = append(contexts, &c.Contexts[i])
+		}
+	}
+
+	// 1. Exact name match (qualified name or, in unscoped legacy configs, ref).
+	for _, ctx := range contexts {
+		if ctx.Name == query {
+			return ctx
+		}
 	}
 
 	orgPart, projPart, hasSlash := strings.Cut(query, "/")
 
 	if hasSlash {
 		// 2. orgID/projectID match.
-		for i := range c.Contexts {
-			ctx := &c.Contexts[i]
+		for _, ctx := range contexts {
 			if ctx.OrganizationID == orgPart && ctx.ProjectID == projPart {
 				return ctx
 			}
@@ -246,7 +308,7 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 
 		// 5. Display-name match, scoped: resolve orgPart to an org ID first,
 		// then scope project display-name resolution to that org.
-		resolvedOrgIDs := c.resolveOrgIDs(orgPart)
+		resolvedOrgIDs := c.resolveOrgIDs(orgPart, sessionName)
 		if len(resolvedOrgIDs) == 0 {
 			// orgPart might already be a resource ID even though the slash path
 			// didn't match — allow it through as a search scope.
@@ -255,12 +317,11 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 
 		var match *DiscoveredContext
 		for _, orgID := range resolvedOrgIDs {
-			projIDs := c.resolveProjectIDsInOrg(projPart, orgID)
+			projIDs := c.resolveProjectIDsInOrg(projPart, orgID, sessionName)
 			// Also include projPart as a literal ID candidate within this org.
 			projIDs = appendUnique(projIDs, projPart)
 			for _, projID := range projIDs {
-				for i := range c.Contexts {
-					ctx := &c.Contexts[i]
+				for _, ctx := range contexts {
 					if ctx.OrganizationID == orgID && ctx.ProjectID == projID {
 						if match != nil && match != ctx {
 							return nil // ambiguous
@@ -274,8 +335,7 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 	}
 
 	// 3. orgID-only match (org-level contexts).
-	for i := range c.Contexts {
-		ctx := &c.Contexts[i]
+	for _, ctx := range contexts {
 		if ctx.OrganizationID == query && ctx.ProjectID == "" {
 			return ctx
 		}
@@ -283,8 +343,7 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 
 	// 4. projectID-only match if unambiguous (resource IDs only, no display names).
 	var idMatch *DiscoveredContext
-	for i := range c.Contexts {
-		ctx := &c.Contexts[i]
+	for _, ctx := range contexts {
 		if ctx.ProjectID == query {
 			if idMatch != nil {
 				return nil // ambiguous on resource ID
@@ -297,10 +356,9 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 	}
 
 	// 6a. Display-name-only org match (unambiguous).
-	resolvedOrgIDs := c.resolveOrgIDs(query)
+	resolvedOrgIDs := c.resolveOrgIDs(query, sessionName)
 	if len(resolvedOrgIDs) == 1 {
-		for i := range c.Contexts {
-			ctx := &c.Contexts[i]
+		for _, ctx := range contexts {
 			if ctx.OrganizationID == resolvedOrgIDs[0] && ctx.ProjectID == "" {
 				return ctx
 			}
@@ -310,10 +368,9 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 	}
 
 	// 6b. Display-name-only project match (unambiguous).
-	resolvedProjIDs := c.resolveProjectIDs(query)
+	resolvedProjIDs := c.resolveProjectIDs(query, sessionName)
 	if len(resolvedProjIDs) == 1 {
-		for i := range c.Contexts {
-			ctx := &c.Contexts[i]
+		for _, ctx := range contexts {
 			if ctx.ProjectID == resolvedProjIDs[0] {
 				return ctx
 			}
@@ -322,34 +379,37 @@ func (c *ConfigV1Beta1) ResolveContext(query string) *DiscoveredContext {
 	return nil
 }
 
-// resolveOrgIDs returns all org resource IDs whose display name matches.
-func (c *ConfigV1Beta1) resolveOrgIDs(displayName string) []string {
+// resolveOrgIDs returns all org resource IDs whose display name matches within
+// the given session (any session when sessionName is empty).
+func (c *ConfigV1Beta1) resolveOrgIDs(displayName, sessionName string) []string {
 	var ids []string
 	for _, o := range c.Cache.Organizations {
-		if o.DisplayName == displayName && o.DisplayName != o.ID {
+		if o.DisplayName == displayName && o.DisplayName != o.ID && sessionMatches(sessionName, o.Session) {
 			ids = append(ids, o.ID)
 		}
 	}
 	return ids
 }
 
-// resolveProjectIDs returns all project resource IDs whose display name matches.
-func (c *ConfigV1Beta1) resolveProjectIDs(displayName string) []string {
+// resolveProjectIDs returns all project resource IDs whose display name matches
+// within the given session (any session when sessionName is empty).
+func (c *ConfigV1Beta1) resolveProjectIDs(displayName, sessionName string) []string {
 	var ids []string
 	for _, p := range c.Cache.Projects {
-		if p.DisplayName == displayName && p.DisplayName != p.ID {
+		if p.DisplayName == displayName && p.DisplayName != p.ID && sessionMatches(sessionName, p.Session) {
 			ids = append(ids, p.ID)
 		}
 	}
 	return ids
 }
 
-// resolveProjectIDsInOrg returns project resource IDs whose display name
-// matches and which belong to the given org.
-func (c *ConfigV1Beta1) resolveProjectIDsInOrg(displayName, orgID string) []string {
+// resolveProjectIDsInOrg returns project resource IDs whose display name matches,
+// which belong to the given org, within the given session (any session when
+// sessionName is empty).
+func (c *ConfigV1Beta1) resolveProjectIDsInOrg(displayName, orgID, sessionName string) []string {
 	var ids []string
 	for _, p := range c.Cache.Projects {
-		if p.OrgID == orgID && p.DisplayName == displayName && p.DisplayName != p.ID {
+		if p.OrgID == orgID && p.DisplayName == displayName && p.DisplayName != p.ID && sessionMatches(sessionName, p.Session) {
 			ids = append(ids, p.ID)
 		}
 	}
@@ -371,17 +431,21 @@ func (c *ConfigV1Beta1) CurrentContextEntry() *DiscoveredContext {
 	return c.ContextByName(c.CurrentContext)
 }
 
-// ActiveSessionEntry returns the active session. It first checks ActiveSession,
-// then falls back to the session referenced by the current context.
+// ActiveSessionEntry returns the active session. The current context's session
+// is authoritative: whatever context is selected determines which environment
+// is active, so whoami and every request agree. The stored ActiveSession is
+// only a fallback for when no current context resolves (e.g. right after login
+// before a context is picked).
 func (c *ConfigV1Beta1) ActiveSessionEntry() *Session {
+	if ctx := c.CurrentContextEntry(); ctx != nil {
+		if s := c.SessionByName(ctx.Session); s != nil {
+			return s
+		}
+	}
 	if c.ActiveSession != "" {
 		if s := c.SessionByName(c.ActiveSession); s != nil {
 			return s
 		}
-	}
-	ctx := c.CurrentContextEntry()
-	if ctx != nil {
-		return c.SessionByName(ctx.Session)
 	}
 	return nil
 }
@@ -524,7 +588,55 @@ func LoadV1Beta1FromPath(path string) (*ConfigV1Beta1, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 	cfg.ensureDefaults()
+	cfg.migrateSessionScoping()
 	return cfg, nil
+}
+
+// migrateSessionScoping upgrades a config written before contexts were
+// session-qualified. It rewrites bare-ref context names to the session-qualified
+// form and drops display-cache entries that predate session stamping (they
+// repopulate on the next refresh). It is idempotent and safe to run repeatedly,
+// including on partially-migrated configs, so no re-login is required.
+func (c *ConfigV1Beta1) migrateSessionScoping() {
+	for i := range c.Contexts {
+		ctx := &c.Contexts[i]
+		if ctx.Session == "" {
+			continue
+		}
+		want := ctx.QualifiedName()
+		if ctx.Name == want {
+			continue
+		}
+		old := ctx.Name
+		ctx.Name = want
+		// Repoint the pointers that addressed the old bare-ref name.
+		if c.CurrentContext == old {
+			c.CurrentContext = want
+		}
+		for j := range c.Sessions {
+			if c.Sessions[j].LastContext == old {
+				c.Sessions[j].LastContext = want
+			}
+		}
+	}
+
+	// Drop un-sessioned display-cache entries; they can no longer be attributed
+	// to an environment and repopulate on the next discovery refresh.
+	keptOrgs := c.Cache.Organizations[:0]
+	for _, o := range c.Cache.Organizations {
+		if o.Session != "" {
+			keptOrgs = append(keptOrgs, o)
+		}
+	}
+	c.Cache.Organizations = keptOrgs
+
+	keptProjects := c.Cache.Projects[:0]
+	for _, p := range c.Cache.Projects {
+		if p.Session != "" {
+			keptProjects = append(keptProjects, p)
+		}
+	}
+	c.Cache.Projects = keptProjects
 }
 
 // SaveV1Beta1 saves a v1beta1 config to the default path.

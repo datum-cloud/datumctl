@@ -181,7 +181,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 			tknSrc,
 			result.Subject,
 			selectedCtx.OrganizationID,
-			cfg.OrgDisplayName(selectedCtx.OrganizationID),
+			cfg.OrgDisplayName(selectedCtx.Session, selectedCtx.OrganizationID),
 		)
 		if err != nil {
 			return customerrors.WrapUserErrorWithHint(
