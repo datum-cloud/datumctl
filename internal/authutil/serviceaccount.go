@@ -26,10 +26,10 @@ import (
 
 // ServiceAccountCredentials is the on-disk JSON format downloaded from the Datum Cloud portal.
 type ServiceAccountCredentials struct {
-	Type         string `json:"type"`           // "datum_service_account"
-	APIEndpoint  string `json:"api_endpoint"`   // "https://api.datum.net"
-	TokenURI     string `json:"token_uri"`      // "https://auth.datum.net/oauth/v2/token"
-	Scope        string `json:"scope"`          // OAuth2 scope string, e.g. "openid profile email urn:zitadel:..."
+	Type         string `json:"type"`         // "datum_service_account"
+	APIEndpoint  string `json:"api_endpoint"` // "https://api.datum.net"
+	TokenURI     string `json:"token_uri"`    // "https://auth.datum.net/oauth/v2/token"
+	Scope        string `json:"scope"`        // OAuth2 scope string, e.g. "openid profile email urn:zitadel:..."
 	ProjectID    string `json:"project_id"`
 	ClientEmail  string `json:"client_email"`   // identity e-mail, used as display name
 	ClientID     string `json:"client_id"`      // numeric Zitadel user ID (iss / sub)

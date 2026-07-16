@@ -25,6 +25,17 @@ func TestUserKeyFor(t *testing.T) {
 	}
 }
 
+// mockKeyring points HOME at an empty temp dir before installing the mock
+// keyring provider. Without the HOME isolation, a real fallback credentials
+// file at ~/.datumctl/credentials.json would silently hijack the mock (the
+// wrapper prefers an existing on-disk store), making these tests read — and
+// write — the developer's real credential store.
+func mockKeyring(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	keyring.MockInit()
+}
+
 // storeCreds writes a StoredCredentials blob to the keyring under key.
 func storeCreds(t *testing.T, key, authHostname string) {
 	t.Helper()
@@ -64,7 +75,7 @@ func collidingConfig() *datumconfig.ConfigV1Beta1 {
 }
 
 func TestMigrateUserKeys_CollisionRecoversMatchingEnvironment(t *testing.T) {
-	keyring.MockInit()
+	mockKeyring(t)
 
 	// The single shared blob currently holds the staging token (last written).
 	storeCreds(t, "swells@datum.net", "auth.staging.env.datum.net")
@@ -99,7 +110,7 @@ func TestMigrateUserKeys_CollisionRecoversMatchingEnvironment(t *testing.T) {
 }
 
 func TestMigrateUserKeys_Idempotent(t *testing.T) {
-	keyring.MockInit()
+	mockKeyring(t)
 	storeCreds(t, "swells@datum.net", "auth.staging.env.datum.net")
 
 	cfg := collidingConfig()
@@ -117,7 +128,7 @@ func TestMigrateUserKeys_Idempotent(t *testing.T) {
 }
 
 func TestMigrateUserKeys_AlreadyQualifiedNoop(t *testing.T) {
-	keyring.MockInit()
+	mockKeyring(t)
 
 	cfg := &datumconfig.ConfigV1Beta1{
 		Sessions: []datumconfig.Session{{
