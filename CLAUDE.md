@@ -46,3 +46,6 @@ internal/client/      DatumCloudFactory — org/project scope resolution + API c
 internal/discovery/   Org/project API discovery and context cache
 internal/picker/      Interactive TUI context/account selector
 ```
+## GitHub PR / Issue / Comment Conventions
+
+Follow the `datum-platform:pr-conventions` skill for all PRs, issues, and comments — including its concision rules: say it once (don't restate the summary as test-plan checkboxes, or describe the same behaviour in prose and again in a checklist), and cut every word carrying no fact. Compress, never omit — brevity must not drop facts.
