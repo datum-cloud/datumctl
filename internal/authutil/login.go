@@ -483,6 +483,10 @@ func runDeviceFlow(ctx context.Context, providerURL string, clientID string, sco
 	return pollDeviceToken(waitCtx, tokenURL, clientID, deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn)
 }
 
+// eofPollInterval bounds each watcher read so the loop can check for stop().
+// The same value probes deadline support before the watcher starts.
+const eofPollInterval = 250 * time.Millisecond
+
 // deadlineReader is a stream that supports read deadlines, satisfied by
 // *os.File (including os.Stdin and os.Pipe ends).
 type deadlineReader interface {
@@ -504,13 +508,24 @@ func watchStdinEOF(parent context.Context) (context.Context, context.CancelFunc)
 // input intended for a later interactive prompt.
 //
 // Input received during the wait is read and discarded — nothing else reads
-// the stream while login is blocking on the auth callback or device poll. On
-// streams where read deadlines are unsupported the watcher falls back to a
-// single blocking read; EOF still cancels, and any leftover reader is
-// abandoned rather than stealing later input in the common (deadline-capable)
-// case.
+// the stream while login is blocking on the auth callback or device poll.
+//
+// Detecting EOF requires read deadlines, so that support is probed up front.
+// Without them the only way to watch is a blocking read that stop() cannot
+// interrupt, which parks a reader on the stream and swallows keystrokes meant
+// for the interactive picker that runs right after login. In that case the
+// watcher declines to run at all and the wait is cancellable by ^C only.
+// Windows console handles are never pollable, so *os.File deadlines are
+// always unsupported there — and ^D is not a console EOF convention on
+// Windows regardless.
 func watchReaderEOF(parent context.Context, in deadlineReader) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)
+
+	if err := in.SetReadDeadline(time.Now().Add(eofPollInterval)); err != nil {
+		_ = in.SetReadDeadline(time.Time{})
+		return ctx, cancel
+	}
+
 	done := make(chan struct{})
 
 	go func() {
@@ -527,13 +542,10 @@ func watchReaderEOF(parent context.Context, in deadlineReader) (context.Context,
 			default:
 			}
 
-			if err := in.SetReadDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
-				// Deadlines unsupported for this stream; fall back to a
-				// single blocking read. EOF cancels; anything else ends the
-				// watcher to avoid a busy loop.
-				if _, rerr := in.Read(buf); errors.Is(rerr, io.EOF) {
-					cancel()
-				}
+			if err := in.SetReadDeadline(time.Now().Add(eofPollInterval)); err != nil {
+				// Unreachable: support was probed before this goroutine
+				// started. Never fall back to a blocking read here — it
+				// cannot be interrupted by stop().
 				return
 			}
 
