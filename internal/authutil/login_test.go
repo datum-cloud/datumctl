@@ -3,6 +3,7 @@ package authutil
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -122,6 +123,95 @@ func TestWatchReaderEOF_NoCancelBeforeEOFOrStop(t *testing.T) {
 	case <-ctx.Done():
 	case <-time.After(3 * time.Second):
 		t.Fatal("stop() did not cancel the context")
+	}
+}
+
+// noDeadlineReader is a stream that does not support read deadlines, as every
+// Windows console handle behaves (os.Stdin is never pollable there). Read
+// blocks until the test releases it, standing in for a console read that no
+// stop() can interrupt.
+type noDeadlineReader struct {
+	reads   atomic.Int32
+	release chan struct{}
+}
+
+func (r *noDeadlineReader) SetReadDeadline(time.Time) error { return os.ErrNoDeadline }
+
+func (r *noDeadlineReader) Read(p []byte) (int, error) {
+	r.reads.Add(1)
+	<-r.release
+	return 0, io.EOF
+}
+
+// TestWatchReaderEOF_NoBlockingReadWhenDeadlinesUnsupported is the #263
+// regression test. When deadlines are unsupported the watcher must not read
+// the stream at all: a blocking read there cannot be interrupted by stop(),
+// so it stays parked on stdin and eats the arrow keys the context picker
+// needs after login.
+func TestWatchReaderEOF_NoBlockingReadWhenDeadlinesUnsupported(t *testing.T) {
+	in := &noDeadlineReader{release: make(chan struct{})}
+	defer close(in.release)
+
+	ctx, stop := watchReaderEOF(context.Background(), in)
+
+	// Span several would-be poll cycles.
+	select {
+	case <-ctx.Done():
+		t.Fatal("context canceled while stream open and idle")
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if got := in.reads.Load(); got != 0 {
+		t.Fatalf("watcher read the stream %d time(s); it must not read a stream it cannot poll", got)
+	}
+
+	// The caller's contract still holds: stop() cancels.
+	stop()
+	select {
+	case <-ctx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("stop() did not cancel the context")
+	}
+}
+
+// TestWatchReaderEOF_UnsupportedDeadlineLeavesInputIntact asserts the
+// user-visible property behind #263: every byte typed during the login wait is
+// still there for the next reader, so the picker sees the user's keystrokes.
+// A regular file is used because it reports the same ErrNoDeadline a Windows
+// console handle does.
+func TestWatchReaderEOF_UnsupportedDeadlineLeavesInputIntact(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer f.Close()
+
+	const typed = "hello\n"
+	if _, err := f.WriteString(typed); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("seek: %v", err)
+	}
+
+	// Guard the premise: this test is meaningless if the file supports
+	// deadlines, since the watcher would then take the polling path.
+	if derr := f.SetReadDeadline(time.Now().Add(time.Second)); derr == nil {
+		t.Skip("regular files support read deadlines on this platform")
+	}
+	_ = f.SetReadDeadline(time.Time{})
+
+	_, stop := watchReaderEOF(context.Background(), f)
+	time.Sleep(300 * time.Millisecond)
+	stop()
+	time.Sleep(100 * time.Millisecond)
+
+	rest, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(rest) != typed {
+		t.Fatalf("watcher consumed input meant for the picker: got %q, want %q", string(rest), typed)
 	}
 }
 
