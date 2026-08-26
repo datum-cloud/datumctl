@@ -248,6 +248,10 @@ Get started:
 		"warnings-as-errors",
 	)
 
+	// Plugins dispatch dynamically instead of registering as Cobra commands, so
+	// the help listing has to be taught about them explicitly.
+	installPluginsHelpSections(rootCmd)
+
 	rootCmd.AddGroup(&cobra.Group{ID: "auth", Title: "Authentication"})
 	rootCmd.AddGroup(&cobra.Group{ID: "context", Title: "Context"})
 	rootCmd.AddGroup(&cobra.Group{ID: "other", Title: "Other Commands"})

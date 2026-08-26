@@ -28,6 +28,11 @@ const (
 	ProdClientID    = "328728232771788043"
 	redirectPath    = "/datumctl/auth/callback"
 	listenAddr      = "localhost:0"
+
+	// successURL is where the browser lands once the callback has the code. It
+	// is the last thing a user sees of the login, so it points at the page that
+	// tells them the sign-in worked and what to do next.
+	successURL = "https://www.datum.net/docs/datumctl/auth/auth-success"
 )
 
 // LoginResult holds the output of a successful login flow.
@@ -181,7 +186,7 @@ func runPKCEFlow(ctx context.Context, provider *oidc.Provider, clientID string, 
 			return
 		}
 
-		http.Redirect(w, r, "https://www.datum.net/docs/datumctl/cli-reference/#see-also", http.StatusFound)
+		http.Redirect(w, r, successURL, http.StatusFound)
 		codeChan <- code
 	})
 	server.Handler = mux
