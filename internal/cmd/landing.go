@@ -6,7 +6,6 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -160,7 +159,12 @@ func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.C
 	// Installed plugins become `datumctl <command>` verbs, so reflect the user's
 	// own setup on the landing. Best-effort and local-only — never blocks the
 	// landing on a missing or unreadable plugin store.
-	printInstalledPlugins(out)
+	installed := printInstalledPlugins(out)
+
+	// Plugins the user could add, drawn from whatever catalog cache is already on
+	// disk. Same best-effort contract as the installed block: never fetches,
+	// never blocks, prints nothing when there is nothing to show.
+	printAvailablePlugins(out, installed)
 
 	fmt.Fprintf(out, "Tip: %s\n", pickTip(time.Now().UnixNano()))
 	fmt.Fprintln(out)
@@ -168,43 +172,103 @@ func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.C
 	fmt.Fprintln(out, "Run 'datumctl --help' for the full command reference.")
 }
 
-// printInstalledPlugins renders a "Your plugins" block listing each installed
+// printInstalledPlugins renders an "Installed Plugins" block listing each
 // plugin as a runnable `datumctl <command>` verb with the catalog it came from.
 // It is best-effort and local-only: any error reading the plugin store, or no
 // installed plugins, simply prints nothing.
-func printInstalledPlugins(out io.Writer) {
-	dir, err := pluginstore.PluginsDir("")
-	if err != nil {
-		return
+//
+// It returns the set of installed plugin names so the "Available plugins" block
+// below can subtract them without re-reading the store.
+func printInstalledPlugins(out io.Writer) map[string]bool {
+	plugins := collectInstalledPlugins()
+	if len(plugins) == 0 {
+		return nil
 	}
-	manifest, err := pluginstore.Load(dir)
-	if err != nil || manifest == nil || len(manifest.Plugins) == 0 {
-		return
-	}
-
-	names := make([]string, 0, len(manifest.Plugins))
-	for name := range manifest.Plugins {
-		names = append(names, name)
-	}
-	sort.Strings(names)
 
 	// Pad the command column so the source labels line up.
 	cmdWidth := 0
-	for _, name := range names {
-		if w := len("datumctl " + name); w > cmdWidth {
+	for _, p := range plugins {
+		if w := len("datumctl " + p.name); w > cmdWidth {
 			cmdWidth = w
 		}
 	}
 
-	for i, name := range names {
+	installed := make(map[string]bool, len(plugins))
+	for i, p := range plugins {
 		label := ""
 		if i == 0 {
-			label = "Your plugins"
+			label = "Installed Plugins"
 		}
-		command := "datumctl " + name
-		fmt.Fprintf(out, "  %-22s %-*s (%s)\n", label, cmdWidth, command, landingPluginSource(manifest.Plugins[name]))
+		fmt.Fprintf(out, "  %-22s %-*s (%s)\n", label, cmdWidth, "datumctl "+p.name, p.source)
+		installed[p.name] = true
 	}
 	fmt.Fprintln(out)
+	return installed
+}
+
+// landingAvailableLimit caps how many not-yet-installed plugins the landing
+// names before deferring to the browser. The landing is a signpost, not a
+// catalog listing: a long block would crowd out the sections above it.
+const landingAvailableLimit = 3
+
+// landingLineWidth is the widest line the available-plugins block will emit;
+// descriptions are elided to whatever the label and name columns leave, so a row
+// still fits an 80-column terminal.
+const landingLineWidth = 78
+
+// printAvailablePlugins renders an "Available plugins" block naming plugins the
+// user could install but has not. Like the installed block it is best-effort
+// and local-only: it reads the catalog cache already on disk and never fetches,
+// so a cold cache, an unreadable store, or a fully-installed catalog all print
+// nothing rather than delaying the landing on a network call.
+func printAvailablePlugins(out io.Writer, installed map[string]bool) {
+	plugins := collectAvailablePlugins(installed)
+	if len(plugins) == 0 {
+		return
+	}
+
+	shown := plugins
+	if len(shown) > landingAvailableLimit {
+		shown = shown[:landingAvailableLimit]
+	}
+
+	nameWidth := 0
+	for _, p := range shown {
+		if len(p.name) > nameWidth {
+			nameWidth = len(p.name)
+		}
+	}
+
+	for i, p := range shown {
+		label := ""
+		if i == 0 {
+			label = "Available plugins"
+		}
+		row := fmt.Sprintf("  %-22s %-*s", label, nameWidth, p.name)
+		if desc := elide(p.desc, landingLineWidth-len(row)-2); desc != "" {
+			row += "  " + desc
+		}
+		fmt.Fprintln(out, strings.TrimRight(row, " "))
+	}
+
+	if remaining := len(plugins) - len(shown); remaining > 0 {
+		fmt.Fprintf(out, "  %-22s +%d more — datumctl plugin browse\n", "", remaining)
+	}
+	fmt.Fprintf(out, "  %-22s Install with 'datumctl plugin install <name>'\n", "")
+	fmt.Fprintln(out)
+}
+
+// elide truncates s to at most max runes, marking the cut with an ellipsis.
+func elide(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 1 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return strings.TrimRight(string(r[:max-1]), " ") + "…"
 }
 
 // landingPluginSource returns a short catalog label for an installed plugin,
