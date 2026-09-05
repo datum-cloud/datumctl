@@ -14,6 +14,13 @@ tasks:
   nix-build:
     desc: Build the project with Nix
     cmds:
+      # `nix build` only sees files git knows about (even untracked ones must be
+      # staged), so drop the last tag in a VERSION file and stage it with
+      # intent-to-add; flake.nix reads it to embed <last-tag>+<sha> in the
+      # binary. Cleaned up afterwards so it's never actually committed.
+      - defer: git reset -- VERSION && rm -f VERSION
+      - git describe --tags --abbrev=0 > VERSION
+      - git add -N VERSION
       - nix build
 
   nix-dev:
