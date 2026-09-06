@@ -6,6 +6,20 @@ tasks:
     cmds:
       - task --list
 
+  build:
+    desc: Build datumctl locally with go, embedding a real <last-tag>+<sha> version
+    vars:
+      LAST_TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0
+      GIT_SHA:
+        sh: git rev-parse --short=8 HEAD
+      GIT_COMMIT:
+        sh: git rev-parse HEAD
+      DIRTY_SUFFIX:
+        sh: (git diff --quiet && git diff --cached --quiet) || echo -dev
+    cmds:
+      - go build -ldflags "-X k8s.io/component-base/version.gitVersion={{.LAST_TAG}}+{{.GIT_SHA}}{{.DIRTY_SUFFIX}} -X k8s.io/component-base/version.gitCommit={{.GIT_COMMIT}}" -o datumctl .
+
   nix-update-hash:
     desc: Automatically update the vendorHash in flake.nix after Go dependency changes
     cmds:
