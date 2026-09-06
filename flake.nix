@@ -63,7 +63,6 @@
             ldflags = [
               "-s"
               "-w"
-              "-X main.version=${gitVersion}"
               "-X k8s.io/component-base/version.gitVersion=${gitVersion}"
               "-X k8s.io/component-base/version.gitCommit=${gitCommit}"
               "-extldflags=-static"
