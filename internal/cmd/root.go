@@ -38,6 +38,7 @@ import (
 	datumctx "go.datum.net/datumctl/internal/cmd/ctx"
 	"go.datum.net/datumctl/internal/cmd/docs"
 	"go.datum.net/datumctl/internal/cmd/login"
+	logscmd "go.datum.net/datumctl/internal/cmd/logs"
 	"go.datum.net/datumctl/internal/cmd/logout"
 	plugincmd "go.datum.net/datumctl/internal/cmd/plugin"
 	"go.datum.net/datumctl/internal/cmd/whoami"
@@ -758,6 +759,10 @@ Specify the resource type and name to view its history.`
 	apiCmd := apicmd.Command(factory)
 	apiCmd.GroupID = "other"
 	rootCmd.AddCommand(apiCmd)
+
+	logsCmd := logscmd.Command(factory)
+	logsCmd.GroupID = "other"
+	rootCmd.AddCommand(logsCmd)
 
 	pluginCommand := plugincmd.Command(factory)
 	pluginCommand.GroupID = "other"
