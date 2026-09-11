@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -63,6 +64,20 @@ func hidePersistentFlags(cmd *cobra.Command, flags ...string) {
 	for _, f := range flags {
 		_ = cmd.PersistentFlags().MarkHidden(f)
 	}
+}
+
+// isVersionSkewParseError reports whether err came from
+// "k8s.io/kubectl/pkg/cmd/version".getVersionSkewWarning failing to parse
+// the client or server GitVersion as semver, rather than from a real
+// connectivity/discovery failure. That check runs after the client/server
+// versions have already been printed, so a malformed version string
+// shouldn't be treated as fatal.
+func isVersionSkewParseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.HasPrefix(msg, "client version error:") || strings.HasPrefix(msg, "server version error:")
 }
 
 func RootCmd() *cobra.Command {
@@ -656,6 +671,31 @@ the server.`
 		return nil
 	}
 	versionCmd.GroupID = "other"
+	versionCmd.Run = nil
+	versionCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		o := version.NewOptions(ioStreams)
+		o.ClientOnly, _ = cmd.Flags().GetBool("client")
+		o.Output, _ = cmd.Flags().GetString("output")
+
+		if err := o.Complete(factory, cmd, args); err != nil {
+			return err
+		}
+		if err := o.Validate(); err != nil {
+			return err
+		}
+
+		err := o.Run()
+		if isVersionSkewParseError(err) {
+			// Client/server versions were already printed above; the server
+			// (or, less commonly, the client binary itself) reported a
+			// version string that isn't valid semver, e.g. an unresolved
+			// `git archive` export-subst placeholder like "$Format:%H$".
+			// That shouldn't prevent `datumctl version` from succeeding.
+			fmt.Fprintf(ioStreams.ErrOut, "Warning: could not compare client/server versions: %s\n", err)
+			return nil
+		}
+		return err
+	}
 	rootCmd.AddCommand(versionCmd)
 
 	aiCmd := aicmd.Command()
