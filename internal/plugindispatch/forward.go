@@ -43,11 +43,21 @@ func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.Datum
 	if IsBuiltIn(root, name) {
 		return nil
 	}
+	// Resolve here, not only in the root RunE: forwarding happens before cobra
+	// parses, so this is the path that carries the plugin's own flags through
+	// under the old command name.
+	aliasedFrom := ""
+	if plugin, aliased := ResolveLegacyAlias(name); aliased {
+		aliasedFrom, name = name, plugin
+	}
 
 	binaryPath, managed, err := FindPlugin(name, pluginsDir)
 	if err != nil {
 		// Not a known plugin in the managed dir or on PATH — let cobra handle it.
 		return nil
+	}
+	if aliasedFrom != "" {
+		NoticeLegacyAlias(os.Stderr, aliasedFrom, name)
 	}
 
 	if managed {
@@ -251,11 +261,18 @@ func ForwardHelp(pluginsDir string) error {
 	if !hasHelp {
 		return nil
 	}
+	aliasedFrom := ""
+	if plugin, aliased := ResolveLegacyAlias(name); aliased {
+		aliasedFrom, name = name, plugin
+	}
 
 	binaryPath, managed, err := FindPlugin(name, pluginsDir)
 	if err != nil {
 		// Not a known plugin — let Cobra handle it normally.
 		return nil
+	}
+	if aliasedFrom != "" {
+		NoticeLegacyAlias(os.Stderr, aliasedFrom, name)
 	}
 
 	// For PATH-based (unmanaged) plugins, verify trust before forwarding help.
