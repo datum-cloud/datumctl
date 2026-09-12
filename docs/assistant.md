@@ -42,8 +42,20 @@ the service refuses any manifest that differs from what you were shown.
 
 `datumctl ai` was a local agent that needed your own Anthropic, OpenAI, or
 Gemini key. It has been removed. The command still works and now runs the
-plugin, so existing scripts keep going; the provider key and its configuration
-are no longer used and can be deleted.
+plugin, so existing scripts keep going.
+
+Nothing reads your provider key any more. It is still on disk, so delete it:
+
+```
+# Linux and macOS
+rm ~/.config/datumctl/ai.yaml
+
+# Windows
+del %AppData%\datumctl\ai.yaml
+```
 
 The `[a]` chat pane in `datumctl console` ran on the same local agent and has
-also been removed. Use `datumctl assistant` for chat.
+also been removed — use `datumctl assistant` for chat. Chats you held in the
+console were saved to `~/.datumctl/conversations` and nothing reads them now
+either. Conversations you hold with the plugin are kept by the assistant
+service instead, so they follow you between machines.
