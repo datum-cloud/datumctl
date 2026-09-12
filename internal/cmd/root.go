@@ -30,7 +30,6 @@ import (
 	autoupdatecmd "go.datum.net/datumctl/internal/cmd/autoupdate"
 
 	"go.datum.net/datumctl/internal/client"
-	aicmd "go.datum.net/datumctl/internal/cmd/ai"
 	apicmd "go.datum.net/datumctl/internal/cmd/api"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/console"
@@ -133,6 +132,13 @@ Get started:
 				return nil
 			}
 			name := args[0]
+
+			// Reached when the plugin is not installed yet; the forward path
+			// already handled the case where it is.
+			if plugin, aliased := plugindispatch.ResolveLegacyAlias(name); aliased {
+				plugindispatch.NoticeLegacyAlias(cmd.ErrOrStderr(), name, plugin)
+				name = plugin
+			}
 
 			// Built-in commands should have been dispatched by Cobra already.
 			// If we reach here with a built-in name it means something is wrong.
@@ -657,10 +663,6 @@ the server.`
 	}
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
-
-	aiCmd := aicmd.Command()
-	aiCmd.GroupID = "other"
-	rootCmd.AddCommand(aiCmd)
 
 	activityCmd := activity.NewActivityCommand(activity.ActivityCommandOptions{
 		Factory:   factory,

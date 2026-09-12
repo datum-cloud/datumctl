@@ -5,27 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/pkg/browser"
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/pkg/browser"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	datumai "go.datum.net/datumctl/internal/ai"
-	"go.datum.net/datumctl/internal/ai/llm"
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/console/components"
-	"go.datum.net/datumctl/internal/console/chatstorage"
 	tuictx "go.datum.net/datumctl/internal/console/context"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/layout"
@@ -45,7 +37,6 @@ const (
 	HistoryPane
 	ActivityDashboardPane // FB-016 — project-scope human-activity rollup
 	DiffPane
-	ChatPane // [a] — AI assistant chat
 )
 
 type OverlayID int
@@ -105,58 +96,6 @@ type deviceAuthFinishedMsg struct {
 	result *authutil.LoginResult
 	cfg    *datumconfig.ConfigV1Beta1 // fresh config after login; nil on error
 	err    error
-}
-
-// chatAgentInitMsg is returned by initChatAgentCmd when agent initialisation completes.
-type chatAgentInitMsg struct {
-	agent *datumai.Agent
-	err   error
-}
-
-// chatResponseMsg is returned by sendChatMessageCmd when a turn completes.
-type chatResponseMsg struct {
-	response string
-	err      error
-}
-
-// chatConfirmReqMsg is sent when TUIGate forwards a confirmation request from the agent.
-type chatConfirmReqMsg struct {
-	req datumai.ConfirmRequest
-}
-
-// chatChunkMsg carries one streamed token chunk from the LLM.
-type chatChunkMsg struct{ chunk string }
-
-// chatToolEventMsg carries the name of a tool the agent is about to invoke.
-type chatToolEventMsg struct{ tool string }
-
-// chatStoreInitMsg is returned when the chat store is opened and the last
-// conversation (if any) is loaded.
-type chatStoreInitMsg struct {
-	store *chatstorage.Store
-	last  *chatstorage.Conversation // nil if no prior conversations
-}
-
-// chatHistoryLoadedMsg carries conversation history metadata for the sidebar.
-type chatHistoryLoadedMsg struct {
-	entries []components.ConvEntry
-}
-
-// chatConvLoadedMsg carries a full conversation loaded from disk.
-type chatConvLoadedMsg struct {
-	conv *chatstorage.Conversation
-}
-
-// chatExportedMsg is returned by exportChatCmd with the written file path or an error.
-type chatExportedMsg struct {
-	path string
-	err  error
-}
-
-// chatConvDeletedMsg is returned by deleteChatConvCmd after deletion.
-type chatConvDeletedMsg struct {
-	id  string
-	err error
 }
 
 // startDeviceAuthCmd initiates the device flow in the background.
@@ -227,281 +166,52 @@ func refreshContextCacheCmd(ctx context.Context) tea.Cmd {
 	}
 }
 
-// initChatStoreCmd opens (or creates) the chat storage directory, loads the
-// most recent conversation if one exists, and returns chatStoreInitMsg.
-func initChatStoreCmd() tea.Cmd {
-	return func() tea.Msg {
-		dir, err := chatstorage.DefaultDir()
-		if err != nil {
-			return chatStoreInitMsg{}
-		}
-		store, err := chatstorage.NewStore(dir)
-		if err != nil {
-			return chatStoreInitMsg{}
-		}
-		last, _ := store.Last() // nil on empty store; ignore error
-		return chatStoreInitMsg{store: store, last: last}
-	}
-}
-
-// loadChatHistoryCmd lists all conversations and returns sidebar entries.
-func loadChatHistoryCmd(store *chatstorage.Store) tea.Cmd {
-	return func() tea.Msg {
-		metas, err := store.List()
-		if err != nil || len(metas) == 0 {
-			return chatHistoryLoadedMsg{}
-		}
-		entries := make([]components.ConvEntry, len(metas))
-		for i, m := range metas {
-			entries[i] = components.ConvEntry{
-				ID:        m.ID,
-				UpdatedAt: m.UpdatedAt,
-				Preview:   m.Preview,
-			}
-		}
-		return chatHistoryLoadedMsg{entries: entries}
-	}
-}
-
-// loadChatConvCmd loads a full conversation by ID from the store.
-func loadChatConvCmd(store *chatstorage.Store, id string) tea.Cmd {
-	return func() tea.Msg {
-		conv, err := store.Load(id)
-		if err != nil {
-			return chatConvLoadedMsg{}
-		}
-		return chatConvLoadedMsg{conv: conv}
-	}
-}
-
-// saveChatConvCmd saves the conversation to disk (fire-and-forget; errors are silently dropped).
-func saveChatConvCmd(store *chatstorage.Store, conv *chatstorage.Conversation) tea.Cmd {
-	return func() tea.Msg {
-		_ = store.Save(conv)
-		return nil
-	}
-}
-
-// deleteChatConvCmd deletes a conversation from disk by ID.
-func deleteChatConvCmd(store *chatstorage.Store, id string) tea.Cmd {
-	return func() tea.Msg {
-		err := store.Delete(id)
-		return chatConvDeletedMsg{id: id, err: err}
-	}
-}
-
-// exportChatCmd writes the conversation as Markdown to ~/datumctl-chat-<id>.md.
-// Returns a chatExportedMsg with the file path (or error).
-func exportChatCmd(conv *chatstorage.Conversation) tea.Cmd {
-	return func() tea.Msg {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return chatExportedMsg{err: err}
-		}
-		name := "datumctl-chat"
-		if conv != nil {
-			name = "datumctl-chat-" + conv.ID
-		}
-		path := filepath.Join(home, name+".md")
-
-		var sb strings.Builder
-		sb.WriteString("# Datum Cloud AI Chat\n\n")
-		if conv != nil {
-			sb.WriteString(fmt.Sprintf("**Date:** %s\n\n", conv.StartedAt.Local().Format("2006-01-02 15:04")))
-			if conv.OrgID != "" {
-				sb.WriteString(fmt.Sprintf("**Org:** %s  \n", conv.OrgID))
-			}
-			if conv.ProjectID != "" {
-				sb.WriteString(fmt.Sprintf("**Project:** %s\n", conv.ProjectID))
-			}
-			sb.WriteString("\n---\n\n")
-			for _, msg := range conv.Messages {
-				switch msg.Role {
-				case "user":
-					sb.WriteString("**You:** " + msg.Content + "\n\n")
-				case "assistant":
-					sb.WriteString("**Assistant:** " + msg.Content + "\n\n")
-				}
-			}
-		}
-		if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
-			return chatExportedMsg{err: err}
-		}
-		return chatExportedMsg{path: path}
-	}
-}
-
-// initChatAgentCmd loads AI config, builds the LLM client + tool registry,
-// and creates an Agent with TUIGate. Returns chatAgentInitMsg.
-func initChatAgentCmd(
-	ctx context.Context,
-	factory *client.DatumCloudFactory,
-	confirmCh chan datumai.ConfirmRequest,
-	turnCtx context.Context,
-	org, project, namespace string,
-	viewContext string,
-) tea.Cmd {
-	return func() tea.Msg {
-		aiCfg, err := datumai.LoadConfig()
-		if err != nil {
-			return chatAgentInitMsg{err: fmt.Errorf("load AI config: %w", err)}
-		}
-		aiCfg.ApplyEnvOverrides()
-
-		llmClient, err := llm.NewClient(llm.Config{
-			Provider:        aiCfg.Provider,
-			Model:           aiCfg.Model,
-			AnthropicAPIKey: aiCfg.AnthropicAPIKey,
-			OpenAIAPIKey:    aiCfg.OpenAIAPIKey,
-			GeminiAPIKey:    aiCfg.GeminiAPIKey,
-		})
-		if err != nil {
-			return chatAgentInitMsg{err: fmt.Errorf("initialize LLM: %w\n\nRun 'datumctl ai config set anthropic_api_key <key>' to save your key", err)}
-		}
-
-		registry := datumai.NewRegistry(factory)
-		agent := datumai.NewAgent(datumai.AgentOptions{
-			LLM:           llmClient,
-			Registry:      registry,
-			SystemPrompt:  datumai.BuildSystemPrompt(org, project, namespace, false, viewContext),
-			MaxIterations: 20,
-			Gate:          datumai.TUIGate{RequestCh: confirmCh, Ctx: turnCtx},
-			IsTerminal:    false,
-		})
-		return chatAgentInitMsg{agent: agent}
-	}
-}
-
-// sendChatMessageCmd streams the agent turn, writing chunks to chunkCh.
-// Returns chatResponseMsg when the turn is complete (or errors).
-func sendChatMessageCmd(ctx context.Context, agent *datumai.Agent, text string, chunkCh chan<- string) tea.Cmd {
-	return func() tea.Msg {
-		result := agent.RunTurnStream(ctx, text, chunkCh)
-		return chatResponseMsg{response: result.Response, err: result.Err}
-	}
-}
-
-// chatConvToAgentHistory converts stored conversation messages to llm.Message
-// slice for seeding an Agent's history. Tool events (role "tool") are skipped.
-func chatConvToAgentHistory(msgs []chatstorage.Message) []llm.Message {
-	history := make([]llm.Message, 0, len(msgs))
-	for _, m := range msgs {
-		switch m.Role {
-		case "user":
-			history = append(history, llm.Message{Role: llm.RoleUser, Content: m.Content})
-		case "assistant":
-			history = append(history, llm.Message{Role: llm.RoleAssistant, Content: m.Content})
-		}
-	}
-	return history
-}
-
-// copyToClipboardCmd copies text to the system clipboard. Errors are silently dropped.
-func copyToClipboardCmd(text string) tea.Cmd {
-	return func() tea.Msg {
-		var cmd *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			cmd = exec.Command("pbcopy")
-		default:
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		}
-		cmd.Stdin = strings.NewReader(text)
-		_ = cmd.Run()
-		return nil
-	}
-}
-
-// listenForChatChunkCmd blocks until the next token chunk arrives on chunkCh
-// or the channel is closed. Returns chatChunkMsg or nil (when closed/cancelled).
-func listenForChatChunkCmd(ctx context.Context, chunkCh <-chan string) tea.Cmd {
-	return func() tea.Msg {
-		select {
-		case chunk, ok := <-chunkCh:
-			if !ok {
-				return nil // channel closed; chatResponseMsg is already in flight
-			}
-			return chatChunkMsg{chunk: chunk}
-		case <-ctx.Done():
-			return nil
-		}
-	}
-}
-
-// listenForToolEventCmd blocks until the next tool-call label arrives on ch or
-// the channel is closed / ctx is cancelled. Returns chatToolEventMsg or nil.
-func listenForToolEventCmd(ctx context.Context, ch <-chan string) tea.Cmd {
-	return func() tea.Msg {
-		select {
-		case tool, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			return chatToolEventMsg{tool: tool}
-		case <-ctx.Done():
-			return nil
-		}
-	}
-}
-
-// listenForConfirmCmd blocks until TUIGate sends a confirmation request or ctx is cancelled.
-func listenForConfirmCmd(ctx context.Context, ch <-chan datumai.ConfirmRequest) tea.Cmd {
-	return func() tea.Msg {
-		select {
-		case req := <-ch:
-			return chatConfirmReqMsg{req: req}
-		case <-ctx.Done():
-			return nil
-		}
-	}
-}
-
 type AppModel struct {
-	width, height    int
-	activePane       PaneID
-	overlay          OverlayID
-	refreshing       bool
-	preserveCursor   bool
-	detailReturnPane PaneID // pane to return to on Esc from DetailPane
-	tuiCtx           tuictx.TUIContext
-	header           components.HeaderModel
-	sidebar          components.NavSidebarModel
-	table            components.ResourceTableModel
-	banner           components.QuotaBannerModel
-	detail           components.DetailViewModel
-	quota            components.QuotaDashboardModel
-	activity         components.ActivityViewModel
-	history          components.HistoryViewModel
-	diff             components.DiffViewModel
-	ctxOverlay       components.CtxSwitcherModel
-	filterBar        components.FilterBarModel
-	statusBar        components.StatusBarModel
-	helpOverlay      components.HelpOverlayModel
+	width, height                int
+	activePane                   PaneID
+	overlay                      OverlayID
+	refreshing                   bool
+	preserveCursor               bool
+	detailReturnPane             PaneID // pane to return to on Esc from DetailPane
+	tuiCtx                       tuictx.TUIContext
+	header                       components.HeaderModel
+	sidebar                      components.NavSidebarModel
+	table                        components.ResourceTableModel
+	banner                       components.QuotaBannerModel
+	detail                       components.DetailViewModel
+	quota                        components.QuotaDashboardModel
+	activity                     components.ActivityViewModel
+	history                      components.HistoryViewModel
+	diff                         components.DiffViewModel
+	ctxOverlay                   components.CtxSwitcherModel
+	filterBar                    components.FilterBarModel
+	statusBar                    components.StatusBarModel
+	helpOverlay                  components.HelpOverlayModel
 	activityDashboard            components.ActivityDashboardModel
 	activityCRDAbsentThisSession bool
 	activityRollupFetchedAt      time.Time
 	loadState                    data.LoadState
 	resourceTypes                []data.ResourceType
-	resources        []data.ResourceRow
-	tableColumns     []string
-	tableTypeName    string
-	buckets          []data.AllowanceBucket
-	bucketLoading    bool
-	describeContent  string // raw describe text; S3 quota block appended at display time
-	describeRaw      *unstructured.Unstructured // raw object for YAML toggle (FB-009)
-	yamlMode         bool                       // true = show raw YAML instead of formatted describe
-	conditionsMode   bool                       // true = show conditions table instead of describe/yaml (FB-018)
-	eventsMode       bool                       // true = show events table instead of describe/yaml/conditions (FB-019)
-	events           []data.EventRow            // last fetched events for current resource
-	eventsLoading    bool                       // true while LoadEventsCmd is in flight
-	eventsErr        error                      // last error from ListEvents; nil on success
-	describeRT       data.ResourceType
+	resources                    []data.ResourceRow
+	tableColumns                 []string
+	tableTypeName                string
+	buckets                      []data.AllowanceBucket
+	bucketLoading                bool
+	describeContent              string                     // raw describe text; S3 quota block appended at display time
+	describeRaw                  *unstructured.Unstructured // raw object for YAML toggle (FB-009)
+	yamlMode                     bool                       // true = show raw YAML instead of formatted describe
+	conditionsMode               bool                       // true = show conditions table instead of describe/yaml (FB-018)
+	eventsMode                   bool                       // true = show events table instead of describe/yaml/conditions (FB-019)
+	events                       []data.EventRow            // last fetched events for current resource
+	eventsLoading                bool                       // true while LoadEventsCmd is in flight
+	eventsErr                    error                      // last error from ListEvents; nil on success
+	describeRT                   data.ResourceType
 	// activity state
-	activityAPIGroup  string
-	activityKind      string   // rt.Kind ("Project") — used in CEL filter
-	activityRTName    string   // rt.Name ("projects") — matches detail.ResourceKind()
-	activityName      string
-	activityNamespace string
+	activityAPIGroup         string
+	activityKind             string // rt.Kind ("Project") — used in CEL filter
+	activityRTName           string // rt.Name ("projects") — matches detail.ResourceKind()
+	activityName             string
+	activityNamespace        string
 	bucketSiblingsRestricted bool
 	bucketErr                error
 	bucketUnauthorized       bool
@@ -515,22 +225,22 @@ type AppModel struct {
 	historyName             string
 	historyNamespace        string
 	// FB-005: error recovery state.
-	showDashboard           bool // FB-041: show welcome panel while preserving loaded tableTypeName
-	lastEntryViaQuickJump  bool // FB-072: set when quick-jump dispatches TablePane; cleared on sidebar interaction
-	bucketsFetchedAt    time.Time // FB-043: time of last successful bucket fetch; zero until first success
-	loadErr             error     // last error from LoadErrorMsg; used for in-pane card
-	notLoggedIn         bool      // true when loadErr is ErrNoActiveUser; triggers login-specific UX
-	lastFailedFetchKind string // "tableList" | "describe"; determines redispatchLastFetch target
-	statusErrToken      int    // bumped per LoadErrorMsg to expire stale ClearStatusErrCmd ticks
+	showDashboard         bool      // FB-041: show welcome panel while preserving loaded tableTypeName
+	lastEntryViaQuickJump bool      // FB-072: set when quick-jump dispatches TablePane; cleared on sidebar interaction
+	bucketsFetchedAt      time.Time // FB-043: time of last successful bucket fetch; zero until first success
+	loadErr               error     // last error from LoadErrorMsg; used for in-pane card
+	notLoggedIn           bool      // true when loadErr is ErrNoActiveUser; triggers login-specific UX
+	lastFailedFetchKind   string    // "tableList" | "describe"; determines redispatchLastFetch target
+	statusErrToken        int       // bumped per LoadErrorMsg to expire stale ClearStatusErrCmd ticks
 
-	factory                 *client.DatumCloudFactory
-	rc                      data.ResourceClient
-	bc                      data.BucketClient // nil when rc doesn't implement BucketClient
-	rrc                     data.ResourceRegistrationClient // nil in tests
-	ac                      *data.ActivityClient
-	hc                      *data.HistoryClient
-	ctx                     context.Context
-	authHostname            string // auth server hostname for in-TUI device flow
+	factory      *client.DatumCloudFactory
+	rc           data.ResourceClient
+	bc           data.BucketClient               // nil when rc doesn't implement BucketClient
+	rrc          data.ResourceRegistrationClient // nil in tests
+	ac           *data.ActivityClient
+	hc           *data.HistoryClient
+	ctx          context.Context
+	authHostname string // auth server hostname for in-TUI device flow
 
 	// login overlay state (in-TUI device auth flow).
 	loginOverlay  components.LoginOverlayModel
@@ -546,24 +256,6 @@ type AppModel struct {
 
 	quotaOriginPane    DashboardOrigin // FB-048/FB-087: stash before opening QuotaDashboard
 	activityOriginPane DashboardOrigin // FB-048/FB-087: stash before opening ActivityDashboard
-
-	// AI chat pane state.
-	chat               components.ChatPaneModel
-	chatSidebar        components.ChatSidebarModel
-	chatOriginPane     DashboardOrigin
-	chatAgent          *datumai.Agent             // nil until first [a] press
-	chatInitInFlight   bool                       // true while initChatAgentCmd is in flight
-	chatConfirmCh      chan datumai.ConfirmRequest // buffered(1); nil until agent init
-	chatConfirmReply   chan bool                   // non-nil while confirm pending
-	chatTurnCtx        context.Context
-	chatTurnCancel     context.CancelFunc
-	chatSidebarFocused bool // true when Tab switches focus to sidebar
-	// Chat storage.
-	chatStore        *chatstorage.Store
-	chatConversation *chatstorage.Conversation // active conversation; nil until first message
-	// Streaming.
-	chatChunkCh    chan string // live channel for in-flight stream; nil between turns
-	chatToolEventCh chan string // receives tool-call labels during a turn; nil between turns
 }
 
 func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx tuictx.TUIContext, authHostname string) AppModel {
@@ -574,35 +266,32 @@ func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx 
 	ac := data.NewActivityClient(factory)
 	hc := data.NewHistoryClient(factory)
 	m := AppModel{
-		ctx:          ctx,
-		authHostname: authHostname,
-		factory:      factory,
-		rc:           rc,
-		bc:           bc,
-		rrc:          rrc,
-		ac:           ac,
-		hc:           hc,
-		tuiCtx:       tuiCtx,
-		header:      components.NewHeaderModel(tuiCtx),
-		sidebar:     components.NewNavSidebarModel(styles.SidebarWidth, 20),
-		table:       components.NewResourceTableModel(40, 20),
-		banner:      components.NewQuotaBannerModel(40),
+		ctx:               ctx,
+		authHostname:      authHostname,
+		factory:           factory,
+		rc:                rc,
+		bc:                bc,
+		rrc:               rrc,
+		ac:                ac,
+		hc:                hc,
+		tuiCtx:            tuiCtx,
+		header:            components.NewHeaderModel(tuiCtx),
+		sidebar:           components.NewNavSidebarModel(styles.SidebarWidth, 20),
+		table:             components.NewResourceTableModel(40, 20),
+		banner:            components.NewQuotaBannerModel(40),
 		detail:            components.NewDetailViewModel(80, 20),
 		quota:             components.NewQuotaDashboardModel(40, 20, tuiCtx.ProjectName+" (proj)"),
 		activity:          components.NewActivityViewModel(80, 20),
 		activityDashboard: components.NewActivityDashboardModel(40, 20, tuiCtx.ProjectName),
-		history:     components.NewHistoryViewModel(80, 20),
-		diff:        components.NewDiffViewModel(80, 20),
-		chat:        components.NewChatPaneModel(80, 20),
-		chatSidebar: components.NewChatSidebarModel(20, 20),
-		ctxOverlay:    components.NewCtxSwitcherModel(tuiCtx.Config, 80, 24),
-		filterBar:     components.NewFilterBarModel(),
-		helpOverlay:   components.NewHelpOverlayModel(),
-		welcomeScreen: components.NewWelcomeScreenModel(),
-		activePane:    NavPane,
+		history:           components.NewHistoryViewModel(80, 20),
+		diff:              components.NewDiffViewModel(80, 20),
+		ctxOverlay:        components.NewCtxSwitcherModel(tuiCtx.Config, 80, 24),
+		filterBar:         components.NewFilterBarModel(),
+		helpOverlay:       components.NewHelpOverlayModel(),
+		welcomeScreen:     components.NewWelcomeScreenModel(),
+		activePane:        NavPane,
 	}
 	m.updatePaneFocus()
-	m.chat.SetContext(tuiCtx.OrgName, tuiCtx.ProjectName)
 	return m
 }
 
@@ -624,8 +313,6 @@ func (m AppModel) Init() tea.Cmd {
 		m.table.SetActivityLoading(true)
 		cmds = append(cmds, data.LoadRecentProjectActivityCmd(m.ctx, m.ac, recentActivityWindow, recentActivityLimit))
 	}
-	// Open chat store in background; last conversation restored on chatStoreInitMsg.
-	cmds = append(cmds, initChatStoreCmd())
 	// Auto-refresh context cache in background if stale.
 	if m.tuiCtx.Config != nil && discovery.IsCacheStale(m.tuiCtx.Config, discovery.AutoRefreshStaleness) {
 		cmds = append(cmds, refreshContextCacheCmd(m.ctx))
@@ -643,21 +330,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.recalcLayout()
 		return m, nil
 
-	case spinner.TickMsg:
-		// Route spinner ticks to the chat pane so the processing indicator animates.
-		var cmd tea.Cmd
-		m.chat, cmd = m.chat.Update(msg)
-		cmds = append(cmds, cmd)
-
 	case tea.KeyMsg:
 		if m.overlay != NoOverlay {
 			return m.handleOverlayKey(msg, &cmds)
 		}
 		if m.filterBar.Focused() {
 			return m.handleFilterKey(msg, &cmds)
-		}
-		if m.activePane == ChatPane {
-			return m.handleChatKey(msg)
 		}
 		return m.handleNormalKey(msg, &cmds)
 
@@ -857,8 +535,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// FB-078: no force-transition — operator confirms manually via '3'.
 		if m.pendingQuotaOpen {
 			m.pendingQuotaOpen = false
-			m.table.SetPendingQuotaOpen(false)                               // FB-099: reset strip label
-			m.statusBar.PostHint("Quota dashboard ready — press [3]")        // FB-097: persistent (no HintClearCmd)
+			m.table.SetPendingQuotaOpen(false)                        // FB-099: reset strip label
+			m.statusBar.PostHint("Quota dashboard ready — press [3]") // FB-097: persistent (no HintClearCmd)
 			return m, nil
 		}
 
@@ -1002,161 +680,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quota.SetLoadErr(msg.Err)
 		}
 
-	case chatAgentInitMsg:
-		m.chatInitInFlight = false
-		m.chat.SetProcessing(false)
-		if msg.err != nil {
-			m.chat.SetAgentError(msg.err.Error())
-		} else {
-			m.chatAgent = msg.agent
-			// Seed the agent's conversation history from the restored session so
-			// the LLM has context from prior messages.
-			if m.chatConversation != nil {
-				m.chatAgent.SetHistory(chatConvToAgentHistory(m.chatConversation.Messages))
-			}
-			m.chat.SetAgentReady()
-			cmds = append(cmds, listenForConfirmCmd(m.ctx, m.chatConfirmCh))
-		}
-
-	case chatChunkMsg:
-		m.chat.AppendToStream(msg.chunk)
-		// Re-arm the chunk listener for the next token.
-		cmds = append(cmds, listenForChatChunkCmd(m.chatTurnCtx, m.chatChunkCh))
-
-	case chatToolEventMsg:
-		m.chat.AppendToolEvent(msg.tool)
-		// Re-arm the tool-event listener for the next tool call.
-		cmds = append(cmds, listenForToolEventCmd(m.chatTurnCtx, m.chatToolEventCh))
-
-	case chatResponseMsg:
-		m.chat.SetProcessing(false)
-		m.chatChunkCh = nil
-		m.chatToolEventCh = nil
-		// Clear any lingering confirm dialog if the turn ended without resolving it.
-		if m.chat.ConfirmPending() {
-			m.chat.ClearConfirmPending()
-			m.chatConfirmReply = nil
-			m.statusBar.Pane = "CHAT"
-		}
-		if msg.err != nil {
-			// On error: finalize any partial stream.
-			m.chat.FinalizeStream()
-			if !errors.Is(msg.err, context.Canceled) {
-				// Only append the error note when the turn was not cancelled by the user.
-				m.chat.AppendAssistantMessage("Error: " + msg.err.Error())
-			}
-			// On cancellation the partial stream was already shown; nothing more to append.
-		} else {
-			// Finalize the streaming slot (triggers full markdown render).
-			m.chat.FinalizeStream()
-		}
-		// Save full response to disk using the complete text from the agent.
-		assistantContent := msg.response
-		if msg.err != nil {
-			assistantContent = "Error: " + msg.err.Error()
-		}
-		if m.chatStore != nil && m.chatConversation != nil && assistantContent != "" {
-			m.chatConversation.AddMessage("assistant", assistantContent)
-			cmds = append(cmds, saveChatConvCmd(m.chatStore, m.chatConversation))
-		}
-		cmds = append(cmds, listenForConfirmCmd(m.ctx, m.chatConfirmCh))
-
-	case chatConfirmReqMsg:
-		m.chatConfirmReply = msg.req.ReplyCh
-		m.chat.SetConfirmPending(msg.req.Call)
-		m.statusBar.Pane = "CHAT_CONFIRM"
-
-	case contextCacheRefreshedMsg:
-		if msg.err == nil && msg.cfg != nil {
-			// Update the config pointer so staleContextAgeDisplay sees the fresh LastRefreshed.
-			m.tuiCtx.Config = msg.cfg
-			m.ctxOverlay = components.NewCtxSwitcherModel(msg.cfg, m.width, m.height)
-		}
-		// Errors are silently ignored — the stale-cache banner stays visible.
-
-	case chatStoreInitMsg:
-		if msg.store != nil {
-			m.chatStore = msg.store
-		}
-		if msg.last != nil {
-			// Restore last conversation into the chat pane.
-			m.chatConversation = msg.last
-			for _, mm := range msg.last.Messages {
-				switch mm.Role {
-				case "user":
-					m.chat.AppendUserMessage(mm.Content)
-				case "assistant":
-					m.chat.AppendAssistantMessage(mm.Content)
-				}
-			}
-			// Load history list for the sidebar.
-			if m.chatStore != nil {
-				cmds = append(cmds, loadChatHistoryCmd(m.chatStore))
-			}
-		}
-
-	case chatHistoryLoadedMsg:
-		m.chatSidebar.SetHistory(msg.entries)
-
-	case chatConvLoadedMsg:
-		if msg.conv == nil {
-			return m, nil
-		}
-		// Replace active conversation.
-		m.chatConversation = msg.conv
-		// Rebuild chat pane with the loaded conversation messages.
-		w, h := m.chat.Width(), m.chat.Height()
-		m.chat = components.NewChatPaneModel(w, h)
-		if m.chatAgent != nil {
-			m.chat.SetAgentReady()
-			// Sync agent history to the newly loaded conversation.
-			m.chatAgent.SetHistory(chatConvToAgentHistory(msg.conv.Messages))
-		}
-		for _, mm := range msg.conv.Messages {
-			switch mm.Role {
-			case "user":
-				m.chat.AppendUserMessage(mm.Content)
-			case "assistant":
-				m.chat.AppendAssistantMessage(mm.Content)
-			}
-		}
-		m.updatePaneFocus()
-		cmds = append(cmds, m.chat.Init())
-
-	case chatConvDeletedMsg:
-		if msg.err != nil {
-			return m, m.postHint("Delete failed: " + msg.err.Error())
-		}
-		// If the deleted conversation was the active one, clear it.
-		if m.chatConversation != nil && m.chatConversation.ID == msg.id {
-			m.chatConversation = nil
-			w, h := m.chat.Width(), m.chat.Height()
-			m.chat = components.NewChatPaneModel(w, h)
-			if m.chatAgent != nil {
-				m.chat.SetAgentReady()
-				m.chatAgent.ClearHistory()
-			}
-			m.updatePaneFocus()
-			cmds = append(cmds, m.chat.Init())
-		}
-		// Reload history list to reflect the deletion.
-		if m.chatStore != nil {
-			cmds = append(cmds, loadChatHistoryCmd(m.chatStore))
-		}
-		cmds = append(cmds, m.postHint("Conversation deleted"))
-		return m, tea.Batch(cmds...)
-
-	case chatExportedMsg:
-		if msg.err != nil {
-			return m, m.postHint("Export failed: " + msg.err.Error())
-		}
-		// Shorten path for display: replace home dir with ~
-		display := msg.path
-		if home, err := os.UserHomeDir(); err == nil {
-			display = strings.Replace(display, home, "~", 1)
-		}
-		return m, m.postHint("Exported to " + display)
-
 	case deviceAuthStartedMsg:
 		m.loginOverlay.State = components.LoginOverlayPending
 		m.loginOverlay.VerificationURI = msg.session.VerificationURI
@@ -1254,9 +777,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.registrationsLoading = false
 		m.statusBar.Hint = ""
 		m.statusBar.BumpHintToken()
-		m.pendingQuotaOpen = false              // FB-047: discard queued open on context switch
-		m.table.SetPendingQuotaOpen(false)      // FB-099: reset strip label
-		m.quotaOriginPane    = DashboardOrigin{} // FB-087: clear both stash slots on context switch
+		m.pendingQuotaOpen = false            // FB-047: discard queued open on context switch
+		m.table.SetPendingQuotaOpen(false)    // FB-099: reset strip label
+		m.quotaOriginPane = DashboardOrigin{} // FB-087: clear both stash slots on context switch
 		m.activityOriginPane = DashboardOrigin{}
 		m.quota.SetOriginLabel("")
 		m.activityDashboard.SetOriginLabel("")
@@ -1306,7 +829,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.banner.SetSiblingRestricted(false)
 		m.banner.SetRegistrations(nil)
 		m.header = components.NewHeaderModel(msg.Ctx)
-		m.chat.SetContext(msg.Ctx.OrgName, msg.Ctx.ProjectName)
 		m.quota.SetBuckets(nil)
 		m.quota.SetActiveConsumer("", "")
 		m.quota.SetSiblingRestricted(false)
@@ -1329,9 +851,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.SetForceDashboard(false)
 		m.bucketsFetchedAt = time.Time{}
 		m.quota.SetBucketFetchedAt(time.Time{})
-		m.table.SetActivityRows(nil)    // FB-042: clear welcome teaser on context switch
+		m.table.SetActivityRows(nil) // FB-042: clear welcome teaser on context switch
 		// FB-082: SetActivityLoading moved into dispatch gate below (Bug #2 fix).
-		m.table.SetAttentionItems(nil)  // FB-042
+		m.table.SetAttentionItems(nil) // FB-042
 		m.updatePaneFocus()
 		cmds = append(cmds, data.LoadResourceTypesCmd(m.ctx, m.rc))
 		if m.bc != nil {
@@ -1506,8 +1028,6 @@ func (m *AppModel) postHint(text string) tea.Cmd {
 }
 
 func (m *AppModel) updatePaneFocus() {
-	m.chat.SetFocused(m.activePane == ChatPane && !m.chatSidebarFocused)
-	m.chatSidebar.SetFocused(m.activePane == ChatPane && m.chatSidebarFocused)
 	m.sidebar.SetFocused(m.activePane == NavPane)
 	m.table.SetFocused(m.activePane == TablePane)
 	m.table.SetNavPaneFocused(m.activePane == NavPane)
@@ -1553,13 +1073,6 @@ func (m *AppModel) updatePaneFocus() {
 		m.statusBar.Pane = "DIFF"
 		m.tuiCtx.ActivePaneLabel = "DIFF"
 		m.statusBar.Mode = components.ModeDetail
-	case ChatPane:
-		m.statusBar.Pane = "CHAT"
-		if m.chatSidebarFocused {
-			m.statusBar.Pane = "CHAT_HISTORY"
-		}
-		m.statusBar.Mode = components.ModeNormal
-		m.tuiCtx.ActivePaneLabel = "CHAT"
 	}
 	// FB-078 Option B: cancel pending quota open when operator navigates away from origin pane.
 	if m.pendingQuotaOpen && m.activePane != m.quotaOriginPane.Pane {
@@ -1733,219 +1246,6 @@ func (m AppModel) handleFilterKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 	return m, cmd
 }
 
-// handleChatKey routes keyboard events while the ChatPane is active.
-func (m AppModel) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Clear transient hints on any keypress.
-	if m.statusBar.Hint != "" {
-		m.statusBar.Hint = ""
-		m.statusBar.BumpHintToken()
-	}
-
-	// While confirm is pending, only y/n/esc/ctrl+c are accepted.
-	if m.chat.ConfirmPending() {
-		switch msg.String() {
-		case "ctrl+c":
-			if m.chatConfirmReply != nil {
-				m.chatConfirmReply <- false
-				m.chatConfirmReply = nil
-			}
-			m.chat.ClearConfirmPending()
-			return m, tea.Quit
-		case "y":
-			if m.chatConfirmReply != nil {
-				m.chatConfirmReply <- true
-				m.chatConfirmReply = nil
-			}
-			m.chat.ClearConfirmPending()
-			m.statusBar.Pane = "CHAT"
-			// Re-arm listener for the next confirm in this turn (fixes multi-confirm deadlock).
-			return m, listenForConfirmCmd(m.ctx, m.chatConfirmCh)
-		case "n", "esc":
-			if m.chatConfirmReply != nil {
-				m.chatConfirmReply <- false
-				m.chatConfirmReply = nil
-			}
-			m.chat.ClearConfirmPending()
-			m.statusBar.Pane = "CHAT"
-			return m, listenForConfirmCmd(m.ctx, m.chatConfirmCh)
-		}
-		return m, nil
-	}
-
-	// Global keys — intercepted regardless of input vs sidebar focus.
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.activePane = m.chatOriginPane.Pane
-		m.showDashboard = m.chatOriginPane.ShowDashboard
-		m.updatePaneFocus()
-		return m, nil
-	case "tab":
-		m.chatSidebarFocused = !m.chatSidebarFocused
-		m.chat.SetFocused(!m.chatSidebarFocused)
-		m.chatSidebar.SetFocused(m.chatSidebarFocused)
-		if m.chatSidebarFocused {
-			m.statusBar.Pane = "CHAT_HISTORY"
-			if m.chatStore != nil {
-				return m, loadChatHistoryCmd(m.chatStore)
-			}
-		} else {
-			m.statusBar.Pane = "CHAT"
-		}
-		return m, nil
-	case "pgup":
-		m.chat.ScrollUp()
-		return m, nil
-	case "pgdown":
-		m.chat.ScrollDown()
-		return m, nil
-	case "ctrl+e":
-		if m.chatSidebarFocused {
-			return m, nil
-		}
-		if m.chatConversation == nil {
-			return m, m.postHint("No conversation to export")
-		}
-		return m, exportChatCmd(m.chatConversation)
-	}
-
-	// Input-focused mode: only dedicated send/cancel keys are intercepted;
-	// everything else flows to the textarea so the user can type freely.
-	if !m.chatSidebarFocused {
-		switch msg.String() {
-		case "enter":
-			if m.chat.Processing() || m.chatAgent == nil {
-				return m, nil
-			}
-			text := strings.TrimSpace(m.chat.InputValue())
-			if text == "" {
-				return m, nil
-			}
-			// Create a new conversation record on first message of session.
-			if m.chatConversation == nil && m.chatStore != nil {
-				var org, project string
-				if m.tuiCtx.ActiveCtx != nil {
-					org = m.tuiCtx.ActiveCtx.OrganizationID
-					project = m.tuiCtx.ActiveCtx.ProjectID
-				}
-				m.chatConversation = chatstorage.NewConversation(org, project)
-			}
-			m.chat.AppendUserMessage(text)
-			m.chat.ClearInput()
-			m.chat.SetProcessing(true)
-			var saveCmd tea.Cmd
-			if m.chatStore != nil && m.chatConversation != nil {
-				m.chatConversation.AddMessage("user", text)
-				saveCmd = saveChatConvCmd(m.chatStore, m.chatConversation)
-			}
-			if m.chatTurnCancel != nil {
-				m.chatTurnCancel()
-			}
-			m.chatTurnCtx, m.chatTurnCancel = context.WithCancel(m.ctx)
-			m.chatAgent.SetGate(datumai.TUIGate{RequestCh: m.chatConfirmCh, Ctx: m.chatTurnCtx})
-			m.chatChunkCh = make(chan string, 64)
-			m.chatToolEventCh = make(chan string, 16)
-			m.chatAgent.SetToolEventCh(m.chatToolEventCh)
-			m.chat.StartAssistantStream()
-			return m, tea.Batch(
-				m.chat.Init(),
-				sendChatMessageCmd(m.chatTurnCtx, m.chatAgent, text, m.chatChunkCh),
-				listenForChatChunkCmd(m.chatTurnCtx, m.chatChunkCh),
-				listenForToolEventCmd(m.chatTurnCtx, m.chatToolEventCh),
-				saveCmd,
-			)
-		case "alt+enter", "ctrl+enter":
-			var cmd tea.Cmd
-			m.chat, cmd = m.chat.Update(msg)
-			return m, cmd
-		case "x":
-			// Cancel an in-flight response; otherwise type normally.
-			if m.chat.Processing() {
-				if m.chatTurnCancel != nil {
-					m.chatTurnCancel()
-				}
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.chat, cmd = m.chat.Update(msg)
-			return m, cmd
-		default:
-			// All other keys (including q, a, h, j, k, c, N, arrows …) go
-			// directly to the textarea so the user can type freely.
-			var cmd tea.Cmd
-			m.chat, cmd = m.chat.Update(msg)
-			return m, cmd
-		}
-	}
-
-	// Sidebar-focused mode: command keys.
-	switch msg.String() {
-	case "q":
-		return m, tea.Quit
-	case "a":
-		m.activePane = m.chatOriginPane.Pane
-		m.showDashboard = m.chatOriginPane.ShowDashboard
-		m.updatePaneFocus()
-		return m, nil
-	case "j", "down":
-		m.chatSidebar.CursorDown()
-		return m, nil
-	case "k", "up":
-		m.chatSidebar.CursorUp()
-		return m, nil
-	case "N":
-		if m.chat.Processing() {
-			return m, nil
-		}
-		var saveCmd tea.Cmd
-		if m.chatConversation != nil && m.chatStore != nil {
-			saveCmd = saveChatConvCmd(m.chatStore, m.chatConversation)
-		}
-		var org, project string
-		if m.tuiCtx.ActiveCtx != nil {
-			org = m.tuiCtx.ActiveCtx.OrganizationID
-			project = m.tuiCtx.ActiveCtx.ProjectID
-		}
-		m.chatConversation = chatstorage.NewConversation(org, project)
-		w, h := m.chat.Width(), m.chat.Height()
-		m.chat = components.NewChatPaneModel(w, h)
-		if m.chatAgent != nil {
-			m.chat.SetAgentReady()
-		}
-		m.chat.SetContext(m.tuiCtx.OrgName, m.tuiCtx.ProjectName)
-		if m.chatAgent != nil {
-			m.chatAgent.ClearHistory()
-		}
-		m.updatePaneFocus()
-		var histCmd tea.Cmd
-		if m.chatStore != nil {
-			histCmd = loadChatHistoryCmd(m.chatStore)
-		}
-		return m, tea.Batch(saveCmd, histCmd)
-	case "c":
-		last := m.chat.LastAssistantMessage()
-		if last != "" {
-			return m, tea.Batch(
-				copyToClipboardCmd(last),
-				m.postHint("Copied to clipboard"),
-			)
-		}
-		return m, nil
-	case "enter":
-		if entry, ok := m.chatSidebar.SelectedHistoryEntry(); ok && m.chatStore != nil {
-			return m, loadChatConvCmd(m.chatStore, entry.ID)
-		}
-		return m, nil
-	case "D":
-		if entry, ok := m.chatSidebar.SelectedHistoryEntry(); ok && m.chatStore != nil {
-			return m, tea.Batch(deleteChatConvCmd(m.chatStore, entry.ID), m.postHint("Deleting conversation…"))
-		}
-		return m, nil
-	}
-	return m, nil
-}
-
 func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.Cmd) {
 	// Every keypress clears any transient hint; explicit clears below are defensive documentation only.
 	if m.statusBar.Hint != "" {
@@ -2067,8 +1367,8 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 		if m.activePane == DetailPane && m.describeRaw != nil {
 			m.conditionsMode = !m.conditionsMode
 			if m.conditionsMode {
-				m.yamlMode = false    // quad-state exclusivity // AC#20
-				m.eventsMode = false  // AC#20
+				m.yamlMode = false   // quad-state exclusivity // AC#20
+				m.eventsMode = false // AC#20
 				m.detail.SetMode("conditions")
 			} else {
 				m.detail.SetMode("describe")
@@ -2724,51 +2024,6 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 		}
 		return m, nil
 
-	case "a":
-		// [a] always opens the AI chat pane from any state.
-		if !m.notLoggedIn {
-			m.chatOriginPane = DashboardOrigin{Pane: m.activePane, ShowDashboard: m.showDashboard}
-			m.activePane = ChatPane
-			m.chatSidebarFocused = false
-			m.updatePaneFocus()
-			// Only dispatch init if no agent exists and no init is already in flight.
-			if m.chatAgent == nil && !m.chatInitInFlight {
-				m.chatInitInFlight = true
-				if m.chatTurnCancel != nil {
-					m.chatTurnCancel()
-				}
-				m.chatConfirmCh = make(chan datumai.ConfirmRequest, 1)
-				m.chatTurnCtx, m.chatTurnCancel = context.WithCancel(m.ctx)
-				m.chat.SetProcessing(true)
-				var org, project string
-				if m.tuiCtx.ActiveCtx != nil {
-					org = m.tuiCtx.ActiveCtx.OrganizationID
-					project = m.tuiCtx.ActiveCtx.ProjectID
-				}
-				var viewContext string
-				switch m.chatOriginPane.Pane {
-				case TablePane:
-					if rt, ok := m.sidebar.SelectedType(); ok {
-						viewContext = fmt.Sprintf("CURRENT VIEW: The user is browsing a list of %s resources.", rt.Kind)
-						if row, ok2 := m.table.SelectedRow(); ok2 && row.Name != "" {
-							viewContext += fmt.Sprintf(" The currently highlighted resource is named %q.", row.Name)
-						}
-					}
-				case DetailPane:
-					if m.describeRT.Kind != "" && m.detail.ResourceName() != "" {
-						viewContext = fmt.Sprintf("CURRENT VIEW: The user is viewing the detail page for %s %q.", m.describeRT.Kind, m.detail.ResourceName())
-					}
-				}
-				return m, tea.Batch(
-					m.chat.Init(),
-					initChatAgentCmd(m.ctx, m.factory, m.chatConfirmCh, m.chatTurnCtx,
-						org, project, m.tuiCtx.Namespace, viewContext),
-				)
-			}
-			// Agent already exists — re-focus the textarea so typed text is visible.
-			return m, m.chat.Init()
-		}
-		return m, nil
 	case "x":
 		switch m.activePane {
 		case TablePane:
@@ -3040,7 +2295,7 @@ func (m AppModel) detailModeLabel() string {
 // FB-084: retryable gates [r]; copy qualified to "retry describe". FB-052.
 // FB-106: contentW<40 renders short form "[r] retry" to avoid overflow at narrow widths.
 func placeholderActionRow(errMode bool, retryable bool, contentW int, accentBold, muted lipgloss.Style) string {
-	eKey   := "  " + accentBold.Render("[E]") + muted.Render(" events")
+	eKey := "  " + accentBold.Render("[E]") + muted.Render(" events")
 	escKey := "  " + accentBold.Render("[Esc]") + muted.Render(" back")
 	if errMode && retryable {
 		retryCopy := " retry describe"
@@ -3062,7 +2317,7 @@ func (m AppModel) buildDetailContent() string {
 	}
 	// FB-024/FB-051/FB-052: placeholder when describe unavailable but events are loaded.
 	if m.describeRaw == nil && m.events != nil && !m.yamlMode && !m.conditionsMode && !m.eventsMode {
-		muted      := lipgloss.NewStyle().Foreground(styles.Muted)
+		muted := lipgloss.NewStyle().Foreground(styles.Muted)
 		accentBold := lipgloss.NewStyle().Foreground(styles.Accent).Bold(true)
 
 		errMode := m.loadState == data.LoadStateError &&
@@ -3244,13 +2499,6 @@ func (m AppModel) recalcLayout() AppModel {
 	m.diff.SetSize(tableInnerW, tableInnerH)
 	m.diff.SetFocused(m.activePane == DiffPane)
 
-	chatSidebarW := sidebarWidth
-	chatPaneW := tableW
-	chatSidebarInnerW, chatSidebarInnerH := styles.PaneInnerSize(chatSidebarW, mainH)
-	chatPaneInnerW, chatPaneInnerH := styles.PaneInnerSize(chatPaneW, mainH)
-	m.chat.SetSize(chatPaneInnerW, chatPaneInnerH)
-	m.chatSidebar.SetSize(chatSidebarInnerW, chatSidebarInnerH)
-
 	m.ctxOverlay = components.NewCtxSwitcherModel(m.tuiCtx.Config, m.width, m.height)
 	m.helpOverlay.Width = m.width
 	m.helpOverlay.Height = m.height
@@ -3324,11 +2572,6 @@ func (m AppModel) View() tea.View {
 		mainContent = lipgloss.JoinHorizontal(lipgloss.Top,
 			m.sidebar.View(),
 			m.diff.View(),
-		)
-	case ChatPane:
-		mainContent = lipgloss.JoinHorizontal(lipgloss.Top,
-			m.chatSidebar.View(),
-			m.chat.View(),
 		)
 	default:
 		rightCol := m.tableView()
