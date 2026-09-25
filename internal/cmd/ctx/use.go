@@ -52,7 +52,7 @@ func runUse(_ *cobra.Command, args []string) error {
 			if owner := cfg.FindContextOwner(args[0], activeSession); owner != nil {
 				return customerrors.NewUserErrorWithHint(
 					fmt.Sprintf("Context %q belongs to the session for %s, which is not active.", args[0], owner.UserEmail),
-					fmt.Sprintf("Run 'datumctl auth switch %s' first, then 'datumctl ctx use %s'.", owner.UserEmail, args[0]),
+					fmt.Sprintf("Run 'datumctl auth switch %s' first, then 'datumctl ctx use %s'.", cfg.SwitchArgs(owner), args[0]),
 				)
 			}
 			return customerrors.NewUserErrorWithHint(
