@@ -139,8 +139,8 @@ func SelectSession(sessions []*datumconfig.Session, activeSessionName string) (s
 
 	if !isTerminal() {
 		return "", customerrors.NewUserErrorWithHint(
-			"Multiple sessions found for this email. Interactive selection requires a terminal.",
-			"Run 'datumctl auth list' to see sessions and identify the email + endpoint to use.",
+			"Multiple sessions match. Interactive selection requires a terminal.",
+			"Run 'datumctl auth list' to see sessions, then 'datumctl auth switch <email> --endpoint <host>'.",
 		)
 	}
 
@@ -186,6 +186,12 @@ func SelectSession(sessions []*datumconfig.Session, activeSessionName string) (s
 	return selected, nil
 }
 
-func isTerminal() bool {
+// IsTerminal reports whether stdin is an interactive terminal. It is a
+// variable so callers' tests can simulate running with or without a terminal.
+var IsTerminal = func() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+func isTerminal() bool {
+	return IsTerminal()
 }
