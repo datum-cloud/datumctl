@@ -107,7 +107,12 @@ Get started:
 
 Run one command as another signed-in account, leaving the active one as is:
   datumctl get dnszones --session user@example.com@api.staging.env.datum.net
-  DATUM_SESSION=user@example.com datumctl get dnszones`,
+  DATUM_SESSION=user@example.com datumctl get dnszones
+
+datumctl also sets DATUM_SESSION for plugins it runs, so a plugin's own
+datumctl calls act as the same session. A stale DATUM_SESSION only affects
+commands that need a session — version, plugin list, and similar commands
+are unaffected.`,
 		// ArbitraryArgs allows unknown subcommand names to reach RunE so the
 		// plugin dispatch logic can handle them before Cobra rejects them.
 		Args: cobra.ArbitraryArgs,
