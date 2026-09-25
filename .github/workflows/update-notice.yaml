@@ -1,0 +1,18 @@
+name: "update-notice"
+
+on:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-notice:
+    uses: datum-cloud/actions/.github/workflows/update-notice.yaml@main
+    secrets: inherit
