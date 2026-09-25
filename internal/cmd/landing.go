@@ -29,7 +29,16 @@ func runLanding(cmd *cobra.Command, _ []string) {
 		return
 	}
 
-	session := cfg.ActiveSessionEntry()
+	session, err := cfg.ActiveSessionEntryE()
+	if err != nil {
+		// A stale DATUM_SESSION names no session. The landing page is a
+		// read-only "what's my state" view, so render it against the real
+		// active session rather than hard-failing a command with no
+		// subcommand to retry — but say so, since it's why the "Session"
+		// line below won't match DATUM_SESSION.
+		fmt.Fprintf(out, "Note: DATUM_SESSION matches no signed-in session; showing the active session instead.\n\n")
+		session = cfg.ActiveSessionEntry()
+	}
 	if session == nil {
 		printLoggedOutLanding(out)
 		return

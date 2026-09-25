@@ -268,12 +268,22 @@ func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.DiscoveredContext, 
 	if err := authutil.EnsureUserKeysMigrated(cfg); err != nil {
 		return nil, nil, err
 	}
-	ctxEntry := cfg.CurrentContextEntry()
+	// CurrentContextEntryE resolves a pending DATUM_SESSION override before
+	// consulting it, so a stale value fails here with a clear error instead of
+	// silently building a REST config for the real active session.
+	ctxEntry, err := cfg.CurrentContextEntryE()
+	if err != nil {
+		return nil, nil, err
+	}
 	if ctxEntry == nil {
 		// Under a session override with no context, still hand back the
 		// overriding session so its endpoint and TLS settings apply.
 		if datumconfig.HasSessionOverride() {
-			return nil, cfg.ActiveSessionEntry(), nil
+			session, err := cfg.ActiveSessionEntryE()
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, session, nil
 		}
 		return nil, nil, nil
 	}

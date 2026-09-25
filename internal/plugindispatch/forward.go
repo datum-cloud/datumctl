@@ -117,14 +117,20 @@ func splitLeadingSessionFlag(args []string) (value string, rest []string, found 
 // applyPluginSessionOverride installs the session a plugin runs as: the
 // --session flag when given, else DATUM_SESSION. BuildEnv then reports that
 // session's name and API host to the plugin.
+//
+// --session is validated immediately, same as the root command. DATUM_SESSION
+// is only recorded here; it is resolved lazily by GetUserKeyForCurrentSession
+// inside BuildEnv, so a plugin that never needs the session (or a stale value
+// left over from a previous logout) does not stop the plugin from running —
+// BuildEnv exports an empty DATUM_SESSION/DATUM_API_HOST/DATUM_ORG rather than
+// the unrelated real active session.
 func applyPluginSessionOverride(flagValue string, hasFlag bool) error {
 	if hasFlag {
 		_, err := datumconfig.ApplySessionOverride(flagValue, datumconfig.SessionOverrideFromFlag)
 		return err
 	}
 	if v := os.Getenv(datumconfig.SessionEnvVar); v != "" {
-		_, err := datumconfig.ApplySessionOverride(v, datumconfig.SessionOverrideFromEnv)
-		return err
+		datumconfig.SetPendingSessionOverride(v)
 	}
 	return nil
 }

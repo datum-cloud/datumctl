@@ -112,23 +112,22 @@ func TestBuildEnv_SessionOverride(t *testing.T) {
 	}
 }
 
+// A wrong --session value still fails immediately: it is a mistake in this
+// invocation, not a stale ambient export, so there is nothing to gain by
+// deferring it.
 func TestApplyPluginSessionOverride_Errors(t *testing.T) {
 	tests := []struct {
 		name    string
 		flag    string
-		env     string
 		hasFlag bool
 		want    []string
 	}{
 		{name: "shared email", flag: "swells@datum.net", hasFlag: true,
 			want: []string{"ambiguous", "--session " + ovProd, "--session " + ovStaging}},
-		{name: "unknown env value", env: "nobody@example.com",
-			want: []string{"No session matches DATUM_SESSION nobody@example.com.", ovSolo}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setupPluginOverrideEnv(t)
-			t.Setenv(datumconfig.SessionEnvVar, tt.env)
 			err := applyPluginSessionOverride(tt.flag, tt.hasFlag)
 			if err == nil {
 				t.Fatal("expected an error")
@@ -146,6 +145,27 @@ func TestApplyPluginSessionOverride_Errors(t *testing.T) {
 				t.Error("a failed override must not leave one installed")
 			}
 		})
+	}
+}
+
+// A stale DATUM_SESSION (matching no session) must not stop a plugin from
+// running, and BuildEnv must not paper over it by exporting the real active
+// session under DATUM_SESSION: that would run the plugin's own datumctl calls
+// as an account the user never asked for.
+func TestApplyPluginSessionOverride_StaleEnvDoesNotError(t *testing.T) {
+	f := setupPluginOverrideEnv(t)
+	t.Setenv(datumconfig.SessionEnvVar, "nobody@example.com")
+
+	if err := applyPluginSessionOverride("", false); err != nil {
+		t.Fatalf("apply override: %v", err)
+	}
+
+	env, err := BuildEnv(f)
+	if err != nil {
+		t.Fatalf("BuildEnv: %v", err)
+	}
+	if got := envValue(env, "DATUM_SESSION"); got != "" {
+		t.Errorf("DATUM_SESSION = %q, want empty (must not leak the real active session %q)", got, ovProd)
 	}
 }
 

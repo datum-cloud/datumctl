@@ -39,6 +39,14 @@ var sessionOverride struct {
 	name    string
 	source  SessionOverrideSource
 	context string // context picked in this process (console switcher)
+
+	// pending holds a DATUM_SESSION value recorded without validating it. A
+	// wrong --session value still fails immediately at the command line, but
+	// DATUM_SESSION is resolved lazily, on the first call that consults the
+	// active session, so a stale export left behind by a previous login only
+	// breaks the commands that actually need a session. See
+	// ResolvePendingOverride.
+	pending string
 }
 
 // SetSessionOverride makes every lookup of the active session in this process
@@ -51,11 +59,27 @@ func SetSessionOverride(name string, source SessionOverrideSource) {
 	sessionOverride.name = name
 	sessionOverride.source = source
 	sessionOverride.context = ""
+	sessionOverride.pending = ""
 }
 
-// ClearSessionOverride removes the process-wide session override.
+// ClearSessionOverride removes the process-wide session override, including
+// any unresolved pending DATUM_SESSION value.
 func ClearSessionOverride() {
 	SetSessionOverride("", "")
+}
+
+// SetPendingSessionOverride records a DATUM_SESSION value without validating
+// it against the config. Nothing fails until something calls
+// ResolvePendingOverride (via ActiveSessionEntryE / CurrentContextEntryE), so
+// commands that never consult the active session succeed even when the value
+// names no session.
+func SetPendingSessionOverride(value string) {
+	sessionOverride.mu.Lock()
+	defer sessionOverride.mu.Unlock()
+	sessionOverride.name = ""
+	sessionOverride.source = SessionOverrideFromEnv
+	sessionOverride.context = ""
+	sessionOverride.pending = value
 }
 
 // SessionOverride returns the overriding session name and where it came from,
@@ -66,10 +90,16 @@ func SessionOverride() (string, SessionOverrideSource) {
 	return sessionOverride.name, sessionOverride.source
 }
 
-// HasSessionOverride reports whether this process runs as an overriding session.
+// HasSessionOverride reports whether this process runs as an overriding
+// session: a validated --session, an already-resolved DATUM_SESSION, or a
+// DATUM_SESSION still pending resolution. Callers that only need to know
+// whether to skip persisting the active session (console re-login, the
+// context switcher) should treat a pending override the same as a resolved
+// one, since resolving it later must not change their earlier decision.
 func HasSessionOverride() bool {
-	name, _ := SessionOverride()
-	return name != ""
+	sessionOverride.mu.RLock()
+	defer sessionOverride.mu.RUnlock()
+	return sessionOverride.name != "" || sessionOverride.pending != ""
 }
 
 // SetOverrideContext selects a context for the rest of this process while a
@@ -173,6 +203,58 @@ func (c *ConfigV1Beta1) ResolveSessionSelector(value string, source SessionOverr
 		fmt.Sprintf("No session matches %s %s.", source, value),
 		b.String(),
 	)
+}
+
+// resolvePendingOverride validates a DATUM_SESSION recorded via
+// SetPendingSessionOverride against cfg, the first time something needs the
+// active session. On success it caches the resolved session name so later
+// calls in this process skip re-resolving. On failure it returns the same
+// clear UserError ResolveSessionSelector would give a bad --session, so a
+// stale DATUM_SESSION never reads back as "not logged in" — it fails loudly
+// for whatever command needed a session.
+//
+// A no-op when there is nothing pending: no override, or one already
+// resolved (from --session or an earlier call here).
+func resolvePendingOverride(cfg *ConfigV1Beta1) error {
+	sessionOverride.mu.RLock()
+	name := sessionOverride.name
+	pending := sessionOverride.pending
+	source := sessionOverride.source
+	sessionOverride.mu.RUnlock()
+
+	if name != "" || pending == "" {
+		return nil
+	}
+
+	s, err := cfg.ResolveSessionSelector(pending, source)
+	if err != nil {
+		return err
+	}
+	SetSessionOverride(s.Name, source)
+	return nil
+}
+
+// ActiveSessionEntryE is the error-returning counterpart of ActiveSessionEntry.
+// It resolves a pending DATUM_SESSION override first, so a stale value
+// surfaces as a UserError instead of silently falling back to the stored
+// active session. Callers that need a session (the REST config factory,
+// GetUserKeyForCurrentSession, whoami, plugin env injection) should call this
+// instead of ActiveSessionEntry.
+func (c *ConfigV1Beta1) ActiveSessionEntryE() (*Session, error) {
+	if err := resolvePendingOverride(c); err != nil {
+		return nil, err
+	}
+	return c.ActiveSessionEntry(), nil
+}
+
+// CurrentContextEntryE is the error-returning counterpart of
+// CurrentContextEntry, resolving a pending DATUM_SESSION override first. See
+// ActiveSessionEntryE.
+func (c *ConfigV1Beta1) CurrentContextEntryE() (*DiscoveredContext, error) {
+	if err := resolvePendingOverride(c); err != nil {
+		return nil, err
+	}
+	return c.CurrentContextEntry(), nil
 }
 
 // ApplySessionOverride resolves value against the config at the default path

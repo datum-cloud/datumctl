@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/keyring"
 	"go.datum.net/datumctl/internal/miloapi"
 )
@@ -112,6 +114,27 @@ func TestToRESTConfig_SessionOverride(t *testing.T) {
 				t.Errorf("ServerName = %q, want %q", rc.ServerName, tt.wantServer)
 			}
 		})
+	}
+}
+
+// A DATUM_SESSION that names no session must fail ToRESTConfig with the same
+// clear, list-of-choices error a bad --session gives — not silently build a
+// REST config for the real active session.
+func TestToRESTConfig_StaleEnvSessionOverride(t *testing.T) {
+	f := setupFactoryOverrideEnv(t)
+	datumconfig.SetPendingSessionOverride("nobody@example.com")
+
+	_, err := f.ConfigFlags.ToRESTConfig()
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, ok := customerrors.IsUserError(err); !ok {
+		t.Errorf("error is not a UserError: %v", err)
+	}
+	for _, want := range []string{"No session matches DATUM_SESSION nobody@example.com.", ovProd, ovStaging, ovSolo} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q:\n%s", want, err)
+		}
 	}
 }
 

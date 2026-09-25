@@ -18,6 +18,13 @@ const sessionFlag = "session"
 // and current context goes through datumconfig, so installing it here reaches
 // every command without touching the config file.
 //
+// An explicit --session value is validated immediately: a wrong value fails
+// this command right away, same as before. DATUM_SESSION is recorded without
+// validating it — datumconfig resolves it lazily, the first time something
+// consults the active session, so a stale export left behind by a previous
+// logout (or inherited from a plugin) does not break commands that never read
+// the session, such as version, plugin list, or completion.
+//
 // Commands annotated with datumconfig.SessionOverrideAnnotation change the
 // active session themselves: they reject --session and ignore DATUM_SESSION.
 // A command that defines its own local --session flag (auth get-token) handles
@@ -48,8 +55,7 @@ func applySessionOverride(cmd *cobra.Command) error {
 	}
 
 	if v := os.Getenv(datumconfig.SessionEnvVar); v != "" {
-		_, err := datumconfig.ApplySessionOverride(v, datumconfig.SessionOverrideFromEnv)
-		return err
+		datumconfig.SetPendingSessionOverride(v)
 	}
 	return nil
 }

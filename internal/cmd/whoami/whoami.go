@@ -46,7 +46,10 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	session := cfg.ActiveSessionEntry()
+	session, err := cfg.ActiveSessionEntryE()
+	if err != nil {
+		return err
+	}
 	if session == nil {
 		return authutil.ErrNoActiveUser
 	}

@@ -309,6 +309,73 @@ func TestSessionOverrideRejectedByActiveSessionCommands(t *testing.T) {
 	}
 }
 
+// A stale DATUM_SESSION — left over from a previous logout, or inherited from
+// a plugin — must not break commands that never consult the active session.
+// It is resolved lazily, only when something actually needs a session.
+func TestSessionOverrideStaleEnvDoesNotBreakSessionlessCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"version --client", []string{"version", "--client"}},
+		{"plugin list", []string{"plugin", "list"}},
+		{"completion bash", []string{"completion", "bash"}},
+		{"--help", []string{"--help"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupOverrideEnv(t)
+			t.Setenv(datumconfig.SessionEnvVar, "nobody@example.com")
+
+			out, err := runRoot(t, tt.args...)
+			if err != nil {
+				t.Fatalf("%v should succeed with a stale DATUM_SESSION, got: %v\n%s", tt.args, err, out)
+			}
+			if strings.Contains(out, "No session matches") {
+				t.Errorf("%v should not resolve DATUM_SESSION at all:\n%s", tt.args, out)
+			}
+		})
+	}
+}
+
+// Bare `datumctl` (the landing page) does read the active session to render
+// itself, but a stale DATUM_SESSION should not turn a no-subcommand invocation
+// into a hard error: it renders the page for the real active session and says
+// why DATUM_SESSION was ignored.
+func TestSessionOverrideStaleEnvOnLandingPage(t *testing.T) {
+	setupOverrideEnv(t)
+	t.Setenv(datumconfig.SessionEnvVar, "nobody@example.com")
+
+	out, err := runRoot(t)
+	if err != nil {
+		t.Fatalf("bare datumctl should succeed with a stale DATUM_SESSION, got: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "DATUM_SESSION matches no signed-in session") {
+		t.Errorf("output missing the stale-override note:\n%s", out)
+	}
+	if !strings.Contains(out, "swells@datum.net") {
+		t.Errorf("output should still show the real active session:\n%s", out)
+	}
+}
+
+// A wrong --session value is a mistake in this invocation, not a stale
+// ambient export, so it still fails immediately — even for a command that
+// never otherwise consults the session.
+func TestSessionOverrideBadFlagFailsSessionlessCommand(t *testing.T) {
+	setupOverrideEnv(t)
+
+	out, err := runRoot(t, "version", "--client", "--session", "nobody@example.com")
+	if err == nil {
+		t.Fatalf("expected an error, got output:\n%s", out)
+	}
+	if _, ok := customerrors.IsUserError(err); !ok {
+		t.Errorf("error is not a UserError: %v", err)
+	}
+	if !strings.Contains(out, "No session matches --session nobody@example.com.") {
+		t.Errorf("output missing the clear error:\n%s", out)
+	}
+}
+
 // Commands that change the active session ignore DATUM_SESSION, even when it
 // is unresolvable, and act on the stored active session as before.
 func TestSessionOverrideEnvIgnoredByActiveSessionCommands(t *testing.T) {
