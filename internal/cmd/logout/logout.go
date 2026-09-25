@@ -24,7 +24,13 @@ func Command() *cobra.Command {
 		Long: `Remove local authentication credentials.
 
 Specify an email to log out sessions for that user.
-Use --all to log out all users.`,
+Use --all to log out all users.
+
+Logout changes which sessions exist, so it rejects the global --session flag
+and ignores DATUM_SESSION.`,
+		Annotations: map[string]string{
+			datumconfig.SessionOverrideAnnotation: datumconfig.SessionOverrideRejected,
+		},
 		Args: func(cmd *cobra.Command, args []string) error {
 			allFlag, _ := cmd.Flags().GetBool("all")
 			if allFlag && len(args) > 0 {

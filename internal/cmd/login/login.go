@@ -40,7 +40,13 @@ By default, opens your browser for OAuth2 PKCE authentication. Use
 --no-browser in headless environments (SSH, CI, containers) to authenticate
 via a device-code flow that does not need a browser on this machine.
 
-Use --credentials to authenticate as a service account (non-interactive).`,
+Use --credentials to authenticate as a service account (non-interactive).
+
+Login makes the new session active, so it rejects the global --session flag
+and ignores DATUM_SESSION.`,
+		Annotations: map[string]string{
+			datumconfig.SessionOverrideAnnotation: datumconfig.SessionOverrideRejected,
+		},
 		Example: `  # Log in (opens browser, then picks a context)
   datumctl login
 

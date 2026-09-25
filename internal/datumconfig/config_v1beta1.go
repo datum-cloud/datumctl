@@ -434,7 +434,13 @@ func appendUnique(s []string, v string) []string {
 }
 
 // CurrentContextEntry returns the active context, or nil if none is set.
+// Under a session override (see SetSessionOverride) it returns a context owned
+// by the overriding session, falling back to that session's last-used context,
+// so a command never pairs one session's credentials with another's scope.
 func (c *ConfigV1Beta1) CurrentContextEntry() *DiscoveredContext {
+	if name, _ := SessionOverride(); name != "" {
+		return c.overrideContextEntry(name)
+	}
 	if c.CurrentContext == "" {
 		return nil
 	}
@@ -445,8 +451,12 @@ func (c *ConfigV1Beta1) CurrentContextEntry() *DiscoveredContext {
 // is authoritative: whatever context is selected determines which environment
 // is active, so whoami and every request agree. The stored ActiveSession is
 // only a fallback for when no current context resolves (e.g. right after login
-// before a context is picked).
+// before a context is picked). A session override (--session or DATUM_SESSION)
+// takes precedence over both for the life of the process.
 func (c *ConfigV1Beta1) ActiveSessionEntry() *Session {
+	if name, _ := SessionOverride(); name != "" {
+		return c.SessionByName(name)
+	}
 	if ctx := c.CurrentContextEntry(); ctx != nil {
 		if s := c.SessionByName(ctx.Session); s != nil {
 			return s

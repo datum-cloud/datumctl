@@ -64,7 +64,18 @@ DATUM_PROJECT=my-project datumctl get dnszones
 DATUM_ORGANIZATION=my-org datumctl get projects
 ```
 
-`--project` and `--organization` flags work too. For machine-to-machine auth, see `datumctl login --credentials` for the machine-account flow.
+`--project` and `--organization` flags work too.
+
+To run one command as another signed-in account without switching the active one, name its session with `--session` or `DATUM_SESSION`. The value is a session name (`email@api-host`) or an email signed in on only one endpoint. The command uses that session's last context unless you pass a scope:
+
+```bash
+datumctl get dnszones --session alice@example.com@api.staging.env.datum.net
+DATUM_SESSION=alice@example.com datumctl get projects
+```
+
+datumctl also sets `DATUM_SESSION` for plugins it runs, so a plugin's own `datumctl` calls act as the same session. A stale `DATUM_SESSION` — left over from a previous logout, or inherited this way from a plugin — only affects commands that need a session; `datumctl version`, `datumctl plugin list`, and similar commands are unaffected.
+
+For machine-to-machine auth, see `datumctl login --credentials` for the machine-account flow.
 
 ## Agent Skills
 

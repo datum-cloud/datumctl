@@ -29,7 +29,16 @@ func runLanding(cmd *cobra.Command, _ []string) {
 		return
 	}
 
-	session := cfg.ActiveSessionEntry()
+	session, err := cfg.ActiveSessionEntryE()
+	if err != nil {
+		// A stale DATUM_SESSION names no session. The landing page is a
+		// read-only "what's my state" view, so render it against the real
+		// active session rather than hard-failing a command with no
+		// subcommand to retry — but say so, since it's why the "Session"
+		// line below won't match DATUM_SESSION.
+		fmt.Fprintf(out, "Note: DATUM_SESSION matches no signed-in session; showing the active session instead.\n\n")
+		session = cfg.ActiveSessionEntry()
+	}
 	if session == nil {
 		printLoggedOutLanding(out)
 		return
@@ -337,6 +346,7 @@ var landingTips = []string{
 	"'datumctl plugin index add <name> <url>' registers a team or community catalog.",
 	// Power-user tips
 	"Set DATUM_PROJECT or DATUM_ORGANIZATION to override context for a single command.",
+	"Pass --session or set DATUM_SESSION to run a command as another signed-in account without switching.",
 	"'datumctl describe <resource> <name>' shows status conditions — handy for debugging.",
 	"JSON and YAML both work with -f; mix them freely in a single directory.",
 	"'datumctl version --client' prints the local version without hitting the server.",

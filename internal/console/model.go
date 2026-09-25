@@ -122,7 +122,11 @@ func finishDeviceAuthCmd(ctx context.Context, session *authutil.DeviceAuthSessio
 		}
 		s := authutil.BuildSession(result, session.AuthHostname)
 		cfg.UpsertSession(s)
-		cfg.ActiveSession = s.Name
+		// A console started with --session or DATUM_SESSION keeps the stored
+		// active session unchanged, even across a re-login.
+		if !datumconfig.HasSessionOverride() {
+			cfg.ActiveSession = s.Name
+		}
 		tknSrc, tErr := authutil.GetTokenSourceForUser(ctx, result.UserKey)
 		if tErr == nil {
 			orgs, projects, _ := discovery.FetchOrgsAndProjects(ctx, result.APIHostname, tknSrc, result.Subject)
