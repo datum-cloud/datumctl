@@ -154,16 +154,17 @@ func BuildEnv(factory *client.DatumCloudFactory) ([]string, error) {
 	// DATUM_* variables always describe the same account — the one
 	// CurrentContext/ActiveSession resolves to — rather than pairing a
 	// current session name with a stale, unrelated keyring host.
+	// GetUserKeyForCurrentSession also creates the session for users whose
+	// login predates the session config, so their first command can be a
+	// plugin.
 	sessionName := ""
 	apiHost := ""
-	if cfg, cfgErr := datumconfig.LoadAuto(); cfgErr == nil && cfg != nil {
-		if session := cfg.ActiveSessionEntry(); session != nil {
-			sessionName = session.Name
-			if session.Endpoint.Server != "" {
-				apiHost = datumconfig.StripScheme(session.Endpoint.Server)
-			} else if host, hostErr := authutil.GetAPIHostnameForUser(session.UserKey); hostErr == nil {
-				apiHost = host
-			}
+	if userKey, session, err := authutil.GetUserKeyForCurrentSession(); err == nil && session != nil {
+		sessionName = session.Name
+		if session.Endpoint.Server != "" {
+			apiHost = datumconfig.StripScheme(session.Endpoint.Server)
+		} else if host, hostErr := authutil.GetAPIHostnameForUser(userKey); hostErr == nil {
+			apiHost = host
 		}
 	}
 

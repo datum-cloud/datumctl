@@ -25,6 +25,9 @@ func buildMinimalFactory(t *testing.T) *client.DatumCloudFactory {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("USERPROFILE", tmpHome) // Windows compat
+	// BuildEnv reads the keyring; start from an empty mock so neither the
+	// developer's real credentials nor another test's entries leak in.
+	keyring.MockInit()
 
 	f, err := client.NewDatumFactory(context.Background())
 	if err != nil {
@@ -178,6 +181,7 @@ func TestBuildEnv_sessionPropagated(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("USERPROFILE", tmpHome)
+	keyring.MockInit()
 
 	cfgDir := filepath.Join(tmpHome, ".datumctl")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
@@ -232,6 +236,10 @@ func TestBuildEnv_FollowsSwitchedAccountNotLegacyKeyring(t *testing.T) {
 	// Simulate the account that logged in last, before the switch — this is
 	// what the legacy keyring marker names, and what a call site reading it
 	// directly would still use.
+	oldCreds := `{"token":{"access_token":"x"},"hostname":"auth.datum.net","api_hostname":"api.datum.net","user_email":"old@example.com"}`
+	if err := keyring.Set(authutil.ServiceName, "old@example.com@auth.datum.net", oldCreds); err != nil {
+		t.Fatalf("seed old account credentials: %v", err)
+	}
 	if err := keyring.Set(authutil.ServiceName, authutil.ActiveUserKey, "old@example.com@auth.datum.net"); err != nil {
 		t.Fatalf("seed legacy active_user: %v", err)
 	}
@@ -277,6 +285,43 @@ func TestBuildEnv_FollowsSwitchedAccountNotLegacyKeyring(t *testing.T) {
 	}
 	if got := envValue(env, "DATUM_API_HOST"); got != "api.staging.env.datum.net" {
 		t.Errorf("DATUM_API_HOST=%q, want %q (the switched-to account's host, not the old account's)", got, "api.staging.env.datum.net")
+	}
+}
+
+// TestBuildEnv_LegacyLoginWithoutSessionConfig covers a user whose login
+// predates the session config: credentials sit in the keyring and the config
+// has no sessions. A plugin run as their first command must still receive the
+// API host from those credentials.
+func TestBuildEnv_LegacyLoginWithoutSessionConfig(t *testing.T) {
+	// Not parallel — uses t.Setenv and the mock keyring.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+	keyring.MockInit()
+
+	creds := `{"token":{"access_token":"x"},"hostname":"auth.datum.net","api_hostname":"api.datum.net","user_email":"user@example.com"}`
+	if err := keyring.Set(authutil.ServiceName, "user@example.com", creds); err != nil {
+		t.Fatalf("seed credentials: %v", err)
+	}
+	if err := keyring.Set(authutil.ServiceName, authutil.ActiveUserKey, "user@example.com"); err != nil {
+		t.Fatalf("seed legacy active_user: %v", err)
+	}
+
+	f, err := client.NewDatumFactory(context.Background())
+	if err != nil {
+		t.Fatalf("NewDatumFactory: %v", err)
+	}
+
+	env, err := BuildEnv(f)
+	if err != nil {
+		t.Fatalf("BuildEnv: %v", err)
+	}
+
+	if got := envValue(env, "DATUM_API_HOST"); got != "api.datum.net" {
+		t.Errorf("DATUM_API_HOST=%q, want %q", got, "api.datum.net")
+	}
+	if got := envValue(env, "DATUM_SESSION"); got == "" {
+		t.Error("DATUM_SESSION is empty, want the session created from the legacy login")
 	}
 }
 
