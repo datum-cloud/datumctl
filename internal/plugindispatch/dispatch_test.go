@@ -9,7 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/keyring"
 )
 
 // buildMinimalFactory creates a DatumCloudFactory suitable for unit tests.
@@ -181,7 +183,15 @@ func TestBuildEnv_sessionPropagated(t *testing.T) {
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir .datumctl: %v", err)
 	}
-	cfgContent := "kind: DatumctlConfig\nactive-session: my-session\n"
+	cfgContent := "kind: DatumctlConfig\n" +
+		"active-session: my-session\n" +
+		"sessions:\n" +
+		"  - name: my-session\n" +
+		"    user-key: user@example.com\n" +
+		"    user-email: user@example.com\n" +
+		"    endpoint:\n" +
+		"      server: https://api.example.com\n" +
+		"      auth-hostname: auth.example.com\n"
 	if err := os.WriteFile(filepath.Join(cfgDir, "config"), []byte(cfgContent), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -199,6 +209,74 @@ func TestBuildEnv_sessionPropagated(t *testing.T) {
 	session := envValue(env, "DATUM_SESSION")
 	if session != "my-session" {
 		t.Errorf("DATUM_SESSION=%q, want %q", session, "my-session")
+	}
+	apiHost := envValue(env, "DATUM_API_HOST")
+	if apiHost != "api.example.com" {
+		t.Errorf("DATUM_API_HOST=%q, want %q", apiHost, "api.example.com")
+	}
+}
+
+// TestBuildEnv_FollowsSwitchedAccountNotLegacyKeyring reproduces
+// datumctl/datumctl#292: `auth switch` updates the config's ActiveSession, but
+// never the legacy keyring `active_user` marker (still set from whichever
+// account logged in last). BuildEnv must pair DATUM_SESSION and
+// DATUM_API_HOST from the switched-to session, never a stale value pulled
+// from that legacy marker.
+func TestBuildEnv_FollowsSwitchedAccountNotLegacyKeyring(t *testing.T) {
+	// Not parallel — writes a config file and legacy keyring entry to a temp HOME.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+	keyring.MockInit()
+
+	// Simulate the account that logged in last, before the switch — this is
+	// what the legacy keyring marker names, and what a call site reading it
+	// directly would still use.
+	if err := keyring.Set(authutil.ServiceName, authutil.ActiveUserKey, "old@example.com@auth.datum.net"); err != nil {
+		t.Fatalf("seed legacy active_user: %v", err)
+	}
+
+	cfgDir := filepath.Join(tmpHome, ".datumctl")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir .datumctl: %v", err)
+	}
+	// `auth switch` moved ActiveSession to the staging account and cleared
+	// CurrentContext (no LastContext for the newly-selected session), exactly
+	// as internal/cmd/auth/switch.go does.
+	cfgContent := "kind: DatumctlConfig\n" +
+		"active-session: new@example.com@api.staging.env.datum.net\n" +
+		"sessions:\n" +
+		"  - name: old@example.com@api.datum.net\n" +
+		"    user-key: old@example.com@auth.datum.net\n" +
+		"    user-email: old@example.com\n" +
+		"    endpoint:\n" +
+		"      server: https://api.datum.net\n" +
+		"      auth-hostname: auth.datum.net\n" +
+		"  - name: new@example.com@api.staging.env.datum.net\n" +
+		"    user-key: new@example.com@auth.staging.env.datum.net\n" +
+		"    user-email: new@example.com\n" +
+		"    endpoint:\n" +
+		"      server: https://api.staging.env.datum.net\n" +
+		"      auth-hostname: auth.staging.env.datum.net\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "config"), []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	f, err := client.NewDatumFactory(context.Background())
+	if err != nil {
+		t.Fatalf("NewDatumFactory: %v", err)
+	}
+
+	env, err := BuildEnv(f)
+	if err != nil {
+		t.Fatalf("BuildEnv: %v", err)
+	}
+
+	if got := envValue(env, "DATUM_SESSION"); got != "new@example.com@api.staging.env.datum.net" {
+		t.Errorf("DATUM_SESSION=%q, want the switched-to session", got)
+	}
+	if got := envValue(env, "DATUM_API_HOST"); got != "api.staging.env.datum.net" {
+		t.Errorf("DATUM_API_HOST=%q, want %q (the switched-to account's host, not the old account's)", got, "api.staging.env.datum.net")
 	}
 }
 
