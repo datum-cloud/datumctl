@@ -35,3 +35,8 @@ tasks:
     desc: Check flake syntax and run checks
     cmds:
       - nix flake check
+
+  notice:
+    desc: Regenerate the NOTICE file of third-party licenses
+    cmds:
+      - ./scripts/licenses/notice.sh
