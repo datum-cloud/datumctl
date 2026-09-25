@@ -103,7 +103,11 @@ terminal. No knowledge of Kubernetes or kubectl required.
 Get started:
   datumctl login
   datumctl get organizations
-  datumctl get dnszones`,
+  datumctl get dnszones
+
+Run one command as another signed-in account, leaving the active one as is:
+  datumctl get dnszones --session user@example.com@api.staging.env.datum.net
+  DATUM_SESSION=user@example.com datumctl get dnszones`,
 		// ArbitraryArgs allows unknown subcommand names to reach RunE so the
 		// plugin dispatch logic can handle them before Cobra rejects them.
 		Args: cobra.ArbitraryArgs,
@@ -121,6 +125,9 @@ Get started:
 					fmt.Sprintf("invalid value %q for --error-format", format),
 					"Allowed values: human, json, yaml.",
 				)
+			}
+			if err := applySessionOverride(cmd); err != nil {
+				return err
 			}
 			startUpdateCheck(cmd)
 			handleUpdateCheck(cmd)
@@ -229,6 +236,8 @@ Get started:
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
 	rootCmd.PersistentFlags().String("error-format", customerrors.FormatHuman,
 		"Error output format on failure. One of: human, json, yaml.")
+	rootCmd.PersistentFlags().String(sessionFlag, "",
+		"Run this command as another signed-in session without changing the active one: a session name (email@api-host) or an email signed in on one endpoint. Overrides DATUM_SESSION.")
 	ioStreams := genericclioptions.IOStreams{
 		In:     rootCmd.InOrStdin(),
 		Out:    rootCmd.OutOrStdout(),
@@ -772,7 +781,16 @@ Specify the resource type and name to view its history.`
 	// ForwardPlugin replaces the process for managed plugins before cobra
 	// parses flags. If it fails (e.g. integrity check), execution falls
 	// through to cobra and the RunE path re-enforces the same checks.
-	_ = plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory)
+	//
+	// A --session or DATUM_SESSION value that names no single session is the
+	// one failure reported here: falling through would run cobra over the
+	// plugin's own flags and bury the session error under "unknown flag".
+	if err := plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory); err != nil {
+		if _, ok := customerrors.IsUserError(err); ok {
+			customerrors.Format(os.Stderr, err, customerrors.FormatHuman, 0)
+			os.Exit(1)
+		}
+	}
 
 	return rootCmd
 }

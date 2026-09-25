@@ -270,6 +270,11 @@ func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.DiscoveredContext, 
 	}
 	ctxEntry := cfg.CurrentContextEntry()
 	if ctxEntry == nil {
+		// Under a session override with no context, still hand back the
+		// overriding session so its endpoint and TLS settings apply.
+		if datumconfig.HasSessionOverride() {
+			return nil, cfg.ActiveSessionEntry(), nil
+		}
 		return nil, nil, nil
 	}
 	session := cfg.SessionByName(ctxEntry.Session)
@@ -375,8 +380,8 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 		sessionName := ""
 		if ctxEntry != nil {
 			sessionName = ctxEntry.Session
-		} else if cfg.ActiveSession != "" {
-			sessionName = cfg.ActiveSession
+		} else {
+			sessionName = cfg.ActiveSessionName()
 		}
 		orgDisplayName = cfg.OrgDisplayName(sessionName, orgID)
 	}

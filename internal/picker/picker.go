@@ -104,7 +104,7 @@ func buildContextOptions(contexts []datumconfig.DiscoveredContext, cfg *datumcon
 		// Org entry — show display name with resource name when they differ.
 		if g.orgCtx != nil {
 			label := datumconfig.FormatWithID(cfg.OrgDisplayName(g.orgCtx.Session, orgID), orgID)
-			if cfg.CurrentContext == g.orgCtx.Name {
+			if cfg.CurrentContextName() == g.orgCtx.Name {
 				label += "  *"
 			}
 			options = append(options, huh.NewOption(label, g.orgCtx.Name))
@@ -113,7 +113,7 @@ func buildContextOptions(contexts []datumconfig.DiscoveredContext, cfg *datumcon
 		// Project entries, indented under their org.
 		for _, p := range g.projects {
 			label := "  " + datumconfig.FormatWithID(cfg.ProjectDisplayName(p.Session, p.ProjectID), p.ProjectID)
-			if cfg.CurrentContext == p.Name {
+			if cfg.CurrentContextName() == p.Name {
 				label += "  *"
 			}
 			options = append(options, huh.NewOption(label, p.Name))
