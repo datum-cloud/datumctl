@@ -117,11 +117,12 @@ func runSwitch(args []string, endpoint string) error {
 		}
 		if len(matched) == 0 {
 			msg := fmt.Sprintf("No session on endpoint %s.", datumconfig.StripScheme(endpoint))
+			hint := "Endpoints any account is signed in on: " + strings.Join(known, ", ")
 			if subject != "" {
 				msg = fmt.Sprintf("No session for %s on endpoint %s.", subject, datumconfig.StripScheme(endpoint))
+				hint = "Signed-in endpoints: " + strings.Join(known, ", ")
 			}
-			return customerrors.NewUserErrorWithHint(msg,
-				"Signed-in endpoints: "+strings.Join(known, ", "))
+			return customerrors.NewUserErrorWithHint(msg, hint)
 		}
 		candidates = matched
 	}

@@ -129,6 +129,12 @@ func TestSwitch(t *testing.T) {
 			wantHint: []string{"Signed-in endpoints: " + prodHost + ", " + stagingHost},
 		},
 		{
+			name:     "unknown endpoint without email lists endpoints across every account",
+			args:     []string{"--endpoint", "api.nowhere.example"},
+			wantMsg:  []string{"No session on endpoint api.nowhere.example."},
+			wantHint: []string{"Endpoints any account is signed in on: " + prodHost + ", " + stagingHost},
+		},
+		{
 			name:    "ambiguous email without terminal lists one command per session",
 			args:    []string{sharedEmail},
 			wantMsg: []string{sharedEmail + " is signed in on more than one endpoint", "requires a terminal"},
