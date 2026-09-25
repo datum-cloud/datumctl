@@ -1,4 +1,4 @@
-name: "nix-update-hash"
+name: "update-notice"
 
 on:
   push:
@@ -13,6 +13,6 @@ permissions:
   contents: write
 
 jobs:
-  update-hash:
-    uses: datum-cloud/actions/.github/workflows/nix-update-hash.yaml@v1.22.0
+  update-notice:
+    uses: datum-cloud/actions/.github/workflows/update-notice.yaml@v1.22.0
     secrets: inherit
