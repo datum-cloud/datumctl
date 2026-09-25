@@ -34,6 +34,45 @@ for goos in "${PLATFORMS[@]}"; do
     '
 done
 
+# The fence toggle above assumes no license text contains a standalone ```
+# line. Verify each section held together before trusting the merge: one
+# name, matching the header, and fences that closed in pairs. A desynced
+# section fails loudly here instead of corrupting NOTICE silently.
+verify_section() {
+  awk '
+    NR == 1 {
+      if ($0 !~ /^## /) { err = "missing \"## name\" header" }
+      else { header_name = substr($0, 4) }
+    }
+    NR == 2 && $0 != "" { if (err == "") err = "missing blank line after header" }
+    NR == 3 {
+      if ($0 !~ /^\* Name: /) { if (err == "") err = "missing \"* Name:\" line" }
+      else {
+        name_line = substr($0, 9)
+        if (name_line != header_name) {
+          if (err == "") err = "name mismatch: header \"" header_name "\" vs \"" name_line "\""
+        }
+      }
+    }
+    /^\* Name: / { name_count++ }
+    /^```$/ { fence_count++ }
+    END {
+      if (err == "") {
+        if (name_count != 1) err = "expected exactly one \"* Name:\" line, found " name_count
+        else if (fence_count % 2 != 0) err = "odd number of ``` fence lines (" fence_count ")"
+      }
+      if (err != "") { print err; exit 1 }
+    }
+  ' "$1"
+}
+
+for section in "$tmp"/sections/*; do
+  if ! err=$(verify_section "$section"); then
+    echo "error: malformed license section for $(basename "$section"): $err" >&2
+    exit 1
+  fi
+done
+
 # Each section ends with a blank line from the template.
 find "$tmp/sections" -type f | sort -f | xargs cat > NOTICE
 
