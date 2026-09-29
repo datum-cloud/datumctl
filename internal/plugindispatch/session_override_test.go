@@ -2,6 +2,7 @@ package plugindispatch
 
 import (
 	"context"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"go.datum.net/datumctl/internal/datumconfig"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/keyring"
+	"go.datum.net/datumctl/internal/pluginstore"
 )
 
 const (
@@ -169,7 +171,7 @@ func TestApplyPluginSessionOverride_StaleEnvDoesNotError(t *testing.T) {
 	}
 }
 
-func TestSplitLeadingSessionFlag(t *testing.T) {
+func TestSplitSessionFlag(t *testing.T) {
 	tests := []struct {
 		in        []string
 		wantValue string
@@ -179,15 +181,88 @@ func TestSplitLeadingSessionFlag(t *testing.T) {
 		{[]string{"ipam", "list"}, "", []string{"ipam", "list"}, false},
 		{[]string{"--session", "a@b@c", "ipam", "list", "-o", "wide"}, "a@b@c", []string{"ipam", "list", "-o", "wide"}, true},
 		{[]string{"--session=a@b", "ipam"}, "a@b", []string{"ipam"}, true},
-		// A --session after the plugin name belongs to the plugin.
-		{[]string{"ipam", "--session", "x"}, "", []string{"ipam", "--session", "x"}, false},
+		// Issue #304: --session after the plugin name is still datumctl's, and
+		// must not reach the plugin as an argument it does not recognize.
+		{[]string{"ipam", "--session", "x"}, "x", []string{"ipam"}, true},
+		{[]string{"assistant", "card", "--session", "a@b@c"}, "a@b@c", []string{"assistant", "card"}, true},
+		{[]string{"assistant", "card", "--session=a@b@c"}, "a@b@c", []string{"assistant", "card"}, true},
+		{[]string{"ipam", "list", "--session", "a@b", "-o", "wide"}, "a@b", []string{"ipam", "list", "-o", "wide"}, true},
+		// Missing value: reported as present with no value so the caller can say
+		// so, rather than silently running as the active session.
+		{[]string{"ipam", "list", "--session"}, "", []string{"ipam", "list"}, true},
+		// Everything after a bare "--" is the plugin's to interpret.
+		{[]string{"ipam", "--", "--session", "x"}, "", []string{"ipam", "--", "--session", "x"}, false},
 		{[]string{"--project", "p", "ipam"}, "", []string{"--project", "p", "ipam"}, false},
 	}
 	for _, tt := range tests {
-		v, rest, found := splitLeadingSessionFlag(tt.in)
+		v, rest, found := splitSessionFlag(tt.in)
 		if v != tt.wantValue || found != tt.wantFound || !slices.Equal(rest, tt.wantRest) {
-			t.Errorf("splitLeadingSessionFlag(%q) = %q, %q, %v; want %q, %q, %v",
+			t.Errorf("splitSessionFlag(%q) = %q, %q, %v; want %q, %q, %v",
 				tt.in, v, rest, found, tt.wantValue, tt.wantRest, tt.wantFound)
 		}
+	}
+}
+
+// Issue #304: "datumctl <plugin> <subcmd> --session X" must run the plugin as
+// that session. The flag is consumed by datumctl and turned into DATUM_SESSION
+// (plus the matching API host) instead of being handed to the plugin, which
+// would reject the whole command with "unknown flag: --session".
+func TestForwardPlugin_sessionFlagAfterPluginName(t *testing.T) {
+	// Not parallel — mutates os.Args, execPlatform, and environment.
+	factory := setupPluginOverrideEnv(t)
+	managedDir := t.TempDir()
+	// Isolate PATH so only the managed binary resolves the plugin name.
+	t.Setenv("PATH", t.TempDir())
+
+	binaryPath := writeFakeBinary(t, managedDir, "assistant")
+	writeManifest(t, managedDir, &pluginstore.Manifest{
+		Plugins: map[string]*pluginstore.InstalledPlugin{
+			"assistant": {SHA256: sha256HexFile(t, binaryPath)},
+		},
+	})
+
+	var gotArgs, gotEnv []string
+	execCalled := false
+	origExec := execPlatform
+	execPlatform = func(_ string, args []string, env []string) error {
+		execCalled, gotArgs, gotEnv = true, args, env
+		return nil
+	}
+	t.Cleanup(func() { execPlatform = origExec })
+
+	origArgs := os.Args
+	os.Args = []string{"datumctl", "assistant", "card", "--session", ovStaging}
+	t.Cleanup(func() { os.Args = origArgs })
+
+	if err := ForwardPlugin(managedDir, buildMinimalCobraTree(), factory); err != nil {
+		t.Fatalf("ForwardPlugin: %v", err)
+	}
+	if !execCalled {
+		t.Fatal("plugin was not exec'd")
+	}
+	if want := []string{"card"}; !slices.Equal(gotArgs, want) {
+		t.Errorf("forwarded args = %v, want %v (--session must not reach the plugin)", gotArgs, want)
+	}
+	if got := envValue(gotEnv, "DATUM_SESSION"); got != ovStaging {
+		t.Errorf("DATUM_SESSION = %q, want %q", got, ovStaging)
+	}
+	if got := envValue(gotEnv, "DATUM_API_HOST"); got != "api.staging.env.datum.net" {
+		t.Errorf("DATUM_API_HOST = %q, want the override session's host", got)
+	}
+}
+
+// A --session with no value must fail with datumctl's own message rather than
+// falling through and running the plugin as the active session.
+func TestApplyPluginSessionOverride_missingValue(t *testing.T) {
+	setupPluginOverrideEnv(t)
+	err := applyPluginSessionOverride("", true)
+	if err == nil {
+		t.Fatal("expected an error for --session with no value")
+	}
+	if _, ok := customerrors.IsUserError(err); !ok {
+		t.Errorf("error is not a UserError: %v", err)
+	}
+	if datumconfig.HasSessionOverride() {
+		t.Error("a failed override must not leave one installed")
 	}
 }
