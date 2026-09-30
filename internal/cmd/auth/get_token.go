@@ -87,12 +87,15 @@ func runGetToken(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to get token source: %w", err)
 		}
 	} else {
-		var err error
-		tokenSource, err = authutil.GetTokenSource(ctx)
+		userKey, _, err := authutil.GetUserKeyForCurrentSession()
 		if err != nil {
 			if errors.Is(err, authutil.ErrNoActiveUser) {
 				return errors.New("no active user found in keyring. Please login first using 'datumctl login'")
 			}
+			return fmt.Errorf("failed to get token source: %w", err)
+		}
+		tokenSource, err = authutil.GetTokenSourceForUser(ctx, userKey)
+		if err != nil {
 			return fmt.Errorf("failed to get token source: %w", err)
 		}
 	}

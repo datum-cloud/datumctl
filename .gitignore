@@ -1,7 +1,160 @@
-# Ignore goreleaser output
-dist/
-# Built binary
+# ============================================================
+# Go
+# ============================================================
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+cover.out
+coverage.txt
+coverage.html
+/bin/
+/dist/
 /datumctl
-# Nix stuff
+
+# Go workspace
+go.work
+go.work.sum
+
+# Go build cache (local overrides only)
+.cache/
+
+# Nix build output
 /result
+
+# Generated files
 .generated/
+
+# ============================================================
+# Kubernetes (kubectl users only — auth update-kubeconfig, local testing)
+# ============================================================
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+.kube/
+
+# ============================================================
+# AI coding agents
+# ============================================================
+
+# Claude Code — local-only overrides, in-progress worktrees
+.claude/settings.local.json
+.claude/worktrees/
+
+# Cursor — local state (rules under .cursor/rules/ remain tracked)
+.cursor/cache/
+.cursorignore
+
+# Qwen Code — project memory, conversation history, agent state
+.qwen/
+
+# Codex / OpenAI
+.codex/
+.openai/
+
+# Aider
+.aider/
+.aider.tags.cache.v*/
+.aider.chat.history.md
+.aider.input.history
+.aiderignore
+.aider.*
+
+# Codeium / Windsurf
+.windsurf/
+.codeium/
+
+# JetBrains AI / Qodo
+.qodo/
+
+# Continue
+.continue/
+
+# Devin
+.devin/
+
+# Generic agent scratch directories (scoped, not root-level)
+.agent/
+.agents/
+
+# ============================================================
+# IDEs and editors
+# ============================================================
+
+# JetBrains (GoLand, IntelliJ, …)
+.idea/
+*.iml
+*.iws
+.idea_modules/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# direnv
+.direnv/
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+.nvim/
+
+# Emacs
+\#*\#
+.\#*
+*.elc
+auto-save-list
+tramp
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================
+# OS artifacts
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+.fuse_hidden*
+.nfs*
+
+# ============================================================
+# Secrets and credentials — never commit these
+# ============================================================
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+secrets/
+.secrets/
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# ============================================================
+# Miscellaneous
+# ============================================================
+*.tmp
+*.bak
+*.orig
+.tmp/
+tmp/
+*.prof
+*.pprof
+.golangci-lint-cache/
+.local

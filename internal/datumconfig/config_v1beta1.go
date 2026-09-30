@@ -227,6 +227,16 @@ func (c *ConfigV1Beta1) SessionByEmail(email string) []*Session {
 	return sessions
 }
 
+// SwitchArgs returns the arguments that select session s with
+// "datumctl auth switch": the email alone when it is unique, or the email plus
+// "--endpoint <host>" when the same email is signed in on several endpoints.
+func (c *ConfigV1Beta1) SwitchArgs(s *Session) string {
+	if len(c.SessionByEmail(s.UserEmail)) > 1 {
+		return fmt.Sprintf("%s --endpoint %s", s.UserEmail, StripScheme(s.Endpoint.Server))
+	}
+	return s.UserEmail
+}
+
 // ContextByName returns the context with the given name, or nil.
 func (c *ConfigV1Beta1) ContextByName(name string) *DiscoveredContext {
 	for i := range c.Contexts {

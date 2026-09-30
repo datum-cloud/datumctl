@@ -58,7 +58,7 @@ Advanced — kubectl integration:
 	cmd.AddCommand(
 		getTokenCmd,
 		listCmd,
-		switchCmd,
+		switchCmd(),
 		updateKubeconfigCmd(),
 	)
 

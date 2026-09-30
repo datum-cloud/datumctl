@@ -82,3 +82,99 @@ func TestContext_apiVersionParseError(t *testing.T) {
 		t.Errorf("PluginAPIVersion = %d, want 0 for non-numeric input", ctx.PluginAPIVersion)
 	}
 }
+
+// TestPluginContext_ControlPlaneURL verifies scope selection (project wins over
+// org), API host scheme normalization, and the error cases for an incomplete
+// context.
+func TestPluginContext_ControlPlaneURL(t *testing.T) {
+	t.Parallel()
+
+	const (
+		projectPrefix = "/apis/resourcemanager.miloapis.com/v1alpha1/projects/"
+		orgPrefix     = "/apis/resourcemanager.miloapis.com/v1alpha1/organizations/"
+	)
+
+	tests := []struct {
+		name    string
+		ctx     PluginContext
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "project wins over org",
+			ctx:  PluginContext{APIHost: "api.datum.net", Org: "my-org", Project: "my-project"},
+			want: "https://api.datum.net" + projectPrefix + "my-project/control-plane",
+		},
+		{
+			name: "org only",
+			ctx:  PluginContext{APIHost: "api.datum.net", Org: "my-org"},
+			want: "https://api.datum.net" + orgPrefix + "my-org/control-plane",
+		},
+		{
+			name: "https scheme already present",
+			ctx:  PluginContext{APIHost: "https://api.datum.net", Project: "my-project"},
+			want: "https://api.datum.net" + projectPrefix + "my-project/control-plane",
+		},
+		{
+			name: "http scheme preserved",
+			ctx:  PluginContext{APIHost: "http://localhost:8080", Project: "my-project"},
+			want: "http://localhost:8080" + projectPrefix + "my-project/control-plane",
+		},
+		{
+			name: "trailing slash trimmed",
+			ctx:  PluginContext{APIHost: "https://api.datum.net/", Org: "my-org"},
+			want: "https://api.datum.net" + orgPrefix + "my-org/control-plane",
+		},
+		{
+			name:    "missing api host",
+			ctx:     PluginContext{Org: "my-org", Project: "my-project"},
+			wantErr: true,
+		},
+		{
+			name:    "missing org and project",
+			ctx:     PluginContext{APIHost: "api.datum.net"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := tt.ctx.ControlPlaneURL()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ControlPlaneURL() = %q, want error", got)
+				}
+				if got != "" {
+					t.Errorf("ControlPlaneURL() = %q on error, want empty", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ControlPlaneURL() error = %v, want nil", err)
+			}
+			if got != tt.want {
+				t.Errorf("ControlPlaneURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestControlPlaneURL_packageLevel verifies that the package-level
+// ControlPlaneURL() reads the injected environment.
+func TestControlPlaneURL_packageLevel(t *testing.T) {
+	// Not parallel — uses t.Setenv.
+	t.Setenv("DATUM_API_HOST", "api.test.datum.net")
+	t.Setenv("DATUM_ORG", "test-org")
+	t.Setenv("DATUM_PROJECT", "test-project")
+
+	got, err := ControlPlaneURL()
+	if err != nil {
+		t.Fatalf("ControlPlaneURL() error = %v, want nil", err)
+	}
+	want := "https://api.test.datum.net/apis/resourcemanager.miloapis.com/v1alpha1/projects/test-project/control-plane"
+	if got != want {
+		t.Errorf("ControlPlaneURL() = %q, want %q", got, want)
+	}
+}
