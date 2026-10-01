@@ -267,6 +267,32 @@ func organizationRequestURL(apiHostname, userID, orgID string) string {
 	)
 }
 
+// HTTPStatusError reports a non-200 response from the organization lookup.
+type HTTPStatusError struct {
+	StatusCode int
+	Body       string
+	OrgID      string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e.Body != "" {
+		return fmt.Sprintf("get organization %s: HTTP %d: %s", e.OrgID, e.StatusCode, e.Body)
+	}
+	return fmt.Sprintf("get organization %s: HTTP %d", e.OrgID, e.StatusCode)
+}
+
+// IsAuthFailure reports whether the response means the caller's credentials
+// were missing, expired or rejected, as opposed to a permission or server
+// problem. Some gateways report this with a non-401 status and only say
+// "Unauthenticated"/"Unauthorized" in the body.
+func (e *HTTPStatusError) IsAuthFailure() bool {
+	if e.StatusCode == http.StatusUnauthorized {
+		return true
+	}
+	body := strings.ToLower(e.Body)
+	return strings.Contains(body, "unauthenticated") || strings.Contains(body, "unauthorized")
+}
+
 func fetchOrganization(
 	ctx context.Context,
 	apiHostname string,
@@ -290,11 +316,11 @@ func fetchOrganization(
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		msg := strings.TrimSpace(string(body))
-		if msg != "" {
-			return resourcemanagerv1alpha1.Organization{}, fmt.Errorf("get organization %s: HTTP %d: %s", orgID, resp.StatusCode, msg)
+		return resourcemanagerv1alpha1.Organization{}, &HTTPStatusError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(body)),
+			OrgID:      orgID,
 		}
-		return resourcemanagerv1alpha1.Organization{}, fmt.Errorf("get organization %s: HTTP %d", orgID, resp.StatusCode)
 	}
 
 	var org resourcemanagerv1alpha1.Organization

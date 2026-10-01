@@ -182,3 +182,22 @@ func TestColumnLabel(t *testing.T) {
 		t.Fatalf("ColumnLabel(OrgIncomplete) = %q", got)
 	}
 }
+
+func TestHTTPStatusErrorIsAuthFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		err  HTTPStatusError
+		want bool
+	}{
+		{"401", HTTPStatusError{StatusCode: 401}, true},
+		{"403 unauthenticated body", HTTPStatusError{StatusCode: 403, Body: `{"reason":"Unauthenticated"}`}, true},
+		{"500 unauthorized body", HTTPStatusError{StatusCode: 500, Body: "Unauthorized"}, true},
+		{"403 forbidden", HTTPStatusError{StatusCode: 403, Body: "forbidden"}, false},
+		{"500", HTTPStatusError{StatusCode: 500}, false},
+	}
+	for _, tt := range tests {
+		if got := tt.err.IsAuthFailure(); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
