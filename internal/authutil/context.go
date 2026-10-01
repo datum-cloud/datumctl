@@ -22,11 +22,15 @@ func GetUserKeyForCurrentSession() (string, *datumconfig.Session, error) {
 		return "", nil, err
 	}
 
-	if session := cfg.ActiveSessionEntry(); session != nil && session.UserKey != "" {
+	session, err := cfg.ActiveSessionEntryE()
+	if err != nil {
+		return "", nil, err
+	}
+	if session != nil && session.UserKey != "" {
 		return session.UserKey, session, nil
 	}
 
-	session, err := bootstrapSessionFromKeyring(cfg)
+	session, err = bootstrapSessionFromKeyring(cfg)
 	if err != nil {
 		return "", nil, err
 	}

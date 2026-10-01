@@ -118,7 +118,7 @@ func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1, sessionName s
 
 		if g.orgCtx != nil {
 			current := ""
-			if cfg.CurrentContext == g.orgCtx.Name {
+			if cfg.CurrentContextName() == g.orgCtx.Name {
 				current = "*"
 			}
 			tbl.AddRow(cfg.OrgDisplayName(sessionName, orgID), orgID, "org", current)
@@ -126,7 +126,7 @@ func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1, sessionName s
 
 		for _, p := range g.projects {
 			current := ""
-			if cfg.CurrentContext == p.Name {
+			if cfg.CurrentContextName() == p.Name {
 				current = "*"
 			}
 			tbl.AddRow("  "+cfg.ProjectDisplayName(sessionName, p.ProjectID), p.Ref(), "project", current)
