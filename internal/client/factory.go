@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -383,6 +384,26 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 
 	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)
 	if err != nil {
+		// Surface auth failures as such instead of a misleading "not ready yet".
+		if userErr, ok := customerrors.IsUserError(err); ok {
+			return userErr
+		}
+		var statusErr *onboarding.HTTPStatusError
+		if errors.As(err, &statusErr) && statusErr.IsAuthFailure() {
+			return customerrors.WrapUserErrorWithHint(
+				"Your session is no longer valid.",
+				"Run 'datumctl login' to re-authenticate.",
+				err,
+			)
+		}
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) {
+			return customerrors.WrapUserErrorWithHint(
+				"We couldn't refresh your session.",
+				"Run 'datumctl login' to re-authenticate.",
+				err,
+			)
+		}
 		return customerrors.WrapUserErrorWithHint(
 			"We couldn't check whether this organization is ready yet.",
 			"If you just finished setup in the portal, wait a moment and try again.",
