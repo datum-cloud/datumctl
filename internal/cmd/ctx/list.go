@@ -1,14 +1,15 @@
 package ctx
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"sort"
 
 	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/discovery"
 )
 
 func listCmd() *cobra.Command {
@@ -29,107 +30,107 @@ same organization or project name exists in more than one environment.`,
 }
 
 func runList(cmd *cobra.Command, _ []string) error {
+	ctx := cmdContext(cmd)
+
 	cfg, err := datumconfig.LoadAuto()
 	if err != nil {
 		return err
 	}
 
-	if len(cfg.Contexts) == 0 {
+	all, _ := cmd.Flags().GetBool("all")
+	if all {
+		return printAllContexts(ctx, os.Stdout, cfg)
+	}
+
+	session, err := cfg.ActiveSessionEntryE()
+	if err != nil {
+		return err
+	}
+	if session == nil {
 		fmt.Println("No contexts available. Run 'datumctl login' to get started.")
 		return nil
 	}
 
-	all, _ := cmd.Flags().GetBool("all")
-	if all {
-		printAllContexts(os.Stdout, cfg)
+	dir, err := listSession(ctx, session)
+	if err != nil {
+		return err
+	}
+	dir.WarnFailures(os.Stderr)
+	if len(dir.Orgs) == 0 {
+		fmt.Println("No contexts available. Create an organization in the Datum Cloud portal to get started.")
 		return nil
 	}
-
-	activeSession := ""
-	if s := cfg.ActiveSessionEntry(); s != nil {
-		activeSession = s.Name
-	}
-	printContextTree(os.Stdout, cfg, activeSession)
+	printContextTree(os.Stdout, cfg, dir)
 	return nil
 }
 
-type orgGroup struct {
-	orgID    string
-	orgCtx   *datumconfig.DiscoveredContext
-	projects []*datumconfig.DiscoveredContext
+func listSession(ctx context.Context, session *datumconfig.Session) (*discovery.Directory, error) {
+	api, err := discovery.ForSession(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := discovery.List(ctx, api, session.Name)
+	if err != nil {
+		return nil, fmt.Errorf("list contexts for %s: %w", session.UserEmail, err)
+	}
+	return dir, nil
 }
 
 // printAllContexts lists every session's contexts, grouped by account and
-// endpoint so overlapping refs across environments stay distinguishable.
-func printAllContexts(w io.Writer, cfg *datumconfig.ConfigV1Beta1) {
+// endpoint so overlapping refs across environments stay distinguishable. A
+// session whose contexts cannot be listed is skipped with a warning.
+func printAllContexts(ctx context.Context, w io.Writer, cfg *datumconfig.ConfigV1Beta1) error {
+	if len(cfg.Sessions) == 0 {
+		fmt.Fprintln(w, "No contexts available. Run 'datumctl login' to get started.")
+		return nil
+	}
+	printed := 0
 	for i := range cfg.Sessions {
 		s := &cfg.Sessions[i]
-		if len(cfg.ContextsForSession(s.Name)) == 0 {
+		dir, err := listSession(ctx, s)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Warning:", err)
 			continue
 		}
-		if i > 0 {
+		dir.WarnFailures(os.Stderr)
+		if len(dir.Orgs) == 0 {
+			continue
+		}
+		if printed > 0 {
 			fmt.Fprintln(w)
 		}
+		printed++
 		fmt.Fprintf(w, "%s  (%s)\n", s.UserEmail, datumconfig.StripScheme(s.Endpoint.Server))
-		printContextTree(w, cfg, s.Name)
+		printContextTree(w, cfg, dir)
 	}
+	return nil
 }
 
-// printContextTree prints the contexts owned by sessionName as an org/project
-// tree. Display names are resolved within that session.
-func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1, sessionName string) {
-	// Group contexts by org.
-	groups := make(map[string]*orgGroup)
-	var orgOrder []string
-
-	for i := range cfg.Contexts {
-		ctx := &cfg.Contexts[i]
-		if ctx.Session != sessionName {
-			continue
-		}
-		orgID := ctx.OrganizationID
-
-		g, ok := groups[orgID]
-		if !ok {
-			g = &orgGroup{orgID: orgID}
-			groups[orgID] = g
-			orgOrder = append(orgOrder, orgID)
-		}
-
-		if ctx.ProjectID == "" {
-			g.orgCtx = ctx
-		} else {
-			g.projects = append(g.projects, ctx)
-		}
-	}
-
-	// Sort projects within each group.
-	for _, g := range groups {
-		sort.Slice(g.projects, func(i, j int) bool {
-			return g.projects[i].ProjectID < g.projects[j].ProjectID
-		})
-	}
-
+// printContextTree prints a session's contexts as an org/project tree.
+func printContextTree(w io.Writer, cfg *datumconfig.ConfigV1Beta1, dir *discovery.Directory) {
 	tbl := table.New("Display Name", "Name", "Type", "Current")
 	tbl.WithWriter(w)
 
-	for _, orgID := range orgOrder {
-		g := groups[orgID]
-
-		if g.orgCtx != nil {
-			current := ""
-			if cfg.CurrentContextName() == g.orgCtx.Name {
-				current = "*"
-			}
-			tbl.AddRow(cfg.OrgDisplayName(sessionName, orgID), orgID, "org", current)
+	current := func(c *datumconfig.DiscoveredContext) string {
+		if cfg.CurrentContextName() == c.Name {
+			return "*"
 		}
+		return ""
+	}
 
-		for _, p := range g.projects {
-			current := ""
-			if cfg.CurrentContextName() == p.Name {
-				current = "*"
+	contexts := dir.Contexts()
+	for i := range contexts {
+		org := &contexts[i]
+		if org.ProjectID != "" {
+			continue
+		}
+		tbl.AddRow(dir.OrgDisplayName(org.OrganizationID), org.OrganizationID, "org", current(org))
+		for j := range contexts {
+			p := &contexts[j]
+			if p.ProjectID == "" || p.OrganizationID != org.OrganizationID {
+				continue
 			}
-			tbl.AddRow("  "+cfg.ProjectDisplayName(sessionName, p.ProjectID), p.Ref(), "project", current)
+			tbl.AddRow("  "+dir.ProjectDisplayName(p.ProjectID), p.Ref(), "project", current(p))
 		}
 	}
 

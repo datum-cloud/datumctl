@@ -10,6 +10,7 @@ import (
 	tuictx "go.datum.net/datumctl/internal/console/context"
 	"go.datum.net/datumctl/internal/console/data"
 	"go.datum.net/datumctl/internal/console/styles"
+	"go.datum.net/datumctl/internal/discovery"
 )
 
 type ContextSwitchedMsg struct {
@@ -26,6 +27,7 @@ type CtxSwitcherModel struct {
 	entries      []treeEntry
 	cursor       int
 	cfg          *datumconfig.ConfigV1Beta1
+	dir          *discovery.Directory
 	width        int
 	height       int
 	welcomeName  string // when set, renders a personalized post-login header
@@ -33,19 +35,28 @@ type CtxSwitcherModel struct {
 
 const ctxModalWidth = 60
 
-func NewCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, width, height int) CtxSwitcherModel {
+// NewCtxSwitcherModel creates a context switcher over a live directory
+// listing. A nil dir renders as a loading state.
+func NewCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, dir *discovery.Directory, width, height int) CtxSwitcherModel {
 	m := CtxSwitcherModel{cfg: cfg, width: width, height: height}
-	if cfg != nil {
-		m.entries = buildTree(cfg)
-		m.cursor = firstSelectableIdx(m.entries)
-	}
+	m.SetDirectory(dir)
 	return m
+}
+
+// SetDirectory replaces the listed contexts with a fresh live listing.
+func (m *CtxSwitcherModel) SetDirectory(dir *discovery.Directory) {
+	m.dir = dir
+	m.entries = nil
+	if dir != nil {
+		m.entries = buildTree(dir)
+	}
+	m.cursor = firstSelectableIdx(m.entries)
 }
 
 // NewPostLoginCtxSwitcherModel creates a context switcher with a personalized
 // welcome header shown immediately after the user authenticates.
-func NewPostLoginCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, width, height int, userName string) CtxSwitcherModel {
-	m := NewCtxSwitcherModel(cfg, width, height)
+func NewPostLoginCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, dir *discovery.Directory, width, height int, userName string) CtxSwitcherModel {
+	m := NewCtxSwitcherModel(cfg, dir, width, height)
 	// Use first name only for warmth
 	firstName := userName
 	if i := strings.Index(userName, " "); i > 0 {
@@ -55,39 +66,19 @@ func NewPostLoginCtxSwitcherModel(cfg *datumconfig.ConfigV1Beta1, width, height 
 	return m
 }
 
-func buildTree(cfg *datumconfig.ConfigV1Beta1) []treeEntry {
-	activeSession := ""
-	if s := cfg.ActiveSessionEntry(); s != nil {
-		activeSession = s.Name
-	}
-
-	seen := map[string]bool{}
-	var orgOrder []string
-	for _, ctx := range cfg.Contexts {
-		if activeSession != "" && ctx.Session != activeSession {
-			continue
-		}
-		if !seen[ctx.OrganizationID] {
-			seen[ctx.OrganizationID] = true
-			orgOrder = append(orgOrder, ctx.OrganizationID)
-		}
-	}
-
+func buildTree(dir *discovery.Directory) []treeEntry {
+	contexts := dir.Contexts()
 	var entries []treeEntry
-	for _, orgID := range orgOrder {
-		orgName := cfg.OrgDisplayName(activeSession, orgID)
-		entries = append(entries, treeEntry{isHeader: true, label: orgName})
-		for i := range cfg.Contexts {
-			ctx := &cfg.Contexts[i]
-			if activeSession != "" && ctx.Session != activeSession {
-				continue
-			}
-			if ctx.OrganizationID != orgID {
+	for _, o := range dir.Orgs {
+		entries = append(entries, treeEntry{isHeader: true, label: dir.OrgDisplayName(o.Name)})
+		for i := range contexts {
+			ctx := &contexts[i]
+			if ctx.OrganizationID != o.Name {
 				continue
 			}
 			var label string
 			if ctx.ProjectID != "" {
-				label = cfg.ProjectDisplayName(ctx.Session, ctx.ProjectID)
+				label = dir.ProjectDisplayName(ctx.ProjectID)
 			} else {
 				label = "(org-wide)"
 			}
@@ -125,19 +116,25 @@ func (m CtxSwitcherModel) Update(msg tea.Msg) (CtxSwitcherModel, tea.Cmd) {
 				return m, nil
 			}
 			// Under --session or DATUM_SESSION the switch lasts only for this
-			// console; the stored current context stays unchanged.
+			// console; the stored current context stays unchanged. The entry is
+			// held in memory only and is dropped if the config is saved.
 			if datumconfig.HasSessionOverride() {
+				if m.cfg.ContextByName(e.ctx.Name) == nil {
+					m.cfg.UpsertContext(*e.ctx)
+				}
 				datumconfig.SetOverrideContext(e.ctx.Name)
 				newCtx := tuictx.FromConfig(m.cfg)
+				newCtx.ApplyNames(m.dir)
 				return m, func() tea.Msg { return ContextSwitchedMsg{Ctx: newCtx} }
 			}
-			m.cfg.CurrentContext = e.ctx.Name
+			m.cfg.SelectContext(*e.ctx)
 			if err := datumconfig.SaveV1Beta1(m.cfg); err != nil {
 				return m, func() tea.Msg {
 					return data.LoadErrorMsg{Err: err, Severity: data.SeverityOfClassified(err)}
 				}
 			}
 			newCtx := tuictx.FromConfig(m.cfg)
+			newCtx.ApplyNames(m.dir)
 			return m, func() tea.Msg { return ContextSwitchedMsg{Ctx: newCtx} }
 		}
 	}
@@ -176,10 +173,14 @@ func (m CtxSwitcherModel) View() string {
 		lines = append(lines, "")
 	}
 
-	if m.cfg == nil || len(m.cfg.Contexts) == 0 {
+	if m.cfg == nil || len(m.entries) == 0 {
+		msg := "No contexts available"
+		if m.cfg != nil && m.dir == nil {
+			msg = "Loading contexts…"
+		}
 		empty := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Muted).
 			Width(ctxModalWidth - 4).Align(lipgloss.Center).
-			Render("No contexts available")
+			Render(msg)
 		lines = append(lines, empty)
 	} else {
 		for i, e := range m.entries {

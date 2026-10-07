@@ -170,7 +170,7 @@ func runSwitch(args []string, endpoint string) error {
 
 	fmt.Printf("\n✓ Switched to %s (%s)\n", session.UserName, session.UserEmail)
 	if ctxEntry := cfg.CurrentContextEntry(); ctxEntry != nil {
-		fmt.Printf("  Context:  %s\n", datumconfig.FormatWithID(cfg.DisplayRef(ctxEntry), ctxEntry.Ref()))
+		fmt.Printf("  Context:  %s\n", ctxEntry.Ref())
 	}
 	if cfg.HasMultipleEndpoints() {
 		fmt.Printf("  Endpoint: %s\n", datumconfig.StripScheme(session.Endpoint.Server))

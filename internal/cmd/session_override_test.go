@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/discovery"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/keyring"
 	"go.datum.net/datumctl/internal/updatecheck"
@@ -489,8 +491,19 @@ func TestGetTokenSessionFlagUnchanged(t *testing.T) {
 // when a command saves the config for other reasons.
 func TestSessionOverrideLeavesStoredSessionAlone(t *testing.T) {
 	path := setupOverrideEnv(t)
+	orig := discovery.ForSession
+	t.Cleanup(func() { discovery.ForSession = orig })
+	var listedAs string
+	discovery.ForSession = func(_ context.Context, s *datumconfig.Session) (discovery.API, error) {
+		listedAs = s.Name
+		return orgsOnlyAPI{{Name: "org-staging"}}, nil
+	}
+
 	if _, err := runRoot(t, "ctx", "list", "--session", ovStaging); err != nil {
 		t.Fatalf("ctx list: %v", err)
+	}
+	if listedAs != ovStaging {
+		t.Errorf("ctx list listed as %q, want %q", listedAs, ovStaging)
 	}
 	cfg, err := datumconfig.LoadAutoFromPath(filepath.Clean(path))
 	if err != nil {
@@ -500,4 +513,19 @@ func TestSessionOverrideLeavesStoredSessionAlone(t *testing.T) {
 		t.Errorf("stored active session/context = %q/%q, want %q/%q",
 			cfg.ActiveSession, cfg.CurrentContext, ovProd, ovProdCtx)
 	}
+}
+
+// orgsOnlyAPI is a discovery.API whose organizations have no projects.
+type orgsOnlyAPI []discovery.DiscoveredOrg
+
+func (a orgsOnlyAPI) ListOrgs(context.Context) ([]discovery.DiscoveredOrg, error) {
+	return a, nil
+}
+
+func (orgsOnlyAPI) ListProjects(context.Context, string) ([]discovery.DiscoveredProject, error) {
+	return nil, nil
+}
+
+func (orgsOnlyAPI) GetProject(context.Context, string, string) (*discovery.DiscoveredProject, error) {
+	return nil, discovery.ErrNotFound
 }

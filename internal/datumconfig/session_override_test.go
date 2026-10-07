@@ -146,6 +146,9 @@ func TestSessionOverrideIsNeverSaved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A context picked in this process is held in memory only, as the console
+	// switcher does; saving must drop it.
+	loaded.UpsertContext(DiscoveredContext{Name: soStagingProj, Session: soStaging, OrganizationID: "org-staging", ProjectID: "proj"})
 	if loaded.CurrentContextName() != soStagingProj {
 		t.Fatalf("override not in effect")
 	}

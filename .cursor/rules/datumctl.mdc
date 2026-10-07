@@ -47,6 +47,6 @@ cmd.Short = "List or retrieve Datum Cloud resources"
 internal/errors/      UserError type
 internal/authutil/    OAuth2 PKCE, device flow, machine-account auth
 internal/client/      DatumCloudFactory — scope resolution + API clients
-internal/discovery/   Org/project context cache
+internal/discovery/   Live org/project listing and lookup
 internal/picker/      Interactive TUI selector
 ```
