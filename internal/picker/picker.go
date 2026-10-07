@@ -9,31 +9,34 @@ import (
 	"golang.org/x/term"
 
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/discovery"
 	customerrors "go.datum.net/datumctl/internal/errors"
 )
 
-// SelectContext presents an interactive picker for choosing a context.
-// If only one context is available, it is auto-selected. Returns the context name.
-func SelectContext(contexts []datumconfig.DiscoveredContext, cfg *datumconfig.ConfigV1Beta1) (string, error) {
+// SelectContext presents an interactive picker for choosing one of the
+// directory's contexts. If only one context is available, it is auto-selected.
+// currentContext marks the active selection.
+func SelectContext(dir *discovery.Directory, currentContext string) (*datumconfig.DiscoveredContext, error) {
+	contexts := dir.Contexts()
 	if len(contexts) == 0 {
-		return "", customerrors.NewUserErrorWithHint(
+		return nil, customerrors.NewUserErrorWithHint(
 			"No contexts available.",
 			"Run 'datumctl login' to authenticate and discover your organizations and projects.",
 		)
 	}
 
 	if len(contexts) == 1 {
-		return contexts[0].Name, nil
+		return &contexts[0], nil
 	}
 
 	if !isTerminal() {
-		return "", customerrors.NewUserErrorWithHint(
+		return nil, customerrors.NewUserErrorWithHint(
 			"Interactive context selection requires a terminal.",
 			"Use --project or --organization flags, or set DATUM_PROJECT / DATUM_ORGANIZATION environment variables.",
 		)
 	}
 
-	options := buildContextOptions(contexts, cfg)
+	options := buildContextOptions(contexts, dir, currentContext)
 
 	var selected string
 	form := huh.NewForm(
@@ -47,15 +50,20 @@ func SelectContext(contexts []datumconfig.DiscoveredContext, cfg *datumconfig.Co
 	)
 
 	if err := form.Run(); err != nil {
-		return "", fmt.Errorf("context selection: %w", err)
+		return nil, fmt.Errorf("context selection: %w", err)
 	}
 
-	return selected, nil
+	for i := range contexts {
+		if contexts[i].Name == selected {
+			return &contexts[i], nil
+		}
+	}
+	return nil, fmt.Errorf("selected context not found")
 }
 
 // buildContextOptions groups contexts by org and formats them with visual
 // hierarchy: org entries appear as headers, projects are indented beneath.
-func buildContextOptions(contexts []datumconfig.DiscoveredContext, cfg *datumconfig.ConfigV1Beta1) []huh.Option[string] {
+func buildContextOptions(contexts []datumconfig.DiscoveredContext, dir *discovery.Directory, currentContext string) []huh.Option[string] {
 	// Separate orgs and projects, group projects by org ID.
 	type orgGroup struct {
 		orgCtx   *datumconfig.DiscoveredContext
@@ -103,8 +111,8 @@ func buildContextOptions(contexts []datumconfig.DiscoveredContext, cfg *datumcon
 
 		// Org entry — show display name with resource name when they differ.
 		if g.orgCtx != nil {
-			label := datumconfig.FormatWithID(cfg.OrgDisplayName(g.orgCtx.Session, orgID), orgID)
-			if cfg.CurrentContextName() == g.orgCtx.Name {
+			label := datumconfig.FormatWithID(dir.OrgDisplayName(orgID), orgID)
+			if currentContext == g.orgCtx.Name {
 				label += "  *"
 			}
 			options = append(options, huh.NewOption(label, g.orgCtx.Name))
@@ -112,8 +120,8 @@ func buildContextOptions(contexts []datumconfig.DiscoveredContext, cfg *datumcon
 
 		// Project entries, indented under their org.
 		for _, p := range g.projects {
-			label := "  " + datumconfig.FormatWithID(cfg.ProjectDisplayName(p.Session, p.ProjectID), p.ProjectID)
-			if cfg.CurrentContextName() == p.Name {
+			label := "  " + datumconfig.FormatWithID(dir.ProjectDisplayName(p.ProjectID), p.ProjectID)
+			if currentContext == p.Name {
 				label += "  *"
 			}
 			options = append(options, huh.NewOption(label, p.Name))

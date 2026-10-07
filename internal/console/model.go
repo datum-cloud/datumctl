@@ -127,11 +127,6 @@ func finishDeviceAuthCmd(ctx context.Context, session *authutil.DeviceAuthSessio
 		if !datumconfig.HasSessionOverride() {
 			cfg.ActiveSession = s.Name
 		}
-		tknSrc, tErr := authutil.GetTokenSourceForUser(ctx, result.UserKey)
-		if tErr == nil {
-			orgs, projects, _ := discovery.FetchOrgsAndProjects(ctx, result.APIHostname, tknSrc, result.Subject)
-			discovery.UpdateConfigCache(cfg, s.Name, orgs, projects)
-		}
 		if cfgErr = datumconfig.SaveV1Beta1(cfg); cfgErr != nil {
 			return deviceAuthFinishedMsg{result: result, err: cfgErr}
 		}
@@ -139,34 +134,33 @@ func finishDeviceAuthCmd(ctx context.Context, session *authutil.DeviceAuthSessio
 	}
 }
 
-// contextCacheRefreshedMsg is returned by refreshContextCacheCmd when the
-// background context-cache refresh completes. cfg is nil on error.
-type contextCacheRefreshedMsg struct {
-	cfg *datumconfig.ConfigV1Beta1
+// contextsLoadedMsg carries a live listing of the active session's orgs and
+// projects. dir is nil on error.
+type contextsLoadedMsg struct {
+	dir *discovery.Directory
 	err error
 }
 
-// refreshContextCacheCmd loads a fresh config, re-runs API discovery for the
-// active session, saves the result, and returns the updated config.
-// Errors are non-fatal; the stale-cache banner remains visible until a
-// successful refresh dismisses it.
-func refreshContextCacheCmd(ctx context.Context) tea.Cmd {
+// loadContextsCmd fetches the active session's orgs and projects from the API.
+func loadContextsCmd(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		cfg, err := datumconfig.LoadAuto()
 		if err != nil {
-			return contextCacheRefreshedMsg{err: err}
+			return contextsLoadedMsg{err: err}
 		}
-		session := cfg.ActiveSessionEntry()
+		session, err := cfg.ActiveSessionEntryE()
+		if err != nil {
+			return contextsLoadedMsg{err: err}
+		}
 		if session == nil {
-			return contextCacheRefreshedMsg{err: fmt.Errorf("no active session")}
+			return contextsLoadedMsg{err: fmt.Errorf("no active session")}
 		}
-		if _, err := discovery.RefreshSession(ctx, cfg, session); err != nil {
-			return contextCacheRefreshedMsg{err: err}
+		api, err := discovery.ForSession(ctx, session)
+		if err != nil {
+			return contextsLoadedMsg{err: err}
 		}
-		if err := datumconfig.SaveV1Beta1(cfg); err != nil {
-			return contextCacheRefreshedMsg{err: err}
-		}
-		return contextCacheRefreshedMsg{cfg: cfg}
+		dir, err := discovery.List(ctx, api, session.Name)
+		return contextsLoadedMsg{dir: dir, err: err}
 	}
 }
 
@@ -188,6 +182,7 @@ type AppModel struct {
 	history                      components.HistoryViewModel
 	diff                         components.DiffViewModel
 	ctxOverlay                   components.CtxSwitcherModel
+	contexts                     *discovery.Directory // live org/project listing; nil until loaded
 	filterBar                    components.FilterBarModel
 	statusBar                    components.StatusBarModel
 	helpOverlay                  components.HelpOverlayModel
@@ -289,7 +284,7 @@ func NewAppModel(ctx context.Context, factory *client.DatumCloudFactory, tuiCtx 
 		activityDashboard: components.NewActivityDashboardModel(40, 20, tuiCtx.ProjectName),
 		history:           components.NewHistoryViewModel(80, 20),
 		diff:              components.NewDiffViewModel(80, 20),
-		ctxOverlay:        components.NewCtxSwitcherModel(tuiCtx.Config, 80, 24),
+		ctxOverlay:        components.NewCtxSwitcherModel(tuiCtx.Config, nil, 80, 24),
 		filterBar:         components.NewFilterBarModel(),
 		helpOverlay:       components.NewHelpOverlayModel(),
 		welcomeScreen:     components.NewWelcomeScreenModel(),
@@ -317,9 +312,8 @@ func (m AppModel) Init() tea.Cmd {
 		m.table.SetActivityLoading(true)
 		cmds = append(cmds, data.LoadRecentProjectActivityCmd(m.ctx, m.ac, recentActivityWindow, recentActivityLimit))
 	}
-	// Auto-refresh context cache in background if stale.
-	if m.tuiCtx.Config != nil && discovery.IsCacheStale(m.tuiCtx.Config, discovery.AutoRefreshStaleness) {
-		cmds = append(cmds, refreshContextCacheCmd(m.ctx))
+	if m.tuiCtx.Config != nil && m.tuiCtx.Config.ActiveSessionEntry() != nil {
+		cmds = append(cmds, loadContextsCmd(m.ctx))
 	}
 	return tea.Batch(cmds...)
 }
@@ -701,7 +695,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.cfg != nil {
 			m.tuiCtx = tuictx.FromConfig(msg.cfg)
 			m.header = components.NewHeaderModel(m.tuiCtx)
-			m.ctxOverlay = components.NewPostLoginCtxSwitcherModel(msg.cfg, m.width, m.height, msg.result.UserName)
+			m.contexts = nil
+			m.ctxOverlay = components.NewPostLoginCtxSwitcherModel(msg.cfg, nil, m.width, m.height, msg.result.UserName)
 		}
 		m.notLoggedIn = false
 		m.statusBar.NotLoggedIn = false
@@ -714,7 +709,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.overlay = CtxSwitcherOverlay
 		m.statusBar.Mode = components.ModeOverlay
 		m.updatePaneFocus()
-		return m, data.LoadResourceTypesCmd(m.ctx, m.rc)
+		return m, tea.Batch(data.LoadResourceTypesCmd(m.ctx, m.rc), loadContextsCmd(m.ctx))
+
+	case contextsLoadedMsg:
+		dir := msg.dir
+		if dir == nil {
+			dir = &discovery.Directory{}
+		}
+		m.contexts = dir
+		m.ctxOverlay.SetDirectory(dir)
+		m.tuiCtx.ApplyNames(dir)
+		m.header.Ctx = m.tuiCtx
+		return m, nil
 
 	case data.ClearStatusErrMsg:
 		if msg.Token == m.statusErrToken {
@@ -839,7 +845,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quota.SetRegistrations(nil)
 		m.quota.SetRefreshing(false) // FB-107: clear in-flight refresh indicator on context switch
 		m.quota.ResetGrouping()
-		m.ctxOverlay = components.NewCtxSwitcherModel(msg.Ctx.Config, m.width, m.height)
+		m.ctxOverlay = components.NewCtxSwitcherModel(msg.Ctx.Config, m.contexts, m.width, m.height)
 		m.overlay = NoOverlay
 		m.activePane = NavPane
 		m.statusBar.Mode = components.ModeNormal
@@ -932,26 +938,6 @@ func (m *AppModel) refreshLandingInputs() {
 	m.table.SetBucketErr(m.bucketErr, m.bucketUnauthorized)
 	m.table.SetBucketConfigured(m.bc != nil) // FB-074: disambiguate unconfigured vs. zero-governed
 	m.table.SetRegistrations(m.registrations)
-	show, age := staleContextAgeDisplay(m.tuiCtx.Config, time.Now())
-	m.table.SetStaleCacheAge(show, age)
-}
-
-// staleContextAgeDisplay reports whether the landing banner should warn about
-// a stale context cache and returns a human-readable age (e.g. "3d", "31h").
-// Returns (false, "") when the cache is fresh, never refreshed, or config is
-// unavailable.
-func staleContextAgeDisplay(cfg *datumconfig.ConfigV1Beta1, now time.Time) (bool, string) {
-	if cfg == nil || cfg.Cache.LastRefreshed == nil {
-		return false, ""
-	}
-	age := now.Sub(*cfg.Cache.LastRefreshed)
-	if age <= 24*time.Hour {
-		return false, ""
-	}
-	if days := int(age / (24 * time.Hour)); days >= 1 {
-		return true, fmt.Sprintf("%dd", days)
-	}
-	return true, fmt.Sprintf("%dh", int(age/time.Hour))
 }
 
 // openDiffForRow transitions to DiffPane showing the diff for the given row
@@ -1502,7 +1488,7 @@ func (m AppModel) handleNormalKey(msg tea.KeyMsg, _ *[]tea.Cmd) (tea.Model, tea.
 		}
 		m.overlay = CtxSwitcherOverlay
 		m.statusBar.Mode = components.ModeOverlay
-		return m, nil
+		return m, loadContextsCmd(m.ctx)
 	case "l":
 		sessionExpired := m.loadErr != nil && k8serrors.IsUnauthorized(m.loadErr)
 		if m.notLoggedIn || sessionExpired || (m.overlay == LoginOverlayID && m.loginOverlay.State == components.LoginOverlayFailed) {
@@ -2503,7 +2489,7 @@ func (m AppModel) recalcLayout() AppModel {
 	m.diff.SetSize(tableInnerW, tableInnerH)
 	m.diff.SetFocused(m.activePane == DiffPane)
 
-	m.ctxOverlay = components.NewCtxSwitcherModel(m.tuiCtx.Config, m.width, m.height)
+	m.ctxOverlay = components.NewCtxSwitcherModel(m.tuiCtx.Config, m.contexts, m.width, m.height)
 	m.helpOverlay.Width = m.width
 	m.helpOverlay.Height = m.height
 	m.helpOverlay.ShowDeleteHint = m.activePane == TablePane || m.activePane == DetailPane

@@ -73,7 +73,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(out, "Session:      %s (from %s; the active session is unchanged)\n", overrideName, overrideSource)
 	}
 
-	printOnboardingStatus(cmd.Context(), out, cfg, session)
+	onboardingResult, onboardingChecked := printOnboardingStatus(cmd.Context(), out, cfg, session)
 
 	// Show endpoint only when multiple endpoints are in use.
 	if cfg.HasMultipleEndpoints() {
@@ -84,12 +84,14 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 	if ctxEntry != nil {
 		fmt.Fprintf(out, "Context:      %s\n", ctxEntry.Ref())
 
-		fmt.Fprintf(out, "Organization: %s\n", datumconfig.FormatWithID(
-			cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID), ctxEntry.OrganizationID))
+		orgName := ctxEntry.OrganizationID
+		if onboardingChecked && onboardingResult.OrgID == ctxEntry.OrganizationID {
+			orgName = onboardingResult.OrgDisplayName
+		}
+		fmt.Fprintf(out, "Organization: %s\n", datumconfig.FormatWithID(orgName, ctxEntry.OrganizationID))
 
 		if ctxEntry.ProjectID != "" {
-			fmt.Fprintf(out, "Project:      %s\n", datumconfig.FormatWithID(
-				cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID), ctxEntry.ProjectID))
+			fmt.Fprintf(out, "Project:      %s\n", ctxEntry.ProjectID)
 		}
 	} else {
 		fmt.Fprintln(out, "Context:      (none)")
@@ -111,33 +113,36 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func printOnboardingStatus(ctx context.Context, out io.Writer, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) {
+// printOnboardingStatus prints the onboarding state of the effective org and
+// returns the check result, which also carries the org's live display name.
+func printOnboardingStatus(ctx context.Context, out io.Writer, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) (onboarding.Result, bool) {
 	orgID := onboarding.ResolveEffectiveOrgID(cfg, os.Getenv("DATUM_PROJECT"), os.Getenv("DATUM_ORGANIZATION"))
 	if orgID == "" {
-		return
+		return onboarding.Result{}, false
 	}
 
 	tknSrc, err := authutil.GetTokenSourceForUser(ctx, session.UserKey)
 	if err != nil {
-		return
+		return onboarding.Result{}, false
 	}
 	userID, err := authutil.GetUserIDFromTokenForUser(session.UserKey)
 	if err != nil {
-		return
+		return onboarding.Result{}, false
 	}
 	apiHostname, err := authutil.GetAPIHostnameForUser(session.UserKey)
 	if err != nil {
-		return
+		return onboarding.Result{}, false
 	}
 
-	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(session.Name, orgID))
+	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, "")
 	if err != nil {
 		fmt.Fprintln(out, "Onboarding:   couldn't check")
-		return
+		return onboarding.Result{}, false
 	}
 
 	fmt.Fprintf(out, "Onboarding:   %s\n", onboarding.StatusLabel(result))
 	if result.State != onboarding.Complete {
 		fmt.Fprintf(out, "  Finish setup at %s\n", result.ActionURL)
 	}
+	return result, true
 }

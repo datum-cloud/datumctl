@@ -43,7 +43,7 @@ cmd.Example = datumGetExample
 internal/errors/      UserError — clean user-facing messages, no stack traces
 internal/authutil/    OAuth2 PKCE, device flow, machine-account auth
 internal/client/      DatumCloudFactory — org/project scope resolution + API clients
-internal/discovery/   Org/project API discovery and context cache
+internal/discovery/   Live org/project listing and lookup
 internal/picker/      Interactive TUI context/account selector
 ```
 ## GitHub PR / Issue / Comment Conventions

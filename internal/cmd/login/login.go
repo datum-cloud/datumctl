@@ -119,7 +119,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 	apiHostname := result.APIHostname
 
 	fmt.Print("Discovering organizations and projects...\n\n")
-	orgs, projects, err := discovery.FetchOrgsAndProjects(ctx, apiHostname, tknSrc, result.Subject)
+	dir, err := discovery.List(ctx, discovery.NewAPI(apiHostname, tknSrc, result.Subject), sessionName)
 	if err != nil {
 		fmt.Printf("Warning: could not discover contexts: %v\n", err)
 		fmt.Println("\nYou can set a context manually with 'datumctl ctx use'.")
@@ -128,39 +128,9 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		}
 		return nil
 	}
+	dir.WarnFailures(cmd.ErrOrStderr())
 
-	if len(orgs) > 0 {
-		fmt.Printf("You have access to %d organization(s):\n\n", len(orgs))
-		for _, o := range orgs {
-			projCount := 0
-			for _, p := range projects {
-				if p.OrgName == o.Name {
-					projCount++
-				}
-			}
-			fmt.Printf("  %s (%d project(s))\n", o.DisplayName, projCount)
-		}
-		fmt.Println()
-	}
-
-	discovery.UpdateConfigCache(cfg, sessionName, orgs, projects)
-
-	if len(orgs) == 0 {
-		onboardingResult, err := onboarding.NoOrgsResult(apiHostname)
-		if err != nil {
-			return fmt.Errorf("derive portal URL: %w", err)
-		}
-		if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-		if err := browser.OpenURL(onboardingResult.ActionURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "\nWe couldn't open your browser. Head to %s to create an organization.\n", onboardingResult.ActionURL)
-		}
-		return onboarding.UserError(onboardingResult)
-	}
-
-	sessionContexts := cfg.ContextsForSession(sessionName)
-	if len(sessionContexts) == 0 {
+	if len(dir.Orgs) == 0 {
 		onboardingResult, err := onboarding.NoOrgsResult(apiHostname)
 		if err != nil {
 			return fmt.Errorf("derive portal URL: %w", err)
@@ -174,51 +144,52 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		return onboarding.UserError(onboardingResult)
 	}
 
-	selected, err := picker.SelectContext(sessionContexts, cfg)
+	fmt.Printf("You have access to %d organization(s):\n\n", len(dir.Orgs))
+	for _, o := range dir.Orgs {
+		projCount := 0
+		for _, p := range dir.Projects {
+			if p.OrgName == o.Name {
+				projCount++
+			}
+		}
+		fmt.Printf("  %s (%d project(s))\n", o.DisplayName, projCount)
+	}
+	fmt.Println()
+
+	selected, err := picker.SelectContext(dir, cfg.CurrentContextName())
 	if err != nil {
 		return err
 	}
 
-	selectedCtx := cfg.ContextByName(selected)
-	if selectedCtx != nil {
-		onboardingResult, err := onboarding.CheckOrg(
-			ctx,
-			apiHostname,
-			tknSrc,
-			result.Subject,
-			selectedCtx.OrganizationID,
-			cfg.OrgDisplayName(selectedCtx.Session, selectedCtx.OrganizationID),
+	onboardingResult, err := onboarding.CheckOrg(
+		ctx,
+		apiHostname,
+		tknSrc,
+		result.Subject,
+		selected.OrganizationID,
+		dir.OrgDisplayName(selected.OrganizationID),
+	)
+	if err != nil {
+		return customerrors.WrapUserErrorWithHint(
+			"We couldn't check whether your organization is ready yet.",
+			"Try again in a moment, or finish setup in the portal.",
+			err,
 		)
-		if err != nil {
-			return customerrors.WrapUserErrorWithHint(
-				"We couldn't check whether your organization is ready yet.",
-				"Try again in a moment, or finish setup in the portal.",
-				err,
-			)
+	}
+	if onboardingResult.State != onboarding.Complete {
+		if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
+			return fmt.Errorf("save config: %w", saveErr)
 		}
-		if onboardingResult.State != onboarding.Complete {
-			if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
-				return fmt.Errorf("save config: %w", saveErr)
-			}
-			return onboarding.UserError(onboardingResult)
-		}
+		return onboarding.UserError(onboardingResult)
 	}
 
-	cfg.CurrentContext = selected
-	if s := cfg.SessionByName(sessionName); s != nil {
-		s.LastContext = selected
-	}
+	cfg.SelectContext(*selected)
 
 	if err := datumconfig.SaveV1Beta1(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	ctxEntry := cfg.ContextByName(selected)
-	if ctxEntry != nil {
-		fmt.Printf("\n\u2713 Context set to %s\n", cfg.ContextDescription(ctxEntry))
-	} else {
-		fmt.Printf("\n\u2713 Context set to %s\n", selected)
-	}
+	fmt.Printf("\n\u2713 Context set to %s\n", dir.Describe(selected))
 	return nil
 }
 

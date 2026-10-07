@@ -370,7 +370,7 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 	projectID, organizationID string,
 	ctxEntry *datumconfig.DiscoveredContext,
 ) error {
-	orgID := onboarding.ResolveOrgID(projectID, organizationID, ctxEntry, c.loadConfigForScope())
+	orgID := onboarding.ResolveOrgID(projectID, organizationID, ctxEntry)
 	if orgID == "" {
 		return nil
 	}
@@ -385,19 +385,7 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 		return err
 	}
 
-	cfg := c.loadConfigForScope()
-	orgDisplayName := ""
-	if cfg != nil {
-		sessionName := ""
-		if ctxEntry != nil {
-			sessionName = ctxEntry.Session
-		} else {
-			sessionName = cfg.ActiveSessionName()
-		}
-		orgDisplayName = cfg.OrgDisplayName(sessionName, orgID)
-	}
-
-	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)
+	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, "")
 	if err != nil {
 		// Surface auth failures as such instead of a misleading "not ready yet".
 		if userErr, ok := customerrors.IsUserError(err); ok {
@@ -426,14 +414,6 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 		)
 	}
 	return onboarding.UserError(result)
-}
-
-func (c *CustomConfigFlags) loadConfigForScope() *datumconfig.ConfigV1Beta1 {
-	cfg, err := datumconfig.LoadAuto()
-	if err != nil {
-		return nil
-	}
-	return cfg
 }
 
 func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
