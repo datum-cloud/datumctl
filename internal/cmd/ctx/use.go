@@ -17,7 +17,14 @@ func useCmd() *cobra.Command {
 		Long: `Switch the active context to an organization or project.
 
 If no argument is provided, an interactive picker is shown.
-Use the format 'org/project' to select a project context, or just 'org' for an org context.`,
+Use the format 'org/project' to select a project context, or just 'org' for an org context.
+
+Switching context can change the active session, so this command rejects the
+global --session flag and ignores DATUM_SESSION. To use another session's
+context for one command, pass --session to that command instead.`,
+		Annotations: map[string]string{
+			datumconfig.SessionOverrideAnnotation: datumconfig.SessionOverrideRejected,
+		},
 		Args: cobra.MaximumNArgs(1),
 		RunE: runUse,
 	}

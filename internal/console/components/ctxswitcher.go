@@ -124,6 +124,13 @@ func (m CtxSwitcherModel) Update(msg tea.Msg) (CtxSwitcherModel, tea.Cmd) {
 			if e.isHeader || e.ctx == nil {
 				return m, nil
 			}
+			// Under --session or DATUM_SESSION the switch lasts only for this
+			// console; the stored current context stays unchanged.
+			if datumconfig.HasSessionOverride() {
+				datumconfig.SetOverrideContext(e.ctx.Name)
+				newCtx := tuictx.FromConfig(m.cfg)
+				return m, func() tea.Msg { return ContextSwitchedMsg{Ctx: newCtx} }
+			}
 			m.cfg.CurrentContext = e.ctx.Name
 			if err := datumconfig.SaveV1Beta1(m.cfg); err != nil {
 				return m, func() tea.Msg {
@@ -180,7 +187,7 @@ func (m CtxSwitcherModel) View() string {
 				lines = append(lines, headerStyle.Render("▾ "+e.label))
 				continue
 			}
-			isCurrent := m.cfg != nil && e.ctx != nil && e.ctx.Name == m.cfg.CurrentContext
+			isCurrent := m.cfg != nil && e.ctx != nil && e.ctx.Name == m.cfg.CurrentContextName()
 			indent := "  "
 			var line string
 			switch {
