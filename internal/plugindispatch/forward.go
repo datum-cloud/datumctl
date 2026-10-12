@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/datumconfig"
+	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
@@ -33,8 +35,13 @@ import (
 // Must be called after the cobra command tree is fully built so that IsBuiltIn
 // can correctly distinguish plugin names from registered subcommands.
 // On success this function does not return (process is replaced).
+//
+// The global --session flag, wherever the user put it on the command line, or
+// the DATUM_SESSION environment variable runs the plugin as that session. When
+// the session cannot be resolved, ForwardPlugin returns the UserError so the
+// caller can report it; the plugin is not run.
 func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.DatumCloudFactory) error {
-	args := os.Args[1:]
+	sessionValue, args, hasSessionFlag := splitSessionFlag(os.Args[1:])
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return nil
 	}
@@ -83,7 +90,72 @@ func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.Datum
 		}
 	}
 
+	if err := applyPluginSessionOverride(sessionValue, hasSessionFlag); err != nil {
+		return err
+	}
+
 	return Exec(binaryPath, args[1:], factory)
+}
+
+// splitSessionFlag removes datumctl's global --session flag ("--session X" or
+// "--session=X") from a plugin command line and returns the last value given,
+// the remaining arguments, and whether the flag was present.
+//
+// The flag is taken from anywhere in the command line, not just before the
+// plugin name: --session belongs to datumctl, and plugins do not define it, so
+// leaving one in place makes the plugin refuse the whole command with its own
+// "unknown flag: --session".
+//
+// Everything after a bare "--" is the plugin's to interpret and is left alone.
+func splitSessionFlag(args []string) (value string, rest []string, found bool) {
+	rest = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--":
+			return value, append(rest, args[i:]...), found
+		case args[i] == "--session":
+			found = true
+			if i+1 < len(args) {
+				value = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(args[i], "--session="):
+			value, found = strings.TrimPrefix(args[i], "--session="), true
+		default:
+			rest = append(rest, args[i])
+		}
+	}
+	return value, rest, found
+}
+
+// applyPluginSessionOverride installs the session a plugin runs as: the
+// --session flag when given, else DATUM_SESSION. BuildEnv then reports that
+// session's name and API host to the plugin.
+//
+// --session is validated immediately, same as the root command. DATUM_SESSION
+// is only recorded here; it is resolved lazily by GetUserKeyForCurrentSession
+// inside BuildEnv, so a plugin that never needs the session (or a stale value
+// left over from a previous logout) does not stop the plugin from running —
+// BuildEnv exports an empty DATUM_SESSION/DATUM_API_HOST/DATUM_ORG rather than
+// the unrelated real active session.
+func applyPluginSessionOverride(flagValue string, hasFlag bool) error {
+	if hasFlag {
+		// --session with nothing after it would otherwise clear the override and
+		// quietly run as the active session, which is the mistake the flag exists
+		// to prevent.
+		if strings.TrimSpace(flagValue) == "" {
+			return customerrors.NewUserErrorWithHint(
+				"--session needs a session name.",
+				"Run 'datumctl auth list' to see the available session names.",
+			)
+		}
+		_, err := datumconfig.ApplySessionOverride(flagValue, datumconfig.SessionOverrideFromFlag)
+		return err
+	}
+	if v := os.Getenv(datumconfig.SessionEnvVar); v != "" {
+		datumconfig.SetPendingSessionOverride(v)
+	}
+	return nil
 }
 
 // VerifyManagedPluginIntegrity loads plugins.json, finds the entry for name,
@@ -171,7 +243,13 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 		return nil
 	}
 
-	name := os.Args[2]
+	// Take --session out of the completion request the same way the run path
+	// does, so it never reaches the plugin as an argument it does not know.
+	sessionValue, completionArgs, hasSessionFlag := splitSessionFlag(os.Args[2:])
+	if len(completionArgs) == 0 {
+		return nil
+	}
+	name := completionArgs[0]
 
 	// Find the plugin binary.
 	binaryPath, managed, err := FindPlugin(name, pluginsDir)
@@ -204,7 +282,7 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 	// Strip the plugin name from the forwarded args so the plugin sees
 	// ["__complete", <subargs...>] rather than ["__complete", "compute", <subargs...>].
 	// The plugin's own cobra tree has no knowledge of its name as a subcommand.
-	pluginArgs := append([]string{"__complete"}, os.Args[3:]...)
+	pluginArgs := append([]string{"__complete"}, completionArgs[1:]...)
 
 	cmd := exec.Command(binaryPath, pluginArgs...)
 	cmd.Stdin = os.Stdin
@@ -215,6 +293,10 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 	// completion. Non-fatal: if env construction fails we proceed without injection
 	// and the plugin will return empty candidates instead of erroring.
 	if factory != nil {
+		// Honor --session/DATUM_SESSION so completion lists what the plugin will
+		// act on. An unresolvable value is ignored here; running the plugin
+		// reports it.
+		_ = applyPluginSessionOverride(sessionValue, hasSessionFlag)
 		if env, buildErr := BuildEnv(factory); buildErr == nil {
 			cmd.Env = overlayEnv(os.Environ(), env)
 		}
@@ -242,7 +324,9 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 // Cobra intercepts --help before RunE fires, so this must be called before
 // cobra.Execute(), mirroring the ForwardCompletion pattern.
 func ForwardHelp(pluginsDir string) error {
-	args := os.Args[1:] // strip "datumctl"
+	// Strip "datumctl" and any --session, so help for
+	// "datumctl <plugin> <cmd> --session X --help" reaches the plugin too.
+	_, args, _ := splitSessionFlag(os.Args[1:])
 	if len(args) == 0 {
 		return nil
 	}

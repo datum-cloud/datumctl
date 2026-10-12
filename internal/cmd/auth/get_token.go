@@ -21,10 +21,11 @@ const (
 )
 
 // getTokenCmd retrieves tokens based on the --output flag.
-var getTokenCmd = &cobra.Command{
-	Use:   "get-token",
-	Short: "Print an access token (kubectl and plugin credential helper)",
-	Long: `Print the current access token for the active Datum Cloud user.
+func getTokenCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get-token",
+		Short: "Print an access token (kubectl and plugin credential helper)",
+		Long: `Print the current access token for the active Datum Cloud user.
 
 Most datumctl users do not need this command — datumctl handles
 authentication automatically for all its own commands.
@@ -43,6 +44,9 @@ This command exists for two advanced use cases:
        $DATUM_CREDENTIALS_HELPER auth get-token --session $DATUM_SESSION
      When DATUM_SESSION is empty, omit the --session flag.
 
+Without --session, the token is for the active session, or for the session
+named by DATUM_SESSION when it is set.
+
 If the stored token is expired, datumctl automatically uses the stored
 refresh token to obtain a new one before printing.
 
@@ -50,19 +54,21 @@ Output formats (--output / -o):
   token                         Print the raw access token (default).
   client.authentication.k8s.io/v1  Print a Kubernetes ExecCredential JSON
                                 object for kubectl credential plugin use.`,
-	Example: `  # Get a raw token for use in a script or direct API call
+		Example: `  # Get a raw token for use in a script or direct API call
   datumctl auth get-token
 
   # Get a Kubernetes ExecCredential JSON object (used by kubectl automatically)
   datumctl auth get-token --output=client.authentication.k8s.io/v1`,
-	Args: cobra.NoArgs,
-	RunE: runGetToken, // Use single function
-}
+		Args: cobra.NoArgs,
+		RunE: runGetToken, // Use single function
+	}
 
-func init() {
-	// Add flags for direct execution mode
-	getTokenCmd.Flags().StringP("output", "o", outputFormatToken, fmt.Sprintf("Output format. One of: %s|%s", outputFormatToken, outputFormatK8sV1Creds))
-	getTokenCmd.Flags().String("session", "", "Look up a specific session by name (defaults to the active session). Used by the kubectl exec plugin path so each kubeconfig entry pins to its own datumctl session.")
+	cmd.Flags().StringP("output", "o", outputFormatToken, fmt.Sprintf("Output format. One of: %s|%s", outputFormatToken, outputFormatK8sV1Creds))
+	// This local --session shadows the global one on purpose: kubeconfig exec
+	// entries written by update-kubeconfig pass an exact session name here, and
+	// its lookup and errors must not change under them.
+	cmd.Flags().String("session", "", "Look up a specific session by name (defaults to the active session). Used by the kubectl exec plugin path so each kubeconfig entry pins to its own datumctl session.")
+	return cmd
 }
 
 // runGetToken implements the logic based on the --output flag.

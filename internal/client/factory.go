@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -268,8 +269,23 @@ func (c *CustomConfigFlags) loadDatumContext() (*datumconfig.DiscoveredContext, 
 	if err := authutil.EnsureUserKeysMigrated(cfg); err != nil {
 		return nil, nil, err
 	}
-	ctxEntry := cfg.CurrentContextEntry()
+	// CurrentContextEntryE resolves a pending DATUM_SESSION override before
+	// consulting it, so a stale value fails here with a clear error instead of
+	// silently building a REST config for the real active session.
+	ctxEntry, err := cfg.CurrentContextEntryE()
+	if err != nil {
+		return nil, nil, err
+	}
 	if ctxEntry == nil {
+		// Under a session override with no context, still hand back the
+		// overriding session so its endpoint and TLS settings apply.
+		if datumconfig.HasSessionOverride() {
+			session, err := cfg.ActiveSessionEntryE()
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, session, nil
+		}
 		return nil, nil, nil
 	}
 	session := cfg.SessionByName(ctxEntry.Session)
@@ -354,7 +370,7 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 	projectID, organizationID string,
 	ctxEntry *datumconfig.DiscoveredContext,
 ) error {
-	orgID := onboarding.ResolveOrgID(projectID, organizationID, ctxEntry, c.loadConfigForScope())
+	orgID := onboarding.ResolveOrgID(projectID, organizationID, ctxEntry)
 	if orgID == "" {
 		return nil
 	}
@@ -369,20 +385,28 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 		return err
 	}
 
-	cfg := c.loadConfigForScope()
-	orgDisplayName := ""
-	if cfg != nil {
-		sessionName := ""
-		if ctxEntry != nil {
-			sessionName = ctxEntry.Session
-		} else if cfg.ActiveSession != "" {
-			sessionName = cfg.ActiveSession
-		}
-		orgDisplayName = cfg.OrgDisplayName(sessionName, orgID)
-	}
-
-	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, orgDisplayName)
+	result, err := onboarding.CheckOrg(c.Context, apiHostname, tknSrc, userID, orgID, "")
 	if err != nil {
+		// Surface auth failures as such instead of a misleading "not ready yet".
+		if userErr, ok := customerrors.IsUserError(err); ok {
+			return userErr
+		}
+		var statusErr *onboarding.HTTPStatusError
+		if errors.As(err, &statusErr) && statusErr.IsAuthFailure() {
+			return customerrors.WrapUserErrorWithHint(
+				"Your session is no longer valid.",
+				"Run 'datumctl login' to re-authenticate.",
+				err,
+			)
+		}
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) {
+			return customerrors.WrapUserErrorWithHint(
+				"We couldn't refresh your session.",
+				"Run 'datumctl login' to re-authenticate.",
+				err,
+			)
+		}
 		return customerrors.WrapUserErrorWithHint(
 			"We couldn't check whether this organization is ready yet.",
 			"If you just finished setup in the portal, wait a moment and try again.",
@@ -390,14 +414,6 @@ func (c *CustomConfigFlags) ensureOnboardingComplete(
 		)
 	}
 	return onboarding.UserError(result)
-}
-
-func (c *CustomConfigFlags) loadConfigForScope() *datumconfig.ConfigV1Beta1 {
-	cfg, err := datumconfig.LoadAuto()
-	if err != nil {
-		return nil
-	}
-	return cfg
 }
 
 func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {

@@ -34,7 +34,14 @@ func switchCmd() *cobra.Command {
 			without one, datumctl prints the command to run for each match.
 
 			Each session remembers the last context you used, so switching users
-			also restores the context. To add a new account, run 'datumctl login'.`),
+			also restores the context. To add a new account, run 'datumctl login'.
+
+			This command changes the active session, so it rejects the global
+			--session flag and ignores DATUM_SESSION. To run a single command as
+			another session without switching, pass --session to that command.`),
+		Annotations: map[string]string{
+			datumconfig.SessionOverrideAnnotation: datumconfig.SessionOverrideRejected,
+		},
 		Example: templates.Examples(`
 			# Interactive session picker
 			datumctl auth switch
@@ -163,7 +170,7 @@ func runSwitch(args []string, endpoint string) error {
 
 	fmt.Printf("\n✓ Switched to %s (%s)\n", session.UserName, session.UserEmail)
 	if ctxEntry := cfg.CurrentContextEntry(); ctxEntry != nil {
-		fmt.Printf("  Context:  %s\n", datumconfig.FormatWithID(cfg.DisplayRef(ctxEntry), ctxEntry.Ref()))
+		fmt.Printf("  Context:  %s\n", ctxEntry.Ref())
 	}
 	if cfg.HasMultipleEndpoints() {
 		fmt.Printf("  Endpoint: %s\n", datumconfig.StripScheme(session.Endpoint.Server))
