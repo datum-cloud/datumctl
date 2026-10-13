@@ -79,8 +79,14 @@ datumctl plugin install compute
 datumctl plugin search
 datumctl plugin list
 datumctl plugin upgrade compute
+datumctl plugin upgrade --all
 datumctl plugin remove compute
 ```
+
+`plugin upgrade` reinstalls a plugin from the catalog or GitHub repository it
+was installed from, skipping any plugin already at its latest version. With
+`--all`, every installed plugin is upgraded; a plugin that fails is reported
+at the end without stopping the rest.
 
 The index is cached locally at `~/.datumctl/plugins/plugin-index.json`
 and refreshed automatically when stale (default TTL: 1 hour). Override the
