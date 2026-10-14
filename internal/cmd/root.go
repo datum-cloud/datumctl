@@ -400,21 +400,31 @@ by providing a resource manifest file.
 Resources can be specified as TYPE NAME pairs, or from a YAML/JSON file
 with -f. JSON and YAML formats are accepted.
 
+Deletion runs in the project or organization chosen by --project or
+--organization. When neither flag is given, the active context's project
+or organization is used instead. Either way, the chosen scope is printed
+before anything is deleted, so check that line if you are unsure which
+context is active. Deletion is immediate and cannot be undone: pass
+-i/--interactive to review the resources and confirm before each one is
+deleted, or --dry-run=client to preview without deleting.
+
 Note: this command does not perform a version check before deletion. If
 someone has updated a resource between when you fetched it and when you
-delete it, the deletion still proceeds. Use --dry-run=client to preview
-what would be deleted before committing.`
+delete it, the deletion still proceeds.`
 	deleteCmd.Example = `  # Delete a project by name
   datumctl delete project my-project-id --organization <org-id>
 
   # Delete a DNS zone by name
   datumctl delete dnszone my-zone --project <project-id> --namespace default
 
+  # Confirm each deletion before it happens
+  datumctl delete dnszone my-zone --project <project-id> -i
+
   # Delete resources defined in a manifest file
   datumctl delete -f ./my-resource.yaml --organization <org-id>
 
-  # Delete resources matching a label selector
-  datumctl delete dnszones -l app=my-app --project <project-id>
+  # Delete resources matching a label selector, confirming first
+  datumctl delete dnszones -l app=my-app --project <project-id> --interactive
 
   # Preview what would be deleted without actually deleting
   datumctl delete project my-project-id --organization <org-id> --dry-run=client`
@@ -423,7 +433,7 @@ what would be deleted before committing.`
 		"output-watch-events", "raw", "server-print", "show-managed-fields",
 		"subresource", "template",
 	)
-	rootCmd.AddCommand(WrapResourceCommand(deleteCmd))
+	rootCmd.AddCommand(WrapDeleteCommand(deleteCmd, factory))
 
 	createCmd := create.NewCmdCreate(factory, ioStreams)
 	createCmd.Short = "Create a Datum Cloud resource from a file or stdin"

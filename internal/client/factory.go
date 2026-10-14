@@ -97,10 +97,11 @@ func (c *CustomConfigFlags) ToRESTConfig() (*rest.Config, error) {
 		return nil, err
 	}
 
-	projectID, organizationID, platformWide, err := c.resolveScope(ctxEntry)
+	scope, err := c.resolveScope(ctxEntry)
 	if err != nil {
 		return nil, err
 	}
+	projectID, organizationID, platformWide := scope.Project, scope.Organization, scope.PlatformWide
 
 	if c.ForceUserControlPlane {
 		projectID = ""
@@ -308,21 +309,62 @@ func (c *CustomConfigFlags) resolveBaseServer(userKey string, session *datumconf
 // whether any scope is available before making API calls should use this
 // instead of inspecting ConfigFlags fields directly.
 func (c *CustomConfigFlags) ResolvedScope() (project, org string, platformWide bool, err error) {
-	ctxEntry, _, err := c.loadDatumContext()
+	scope, err := c.ResolvedScopeDetails()
 	if err != nil {
 		return "", "", false, err
 	}
-	project, org, platformWide, err = c.resolveScope(ctxEntry)
-	return
+	return scope.Project, scope.Organization, scope.PlatformWide, nil
+}
+
+// ScopeSource says what chose a request's scope.
+type ScopeSource string
+
+const (
+	// ScopeSourceNone means nothing chose a scope: the request targets the
+	// user control plane.
+	ScopeSourceNone ScopeSource = ""
+	// ScopeSourceFlag means --project, --organization, or --platform-wide.
+	ScopeSourceFlag ScopeSource = "flag"
+	// ScopeSourceEnv means DATUM_PROJECT or DATUM_ORGANIZATION.
+	ScopeSourceEnv ScopeSource = "env"
+	// ScopeSourceContext means the active context filled in the scope because
+	// no flag or environment variable did.
+	ScopeSourceContext ScopeSource = "context"
+)
+
+// Scope is the control plane a request targets and where that choice came
+// from. At most one of Project, Organization, or PlatformWide is set; none is
+// when Source is ScopeSourceNone.
+type Scope struct {
+	Project      string
+	Organization string
+	PlatformWide bool
+	Source       ScopeSource
+	// ProjectOrganization is the organization Project belongs to. It is only
+	// known when the active context chose the project; a --project flag or
+	// DATUM_PROJECT carries no organization.
+	ProjectOrganization string
+}
+
+// ResolvedScopeDetails is ResolvedScope plus where the scope came from, for
+// commands that want to tell the user which control plane they are about to
+// act on and why.
+func (c *CustomConfigFlags) ResolvedScopeDetails() (Scope, error) {
+	ctxEntry, _, err := c.loadDatumContext()
+	if err != nil {
+		return Scope{}, err
+	}
+	return c.resolveScope(ctxEntry)
 }
 
 // resolveScope picks the org/project/platform-wide scope for the request. It
 // tries, in order: flags → environment variables → active context. Returns an
 // error if the inputs are contradictory.
-func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext) (string, string, bool, error) {
+func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext) (Scope, error) {
 	platformWide := c.PlatformWide != nil && *c.PlatformWide
 	projectID := ""
 	organizationID := ""
+	source := ScopeSourceNone
 
 	if c.Project != nil && *c.Project != "" {
 		projectID = *c.Project
@@ -332,10 +374,13 @@ func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext
 	}
 
 	if platformWide && (projectID != "" || organizationID != "") {
-		return "", "", false, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
+		return Scope{}, fmt.Errorf("--platform-wide cannot be used with --project or --organization")
+	}
+	if platformWide || projectID != "" || organizationID != "" {
+		source = ScopeSourceFlag
 	}
 
-	if projectID == "" && organizationID == "" && !platformWide {
+	if source == ScopeSourceNone {
 		if envProject := os.Getenv("DATUM_PROJECT"); envProject != "" {
 			projectID = envProject
 		}
@@ -343,25 +388,39 @@ func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext
 			organizationID = envOrg
 		}
 		if projectID != "" && organizationID != "" {
-			return "", "", false, fmt.Errorf("DATUM_PROJECT and DATUM_ORGANIZATION cannot both be set")
+			return Scope{}, fmt.Errorf("DATUM_PROJECT and DATUM_ORGANIZATION cannot both be set")
+		}
+		if projectID != "" || organizationID != "" {
+			source = ScopeSourceEnv
 		}
 	}
 
 	// Active context fills in when flags/env don't. Project scope wins over
 	// org scope when the context is project-scoped.
-	if projectID == "" && organizationID == "" && !platformWide && ctxEntry != nil {
+	projectOrg := ""
+	if source == ScopeSourceNone && ctxEntry != nil {
 		if ctxEntry.ProjectID != "" {
 			projectID = ctxEntry.ProjectID
+			projectOrg = ctxEntry.OrganizationID
 		} else {
 			organizationID = ctxEntry.OrganizationID
+		}
+		if projectID != "" || organizationID != "" {
+			source = ScopeSourceContext
 		}
 	}
 
 	if projectID != "" && organizationID != "" {
-		return "", "", false, fmt.Errorf("exactly one of --project or --organization must be provided")
+		return Scope{}, fmt.Errorf("exactly one of --project or --organization must be provided")
 	}
 
-	return projectID, organizationID, platformWide, nil
+	return Scope{
+		Project:             projectID,
+		Organization:        organizationID,
+		PlatformWide:        platformWide,
+		Source:              source,
+		ProjectOrganization: projectOrg,
+	}, nil
 }
 
 func (c *CustomConfigFlags) ensureOnboardingComplete(
