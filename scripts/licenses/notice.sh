@@ -15,7 +15,12 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 # Build go-licenses for the host; GOOS below applies to the report only.
-GOBIN="$tmp/bin" go install "github.com/google/go-licenses@${GO_LICENSES_VERSION}"
+# Pin the build to the toolchain this module selects: "go install pkg@version"
+# ignores the local go.mod, so on a machine whose system Go is older than the
+# module's toolchain line it would build go-licenses with that older Go, whose
+# idea of GOROOT differs and makes every standard-library package fail with
+# "does not have module info".
+GOTOOLCHAIN="$(go env GOVERSION)" GOBIN="$tmp/bin" go install "github.com/google/go-licenses@${GO_LICENSES_VERSION}"
 
 mkdir "$tmp/sections"
 for goos in "${PLATFORMS[@]}"; do
