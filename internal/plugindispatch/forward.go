@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/datumconfig"
@@ -40,9 +42,19 @@ import (
 // the DATUM_SESSION environment variable runs the plugin as that session. When
 // the session cannot be resolved, ForwardPlugin returns the UserError so the
 // caller can report it; the plugin is not run.
+//
+// datumctl's other global flags are accepted in front of the plugin name
+// ("datumctl --project P compute logs W -c zitadel") and applied to the
+// factory before the plugin's environment is built, so the plugin sees the
+// requested scope and never sees the flags themselves. Flags after the plugin
+// name are the plugin's and are forwarded untouched, as they always were.
 func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.DatumCloudFactory) error {
 	sessionValue, args, hasSessionFlag := splitSessionFlag(os.Args[1:])
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+	globals := globalFlags(root)
+	globalValues, args, err := splitGlobalFlags(globals, args)
+	if err != nil || len(args) == 0 {
+		// An unknown or malformed global flag, --help, or a line with no
+		// command on it: cobra parses it and reports the problem.
 		return nil
 	}
 	name := args[0]
@@ -90,11 +102,102 @@ func ForwardPlugin(pluginsDir string, root *cobra.Command, factory *client.Datum
 		}
 	}
 
+	// Only now, with the line known to be a trusted plugin invocation, do the
+	// leading global flags touch the factory. Doing it earlier would leave
+	// --project applied on a line cobra is about to parse again.
+	if err := applyGlobalFlags(globals, globalValues); err != nil {
+		// A value the flag rejects (say "-v abc"): cobra reports it in its own
+		// words, since it parses the same flags next.
+		return nil
+	}
+	if err := root.ValidateFlagGroups(); err != nil {
+		// --project with --organization, for example. Falling through would bury
+		// this under cobra's "unknown flag" for the plugin's own flags.
+		return customerrors.NewUserError(err.Error())
+	}
+
 	if err := applyPluginSessionOverride(sessionValue, hasSessionFlag); err != nil {
 		return err
 	}
 
 	return Exec(binaryPath, args[1:], factory)
+}
+
+// globalFlags returns datumctl's global flag set: the root command's persistent
+// flags plus pflag.CommandLine (which carries the logging flags such as -v),
+// merged the same way cobra merges them before it parses.
+func globalFlags(root *cobra.Command) *pflag.FlagSet {
+	flags := root.PersistentFlags()
+	flags.AddFlagSet(pflag.CommandLine)
+	return flags
+}
+
+// globalFlagValue is one global flag taken off the front of a plugin command
+// line, in the order it appeared.
+type globalFlagValue struct {
+	name, value string
+}
+
+// flagRecorder is a pflag.Value that records what a flag was set to instead of
+// applying it, so a parse has no effect until the caller decides to apply it.
+type flagRecorder struct {
+	name string
+	into *[]globalFlagValue
+}
+
+func (r *flagRecorder) String() string { return "" }
+func (r *flagRecorder) Type() string   { return "string" }
+func (r *flagRecorder) Set(v string) error {
+	*r.into = append(*r.into, globalFlagValue{name: r.name, value: v})
+	return nil
+}
+
+// splitGlobalFlags takes datumctl's own global flags off the front of a plugin
+// command line and returns them with the rest of the line, which starts with
+// the plugin name: "--project P compute logs W -c zitadel" gives [{project P}]
+// and ["compute", "logs", "W", "-c", "zitadel"].
+//
+// Parsing stops at the first positional argument, so the plugin's own flags —
+// which may reuse datumctl's names and shorthands — are never touched, and a
+// bare "--" ends datumctl's flags as it does for cobra. Both "--flag value" and
+// "--flag=value" are accepted. globals supplies the definitions, in particular
+// which flags take a value, which is what tells "--platform-wide compute" apart
+// from "--project compute".
+//
+// Nothing is applied here: the recorded values are replayed by applyGlobalFlags
+// once the line is known to be a plugin invocation, so a built-in command or an
+// unknown plugin falls through to cobra with the factory untouched. An unknown
+// flag, a flag missing its value, or --help is returned as an error for the
+// caller to leave to cobra.
+func splitGlobalFlags(globals *pflag.FlagSet, args []string) (values []globalFlagValue, rest []string, err error) {
+	scratch := pflag.NewFlagSet("datumctl", pflag.ContinueOnError)
+	scratch.SetOutput(io.Discard)
+	scratch.SetInterspersed(false)
+	globals.VisitAll(func(f *pflag.Flag) {
+		scratch.AddFlag(&pflag.Flag{
+			Name:        f.Name,
+			Shorthand:   f.Shorthand,
+			NoOptDefVal: f.NoOptDefVal,
+			Value:       &flagRecorder{name: f.Name, into: &values},
+		})
+	})
+	if err := scratch.Parse(args); err != nil {
+		return nil, nil, err
+	}
+	return values, scratch.Args(), nil
+}
+
+// applyGlobalFlags sets the recorded global flags on datumctl's own flag set,
+// in command-line order, so --project, --organization and --platform-wide reach
+// the factory's ConfigFlags before BuildEnv resolves DATUM_PROJECT and
+// DATUM_ORG for the plugin.
+func applyGlobalFlags(globals *pflag.FlagSet, values []globalFlagValue) error {
+	for _, v := range values {
+		if err := globals.Set(v.name, v.value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // splitSessionFlag removes datumctl's global --session flag ("--session X" or
@@ -233,8 +336,11 @@ func isLegacyManagedName(name, binaryPath string) bool {
 // injection (completion may return empty candidates rather than failing outright).
 //
 // Returns nil if not applicable (not a completion call, or name is not a plugin).
-// Must be called before cobra.Execute().
-func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) error {
+// Must be called before cobra.Execute() and after root's persistent flags are
+// registered: global flags typed before the plugin name ("datumctl --project P
+// compute lo<TAB>") are recognized from root and applied to the factory so the
+// plugin completes against the requested scope.
+func ForwardCompletion(pluginsDir string, root *cobra.Command, factory *client.DatumCloudFactory) error {
 	// Need at least: datumctl __complete <name> [args...]
 	if len(os.Args) < 3 {
 		return nil
@@ -243,10 +349,15 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 		return nil
 	}
 
-	// Take --session out of the completion request the same way the run path
-	// does, so it never reaches the plugin as an argument it does not know.
+	// Take --session and the leading global flags out of the completion request
+	// the same way the run path does, so they never reach the plugin as
+	// arguments it does not know.
 	sessionValue, completionArgs, hasSessionFlag := splitSessionFlag(os.Args[2:])
-	if len(completionArgs) == 0 {
+	globals := globalFlags(root)
+	globalValues, completionArgs, err := splitGlobalFlags(globals, completionArgs)
+	if err != nil || len(completionArgs) == 0 {
+		// A partial or malformed global flag is what is being completed; cobra
+		// completes datumctl's own flags.
 		return nil
 	}
 	name := completionArgs[0]
@@ -293,9 +404,10 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 	// completion. Non-fatal: if env construction fails we proceed without injection
 	// and the plugin will return empty candidates instead of erroring.
 	if factory != nil {
-		// Honor --session/DATUM_SESSION so completion lists what the plugin will
-		// act on. An unresolvable value is ignored here; running the plugin
-		// reports it.
+		// Honor the leading global flags and --session/DATUM_SESSION so
+		// completion lists what the plugin will act on. An unusable value is
+		// ignored here; running the plugin reports it.
+		_ = applyGlobalFlags(globals, globalValues)
 		_ = applyPluginSessionOverride(sessionValue, hasSessionFlag)
 		if env, buildErr := BuildEnv(factory); buildErr == nil {
 			cmd.Env = overlayEnv(os.Environ(), env)
@@ -322,18 +434,19 @@ func ForwardCompletion(pluginsDir string, factory *client.DatumCloudFactory) err
 // plugin's own help is shown instead of datumctl's root help.
 //
 // Cobra intercepts --help before RunE fires, so this must be called before
-// cobra.Execute(), mirroring the ForwardCompletion pattern.
-func ForwardHelp(pluginsDir string) error {
-	// Strip "datumctl" and any --session, so help for
-	// "datumctl <plugin> <cmd> --session X --help" reaches the plugin too.
+// cobra.Execute(), mirroring the ForwardCompletion pattern. It needs root's
+// persistent flags registered so that "datumctl --project P <plugin> --help"
+// still finds the plugin name behind the global flags.
+func ForwardHelp(pluginsDir string, root *cobra.Command) error {
+	// Strip "datumctl", any --session, and the leading global flags, so help for
+	// "datumctl --project P <plugin> <cmd> --session X --help" reaches the
+	// plugin too. The global flags are not applied: help needs no scope.
 	_, args, _ := splitSessionFlag(os.Args[1:])
-	if len(args) == 0 {
+	_, args, err := splitGlobalFlags(globalFlags(root), args)
+	if err != nil || len(args) == 0 {
 		return nil
 	}
 	name := args[0]
-	if strings.HasPrefix(name, "-") {
-		return nil
-	}
 
 	hasHelp := false
 	for _, a := range args[1:] {
