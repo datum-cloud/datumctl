@@ -37,10 +37,14 @@ or project) so subsequent commands do not require --project or --organization
 flags.
 
 By default, opens your browser for OAuth2 PKCE authentication. Use
---no-browser in headless environments (SSH, CI, containers) to authenticate
-via a device-code flow that does not need a browser on this machine.
+--no-browser on a machine without a browser (SSH, containers) to sign in
+with a device code from another device.
 
-Use --credentials to authenticate as a service account (non-interactive).
+CI and automation: pass --credentials with a service account credentials
+JSON file to sign in with no browser and no prompts. Create the service
+account in the Datum Cloud portal and download its credentials file from
+there; human accounts cannot use this path. Set DATUM_PROJECT or
+DATUM_ORGANIZATION on later commands to pick the scope without a context.
 
 Login makes the new session active, so it rejects the global --session flag
 and ignores DATUM_SESSION.`,
@@ -50,14 +54,16 @@ and ignores DATUM_SESSION.`,
 		Example: `  # Log in (opens browser, then picks a context)
   datumctl login
 
-  # Log in without a browser (device-code flow for headless/CI)
+  # CI / automation: log in as a service account, then scope each command
+  datumctl login --credentials ./key.json
+  DATUM_PROJECT=my-project datumctl get dnszones
+
+  # Log in without a browser (device code, for SSH sessions and containers)
   datumctl login --no-browser
 
   # Log in to a staging environment
   datumctl login --hostname auth.staging.env.datum.net
-
-  # Log in with a service account credentials file
-  datumctl login --credentials ./my-key.json --hostname auth.staging.env.datum.net`,
+  datumctl login --credentials ./key.json --hostname auth.staging.env.datum.net`,
 		RunE: runLogin,
 	}
 
@@ -65,7 +71,7 @@ and ignores DATUM_SESSION.`,
 	cmd.Flags().StringVar(&apiHostnameFlag, "api-hostname", "", "Hostname of the Datum Cloud API server (derived from auth hostname if omitted)")
 	cmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Use the device authorization flow instead of opening a browser")
-	cmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a service account credentials JSON file")
+	cmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a service account credentials JSON file (non-interactive login for CI)")
 	cmd.Flags().BoolVar(&debugCredentials, "debug", false, "Print JWT claims and token request details (credentials flow only)")
 
 	return cmd

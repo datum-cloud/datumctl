@@ -98,6 +98,9 @@ Get started:
   datumctl get organizations
   datumctl get dnszones
 
+In CI, sign in as a service account instead:
+  datumctl login --credentials ./key.json
+
 Run one command as another signed-in account, leaving the active one as is:
   datumctl get dnszones --session user@example.com@api.staging.env.datum.net
   DATUM_SESSION=user@example.com datumctl get dnszones

@@ -27,7 +27,7 @@ const KnownUsersKey = "known_users"
 // ErrNoActiveUser indicates that no active user is set in the keyring.
 var ErrNoActiveUser = customerrors.NewUserErrorWithHint(
 	"No active user found.",
-	"Please login first using: `datumctl login`",
+	"Please login first using: `datumctl login`. In CI, use `datumctl login --credentials <file>` with a service account.",
 )
 
 // IsNoActiveUser reports whether err wraps ErrNoActiveUser.
