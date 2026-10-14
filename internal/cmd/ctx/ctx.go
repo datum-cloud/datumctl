@@ -1,19 +1,14 @@
 package ctx
 
 import (
-	"fmt"
-	"os"
+	"context"
 
 	"github.com/spf13/cobra"
-	"go.datum.net/datumctl/internal/datumconfig"
-	"go.datum.net/datumctl/internal/discovery"
 )
 
 // Command returns the "ctx" command group. Running "datumctl ctx" without a
 // subcommand lists available contexts.
 func Command() *cobra.Command {
-	var refresh bool
-
 	cmd := &cobra.Command{
 		Use:   "ctx",
 		Short: "View and switch contexts",
@@ -21,30 +16,25 @@ func Command() *cobra.Command {
 
 Running 'datumctl ctx' without a subcommand lists the active session's
 contexts. Use --all to list every session's contexts grouped by account and
-endpoint, or --refresh to update the context cache from the API.`,
+endpoint. Contexts are always fetched live, so new organizations and projects
+appear immediately.`,
 		Aliases: []string{"context"},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if refresh {
-				if err := runRefresh(cmd); err != nil {
-					return err
-				}
-			} else {
-				cfg, err := datumconfig.LoadAuto()
-				if err == nil && discovery.IsCacheStale(cfg, discovery.AutoRefreshStaleness) {
-					if err := runRefresh(cmd); err != nil {
-						fmt.Fprintln(os.Stderr, "Warning: could not refresh context cache:", err)
-					}
-				}
-			}
-			return runList(cmd, args)
-		},
+		RunE:    runList,
 	}
 
-	cmd.Flags().BoolVar(&refresh, "refresh", false, "Refresh the context cache from the API before listing")
+	cmd.Flags().Bool("refresh", false, "No-op; contexts are always fetched live")
+	_ = cmd.Flags().MarkDeprecated("refresh", "contexts are always fetched live")
 	cmd.Flags().Bool("all", false, "List contexts from every session, grouped by account and endpoint")
 
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(useCmd())
 
 	return cmd
+}
+
+func cmdContext(cmd *cobra.Command) context.Context {
+	if cmd != nil && cmd.Context() != nil {
+		return cmd.Context()
+	}
+	return context.Background()
 }

@@ -13,6 +13,7 @@ import (
 
 	"go.datum.net/datumctl/internal/authutil"
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/discovery"
 	"go.datum.net/datumctl/internal/onboarding"
 	"go.datum.net/datumctl/internal/pluginstore"
 )
@@ -29,7 +30,16 @@ func runLanding(cmd *cobra.Command, _ []string) {
 		return
 	}
 
-	session := cfg.ActiveSessionEntry()
+	session, err := cfg.ActiveSessionEntryE()
+	if err != nil {
+		// A stale DATUM_SESSION names no session. The landing page is a
+		// read-only "what's my state" view, so render it against the real
+		// active session rather than hard-failing a command with no
+		// subcommand to retry — but say so, since it's why the "Session"
+		// line below won't match DATUM_SESSION.
+		fmt.Fprintf(out, "Note: DATUM_SESSION matches no signed-in session; showing the active session instead.\n\n")
+		session = cfg.ActiveSessionEntry()
+	}
 	if session == nil {
 		printLoggedOutLanding(out)
 		return
@@ -82,28 +92,20 @@ func printLoggedInLanding(ctx context.Context, out io.Writer, cfg *datumconfig.C
 	if ctxEntry != nil {
 		var ctxLine string
 		if ctxEntry.ProjectID != "" {
-			projName := cfg.ProjectDisplayName(ctxEntry.Session, ctxEntry.ProjectID)
-			ctxLine = fmt.Sprintf("%q project (%s)", projName, ctxEntry.Ref())
+			ctxLine = fmt.Sprintf("project %s", ctxEntry.Ref())
 		} else {
-			orgName := cfg.OrgDisplayName(ctxEntry.Session, ctxEntry.OrganizationID)
-			ctxLine = fmt.Sprintf("%q org (%s)", orgName, ctxEntry.OrganizationID)
+			ctxLine = fmt.Sprintf("org %s", ctxEntry.OrganizationID)
 		}
 		fmt.Fprintf(out, "  Context        %s\n", ctxLine)
 	} else {
 		fmt.Fprintln(out, "  Context        (none — run 'datumctl ctx use' to pick one)")
 	}
 
-	// Show access breadth if we have cache data
-	orgs := cfg.Cache.Organizations
-	projects := cfg.Cache.Projects
-	if len(orgs) > 0 {
-		if len(projects) > 0 {
-			fmt.Fprintf(out, "  Access         %d org(s), %d project(s)\n", len(orgs), len(projects))
-		} else {
+	// Show access breadth from a live membership listing.
+	if orgs, ok := listOrgs(ctx, session); ok {
+		if len(orgs) > 0 {
 			fmt.Fprintf(out, "  Access         %d org(s)\n", len(orgs))
-		}
-	} else if len(cfg.ContextsForSession(session.Name)) == 0 {
-		if portalBase, err := onboarding.DerivePortalURL(session.Endpoint.Server); err == nil {
+		} else if portalBase, err := onboarding.DerivePortalURL(session.Endpoint.Server); err == nil {
 			fmt.Fprintf(out, "  Next step      %s\n", portalBase)
 			fmt.Fprintln(out)
 			fmt.Fprintln(out, "You'll need an organization before datumctl can do much. Create one in the portal to get going.")
@@ -337,6 +339,7 @@ var landingTips = []string{
 	"'datumctl plugin index add <name> <url>' registers a team or community catalog.",
 	// Power-user tips
 	"Set DATUM_PROJECT or DATUM_ORGANIZATION to override context for a single command.",
+	"Pass --session or set DATUM_SESSION to run a command as another signed-in account without switching.",
 	"'datumctl describe <resource> <name>' shows status conditions — handy for debugging.",
 	"JSON and YAML both work with -f; mix them freely in a single directory.",
 	"'datumctl version --client' prints the local version without hitting the server.",
@@ -346,6 +349,20 @@ var landingTips = []string{
 func pickTip(seed int64) string {
 	r := rand.New(rand.NewSource(seed))
 	return landingTips[r.Intn(len(landingTips))]
+}
+
+// listOrgs lists the session's organizations live. ok is false when they
+// could not be listed.
+func listOrgs(ctx context.Context, session *datumconfig.Session) ([]discovery.DiscoveredOrg, bool) {
+	api, err := discovery.ForSession(ctx, session)
+	if err != nil {
+		return nil, false
+	}
+	orgs, err := api.ListOrgs(ctx)
+	if err != nil {
+		return nil, false
+	}
+	return orgs, true
 }
 
 func checkOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, session *datumconfig.Session) (onboarding.Result, bool) {
@@ -366,7 +383,7 @@ func checkOnboardingStatus(ctx context.Context, cfg *datumconfig.ConfigV1Beta1, 
 	if err != nil {
 		return onboarding.Result{}, false
 	}
-	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, cfg.OrgDisplayName(session.Name, orgID))
+	result, err := onboarding.CheckOrg(ctx, apiHostname, tknSrc, userID, orgID, "")
 	if err != nil {
 		return onboarding.Result{}, false
 	}

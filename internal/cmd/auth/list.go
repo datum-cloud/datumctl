@@ -55,7 +55,7 @@ func runList(_ *cobra.Command, _ []string) error {
 
 	for _, s := range cfg.Sessions {
 		status := ""
-		if s.Name == cfg.ActiveSession {
+		if s.Name == cfg.ActiveSessionName() {
 			status = "Active"
 		}
 		if showEndpoint {

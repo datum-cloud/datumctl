@@ -26,7 +26,7 @@ keyring.
 To authenticate with Datum Cloud, use the `login` command:
 
 ```
-datumctl login [--hostname <auth-hostname>] [--no-browser] [-v]
+datumctl login [--hostname <auth-hostname>] [--no-browser] [--credentials <file>] [-v]
 ```
 
 *   `--hostname <auth-hostname>`: (Optional) Specify the hostname of the Datum
@@ -34,6 +34,9 @@ datumctl login [--hostname <auth-hostname>] [--no-browser] [-v]
 *   `--no-browser`: (Optional) Do not attempt to open a browser; print the login
     URL and use the device authorization flow (enter a user code) so you can
     complete login without a local callback.
+*   `--credentials <file>`: (Optional) Sign in as a service account using its
+    credentials JSON file. Non-interactive; see
+    [Service accounts](#service-accounts-ci-and-automation).
 *   `-v, --verbose`: (Optional) Print the full ID token claims after successful
     login.
 
@@ -50,6 +53,82 @@ Running this command will:
 
 Your credentials (including refresh tokens) are stored securely in the system
 keyring, associated with your user identifier (typically your email address).
+
+## Service accounts (CI and automation)
+
+A service account is a non-human identity for CI pipelines, scheduled jobs,
+and other automation. It signs in with a credentials file instead of a
+browser, so there are no prompts and no human account involved.
+
+### Getting a credentials file
+
+Create the service account in the
+[Datum Cloud portal](https://cloud.datum.net) (for staging,
+`https://cloud.staging.env.datum.net`) and download its credentials JSON
+file. The file has `"type": "datum_service_account"` and carries the
+account's `client_id`, `client_email`, and an RSA private key. Treat it as a
+secret: store it in your CI provider's secret store and write it to disk only
+on the runner.
+
+The same file works against any environment; `--hostname` picks which one.
+Human accounts cannot use this path.
+
+### Signing in
+
+```
+datumctl login --credentials ./key.json
+```
+
+For staging:
+
+```
+datumctl login --credentials ./key.json --hostname auth.staging.env.datum.net
+```
+
+datumctl exchanges a signed JWT for an access token and stores the session in
+the keyring. The private key is kept on disk under your user config directory
+(`datumctl/service-accounts/`) so the token can be renewed without the
+original file. There is no refresh token: when the access token expires,
+datumctl mints a new JWT and exchanges it again automatically, for as long as
+the key stays valid.
+
+On a CI runner with no system keyring, datumctl falls back to a plain file
+at `~/.datumctl/credentials.json` (mode `0600`) and prints a warning at login.
+Treat that file like the credentials file itself.
+
+### Choosing a scope
+
+In CI there is no terminal for the context picker, so set the scope on each
+command with `DATUM_PROJECT` or `DATUM_ORGANIZATION` (or the `--project` /
+`--organization` flags):
+
+```
+DATUM_PROJECT=my-project datumctl diff -f manifest.yaml
+DATUM_PROJECT=my-project datumctl apply -f manifest.yaml
+DATUM_ORGANIZATION=my-org datumctl get projects
+```
+
+If the service account can see exactly one organization or project, login
+selects it as the context automatically. If it can see more, login in a
+non-interactive shell reports that context selection needs a terminal; the
+session is still signed in, and scoping each command as above is the
+supported pattern.
+
+### How the session appears
+
+The session is listed like any other, under the account's `client_email`:
+
+```
+$ datumctl auth list
+User              Status
+<client_email>    Active
+```
+
+`datumctl ctx` lists the organizations and projects the service account can
+reach, and `datumctl whoami` shows the account's identity and the effective
+scope. The service account must have access to the target organization, and
+that organization must have completed onboarding (see below). To remove the
+session, run `datumctl logout <client_email>`.
 
 ## Account onboarding
 
