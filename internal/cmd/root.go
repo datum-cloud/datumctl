@@ -677,16 +677,35 @@ is not reaching a ready state.`
 	)
 	rootCmd.AddCommand(WrapResourceCommand(describeCmd))
 
-	diffCmd := diff.NewCmdDiff(factory, ioStreams)
+	// The diff tool names the temporary files it compared; diffOut rewrites
+	// those headers to live/<resource> and merged/<resource> on the way out.
+	diffOut := newDiffHeaderRewriter(ioStreams.Out)
+	diffCmd := diff.NewCmdDiff(factory, genericclioptions.IOStreams{
+		In:     ioStreams.In,
+		Out:    diffOut,
+		ErrOut: ioStreams.ErrOut,
+	})
+	runDiff := diffCmd.Run
+	diffCmd.Run = func(cmd *cobra.Command, args []string) {
+		// The diff program is chosen from KUBECTL_EXTERNAL_DIFF; honour the
+		// documented DATUMCTL_EXTERNAL_DIFF name as well.
+		if v := os.Getenv("DATUMCTL_EXTERNAL_DIFF"); v != "" && os.Getenv("KUBECTL_EXTERNAL_DIFF") == "" {
+			_ = os.Setenv("KUBECTL_EXTERNAL_DIFF", v)
+		}
+		defer func() { _ = diffOut.Flush() }()
+		runDiff(cmd, args)
+	}
 	diffCmd.Short = "Preview changes a manifest would make to live resources"
 	diffCmd.Long = `Show the difference between what is currently deployed on the Datum Cloud
 platform and what would be applied from a given manifest file.
 
 The output is always YAML. The diff uses the 'diff' tool in your PATH
 with -u (unified) and -N (treat absent files as empty) flags by default.
+Each resource appears as live/<group>.<version>.<Kind>.<namespace>.<name>
+(what is deployed) against merged/... (what would be applied).
 
 Set the DATUMCTL_EXTERNAL_DIFF environment variable to use a different diff
-tool (KUBECTL_EXTERNAL_DIFF is also supported for kubectl workflow compatibility).
+tool (KUBECTL_EXTERNAL_DIFF is also honoured).
 Example: DATUMCTL_EXTERNAL_DIFF="colordiff -N -u"
 
 Exit codes:
