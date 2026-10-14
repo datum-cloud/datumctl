@@ -19,7 +19,7 @@ func TestForwardCompletion_noop_whenNotComplete(t *testing.T) {
 
 	managedDir := t.TempDir()
 
-	err := ForwardCompletion(managedDir, nil)
+	err := ForwardCompletion(managedDir, buildMinimalCobraTree(), nil)
 	if err != nil {
 		t.Errorf("ForwardCompletion with non-completion args: want nil, got %v", err)
 	}
@@ -42,7 +42,7 @@ func TestForwardCompletion_noop_whenBuiltin(t *testing.T) {
 	// Use an empty managed dir so no plugin binary named "datumctl-get" exists.
 	managedDir := t.TempDir()
 
-	err := ForwardCompletion(managedDir, nil)
+	err := ForwardCompletion(managedDir, buildMinimalCobraTree(), nil)
 	if err != nil {
 		t.Errorf("ForwardCompletion for builtin name: want nil, got %v", err)
 	}

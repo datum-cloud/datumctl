@@ -80,16 +80,6 @@ func RootCmd() *cobra.Command {
 		panic(err)
 	}
 
-	// ForwardCompletion and ForwardHelp must run before cobra.Execute() because
-	// Cobra intercepts both __complete and --help before RunE fires, and plugin
-	// names are not registered as Cobra subcommands.
-	if err := plugindispatch.ForwardCompletion(earlyPluginsDir, factory); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: completion forwarding error: %v\n", err)
-	}
-	if err := plugindispatch.ForwardHelp(earlyPluginsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: help forwarding error: %v\n", err)
-	}
-
 	rootCmd := &cobra.Command{
 		Use:   "datumctl",
 		Short: "The official CLI for Datum Cloud",
@@ -267,6 +257,18 @@ are unaffected.`,
 		"log-flush-frequency", "v", "vmodule", "disable-compression",
 		"warnings-as-errors",
 	)
+
+	// ForwardCompletion and ForwardHelp must run before cobra.Execute() because
+	// Cobra intercepts both __complete and --help before RunE fires, and plugin
+	// names are not registered as Cobra subcommands. They run here, once the
+	// persistent flags exist, so that global flags typed before the plugin name
+	// ("datumctl --project P compute --help") are recognized as datumctl's.
+	if err := plugindispatch.ForwardCompletion(earlyPluginsDir, rootCmd, factory); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: completion forwarding error: %v\n", err)
+	}
+	if err := plugindispatch.ForwardHelp(earlyPluginsDir, rootCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: help forwarding error: %v\n", err)
+	}
 
 	// Plugins dispatch dynamically instead of registering as Cobra commands, so
 	// the help listing has to be taught about them explicitly.
@@ -787,12 +789,18 @@ Specify the resource type and name to view its history.`
 	// parses flags. If it fails (e.g. integrity check), execution falls
 	// through to cobra and the RunE path re-enforces the same checks.
 	//
-	// A --session or DATUM_SESSION value that names no single session is the
-	// one failure reported here: falling through would run cobra over the
-	// plugin's own flags and bury the session error under "unknown flag".
+	// A --session or DATUM_SESSION value that names no single session, or
+	// conflicting scope flags (--project with --organization), are the failures
+	// reported here: falling through would run cobra over the plugin's own flags
+	// and bury the real error under "unknown flag". ForwardPlugin has already
+	// applied the global flags, so --error-format is honored.
 	if err := plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory); err != nil {
 		if _, ok := customerrors.IsUserError(err); ok {
-			customerrors.Format(os.Stderr, err, customerrors.FormatHuman, 0)
+			format := customerrors.FormatHuman
+			if f := rootCmd.PersistentFlags().Lookup("error-format"); f != nil {
+				format = f.Value.String()
+			}
+			customerrors.Format(os.Stderr, err, format, 0)
 			os.Exit(1)
 		}
 	}
