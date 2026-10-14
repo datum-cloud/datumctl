@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	componentversion "k8s.io/component-base/version"
+	"k8s.io/kubectl/pkg/cmd/annotate"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
 	kubeauth "k8s.io/kubectl/pkg/cmd/auth"
@@ -24,6 +25,8 @@ import (
 	"k8s.io/kubectl/pkg/cmd/edit"
 	"k8s.io/kubectl/pkg/cmd/explain"
 	"k8s.io/kubectl/pkg/cmd/get"
+	"k8s.io/kubectl/pkg/cmd/label"
+	"k8s.io/kubectl/pkg/cmd/patch"
 	"k8s.io/kubectl/pkg/cmd/version"
 	utilcomp "k8s.io/kubectl/pkg/util/completion"
 
@@ -362,7 +365,7 @@ does not require an --organization or --project flag. It also shows each
 organization's setup status. All other resource types require one of
 these flags (or an active context) to specify the target context.
 The 'organizations' shorthand also works with 'datumctl delete', 'datumctl edit',
-and 'datumctl describe'.`
+'datumctl describe', 'datumctl patch', 'datumctl annotate', and 'datumctl label'.`
 	getCmd.Example = `  # List your organization memberships (no context required)
   datumctl get organizations
 
@@ -525,6 +528,124 @@ datumctl saves your changes to a temporary file so you can reconcile them.`
 		"subresource", "template",
 	)
 	rootCmd.AddCommand(WrapResourceCommand(editCmd))
+
+	patchCmd := patch.NewCmdPatch(factory, ioStreams)
+	patchCmd.Short = "Update individual fields of a live Datum Cloud resource"
+	patchCmd.Long = `Change one or more fields of a live Datum Cloud resource in a single
+command, without rendering and applying a full manifest.
+
+Give the patch inline with -p, or from a file with --patch-file. JSON and
+YAML formats are accepted. Two patch types are supported:
+
+  merge (default)  A JSON merge patch: a partial document whose fields
+                   replace the matching fields of the live resource. The
+                   right choice for nearly every change.
+  json             A JSON patch: an ordered list of operations (add,
+                   replace, remove, ...) with explicit paths. Use this
+                   for precise edits to items inside lists.
+
+Use --dry-run=server to validate the patch against the API server and
+preview the result without persisting any changes.`
+	patchCmd.Example = `  # Change a single field with a merge patch
+  datumctl patch workload my-app -p '{"spec":{"replicas":2}}' --project <project-id>
+
+  # Write the patch as YAML
+  datumctl patch workload my-app -p $'spec:\n  replicas: 2' --project <project-id>
+
+  # Patch a resource identified by a manifest file
+  datumctl patch -f ./workload.yaml -p '{"spec":{"replicas":2}}' --project <project-id>
+
+  # Use a JSON patch for precise, positional edits
+  datumctl patch workload my-app --type=json -p '[{"op":"replace","path":"/spec/replicas","value":2}]' --project <project-id>
+
+  # Preview the patched resource without persisting it
+  datumctl patch workload my-app -p '{"spec":{"replicas":2}}' --project <project-id> --dry-run=server -o yaml`
+	// Every Datum Cloud resource is a custom resource, and the API server
+	// rejects strategic merge patches for those. Default to a JSON merge
+	// patch so the plain '-p {...}' form works out of the box.
+	if f := patchCmd.Flags().Lookup("type"); f != nil {
+		_ = f.Value.Set("merge")
+		f.DefValue = "merge"
+		f.Usage = "The type of patch being provided; one of [json merge]"
+	}
+	hideFlags(patchCmd,
+		"allow-missing-template-keys", "kustomize",
+		"show-managed-fields", "subresource", "template",
+	)
+	rootCmd.AddCommand(WrapResourceCommand(patchCmd))
+
+	annotateCmd := annotate.NewCmdAnnotate("datumctl", factory, ioStreams)
+	annotateCmd.Short = "Add, change, or remove annotations on a Datum Cloud resource"
+	annotateCmd.Long = `Update the annotations on one or more live Datum Cloud resources.
+
+Annotations are free-form key/value metadata attached to a resource. They
+are not used to select resources (use labels for that), which makes them a
+handy way to record notes or to nudge a resource — for example, setting a
+fresh annotation on a workload to trigger a rollout.
+
+Pass KEY=VALUE pairs to add or update annotations, and KEY- (a trailing
+dash) to remove one. By default an annotation that already exists is left
+untouched; pass --overwrite to replace it.
+
+Use --dry-run=server to preview the result without persisting any changes.`
+	annotateCmd.Example = `  # Add an annotation to a workload
+  datumctl annotate workload my-app restart=now --project <project-id>
+
+  # Change an annotation that already exists
+  datumctl annotate workload my-app restart=again --project <project-id> --overwrite
+
+  # Remove an annotation
+  datumctl annotate workload my-app restart- --project <project-id>
+
+  # Annotate every DNS zone matching a label selector
+  datumctl annotate dnszones -l team=platform owner=platform-team --project <project-id>
+
+  # Show the annotations on a resource
+  datumctl annotate project my-project-id --list --organization <org-id>
+
+  # Preview the result without persisting it
+  datumctl annotate workload my-app restart=now --project <project-id> --dry-run=server -o yaml`
+	hideFlags(annotateCmd,
+		"allow-missing-template-keys", "kustomize",
+		"show-managed-fields", "template",
+	)
+	rootCmd.AddCommand(WrapResourceCommand(annotateCmd))
+
+	labelCmd := label.NewCmdLabel(factory, ioStreams)
+	labelCmd.Short = "Add, change, or remove labels on a Datum Cloud resource"
+	labelCmd.Long = `Update the labels on one or more live Datum Cloud resources.
+
+Labels are key/value metadata used to organize and select resources, for
+example with the -l flag of 'datumctl get' and 'datumctl delete'. For
+free-form notes that are not used for selection, use annotations instead.
+
+Pass KEY=VALUE pairs to add or update labels, and KEY- (a trailing dash)
+to remove one. By default a label that already exists is left untouched;
+pass --overwrite to replace it.
+
+Use --dry-run=server to preview the result without persisting any changes.`
+	labelCmd.Example = `  # Add a label to a workload
+  datumctl label workload my-app tier=frontend --project <project-id>
+
+  # Change a label that already exists
+  datumctl label workload my-app tier=backend --project <project-id> --overwrite
+
+  # Remove a label
+  datumctl label workload my-app tier- --project <project-id>
+
+  # Label every DNS zone matching a label selector
+  datumctl label dnszones -l team=platform env=prod --project <project-id>
+
+  # Show the labels on a resource
+  datumctl label project my-project-id --list --organization <org-id>
+
+  # Preview the result without persisting it
+  datumctl label workload my-app tier=frontend --project <project-id> --dry-run=server -o yaml`
+	hideFlags(labelCmd,
+		"allow-missing-template-keys", "kustomize",
+		"show-managed-fields", "template",
+	)
+	rootCmd.AddCommand(WrapResourceCommand(labelCmd))
 
 	describeCmd := describe.NewCmdDescribe("datumctl", factory, ioStreams)
 	describeCmd.Short = "Show detailed information about a Datum Cloud resource"
