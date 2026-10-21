@@ -6,10 +6,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -39,16 +41,29 @@ const (
 	rootAppsProject      = "factory-project"
 	rootAppsName         = "web-api"
 	rootAppsUID          = "fixture-template-uid"
-	rootAppsRV           = "42"
+	rootAppsRV           = "opaque-rv-a"
 	rootAppsRevisionName = "fixture-template-uid.rev-0001"
 	rootAppsToken        = "fixture-root-command-token"
 	rootAppsKey          = "fixture-root-command-key"
 	rootAppsEmail        = "fixture@example.test"
 )
 
-const rootAppsCurrent = `{"apiVersion":"apps.miloapis.com/v1alpha1","kind":"AppTemplate","metadata":{"name":"web-api","uid":"fixture-template-uid","resourceVersion":"42","generation":2},"spec":{"description":"current","inputSchema":{"type":"object","additionalProperties":false,"properties":{}},"large":9007199254740991}}`
+const rootAppsCurrentDefinition = `{"description":"current","inputSchema":{"additionalProperties":false,"properties":{},"type":"object"}}`
+const rootAppsRevisionDefinition = `{"description":"previous","inputSchema":{"additionalProperties":false,"properties":{"int53Plus":{"const":9007199254740993,"type":"integer"},"preciseDecimal":{"const":123456789012345678901e-21,"type":"number"},"trailingZeroInteger":{"const":9007199254740993e1,"type":"integer"},"uint64Max":{"const":18446744073709551615,"type":"integer"}},"type":"object"}}`
 
-const rootAppsRevisionJSON = `{"metadata":{"name":"fixture-template-uid.rev-0001"},"spec":{"templateUID":"fixture-template-uid","sequence":1,"digest":"sha256:fixture","effectiveActorUID":"actor-fixture","acceptedAt":"2026-10-20T00:00:00Z","definition":{"description":"previous","large":9007199254740993}}}`
+func rootAppsDigest(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func rootAppsQuoted(raw string) string {
+	encoded, _ := json.Marshal(raw)
+	return string(encoded)
+}
+
+var rootAppsCurrent = `{"apiVersion":"apps.miloapis.com/v1alpha1","kind":"AppTemplate","metadata":{"name":"web-api","uid":"fixture-template-uid","resourceVersion":"opaque-rv-a","generation":2},"spec":{"definitionJSON":` + rootAppsQuoted(rootAppsCurrentDefinition) + `,"digest":"` + rootAppsDigest(rootAppsCurrentDefinition) + `"}}`
+
+var rootAppsRevisionJSON = `{"metadata":{"name":"fixture-template-uid.rev-0001","uid":"fixture-revision-uid"},"spec":{"templateUID":"fixture-template-uid","sequence":1,"digest":"` + rootAppsDigest(rootAppsRevisionDefinition) + `","effectiveActorUID":"actor-fixture","acceptedAt":"2026-10-20T00:00:00Z","definitionJSON":` + rootAppsQuoted(rootAppsRevisionDefinition) + `}}`
 
 type rootAppsExpectedRequest struct {
 	method string
@@ -74,7 +89,7 @@ func TestRootCmdAppsCommandsUseScopedFactoryAndPreserveWritePreconditions(t *tes
 			contextProject: "context-project",
 			expect: []rootAppsExpectedRequest{
 				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/context-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplates/web-api", status: http.StatusOK, body: rootAppsCurrent},
-				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/context-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
+				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/context-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", query: "labelSelector=apps.miloapis.com%2Ftemplate-uid%3Dfixture-template-uid&limit=1", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
 			},
 			wantOutput: []string{`"templateUID":"` + rootAppsUID + `"`, rootAppsRevisionName},
 		},
@@ -85,7 +100,7 @@ func TestRootCmdAppsCommandsUseScopedFactoryAndPreserveWritePreconditions(t *tes
 			envProject:     "env-project",
 			expect: []rootAppsExpectedRequest{
 				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/env-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplates/web-api", status: http.StatusOK, body: rootAppsCurrent},
-				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/env-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
+				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/env-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", query: "labelSelector=apps.miloapis.com%2Ftemplate-uid%3Dfixture-template-uid&limit=1", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
 			},
 			wantOutput: []string{`"templateUID":"` + rootAppsUID + `"`, rootAppsRevisionName},
 		},
@@ -96,7 +111,7 @@ func TestRootCmdAppsCommandsUseScopedFactoryAndPreserveWritePreconditions(t *tes
 			envProject:     "env-project",
 			expect: []rootAppsExpectedRequest{
 				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/flag-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplates/web-api", status: http.StatusOK, body: rootAppsCurrent},
-				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/flag-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
+				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/flag-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", query: "labelSelector=apps.miloapis.com%2Ftemplate-uid%3Dfixture-template-uid&limit=1", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
 			},
 			wantOutput: []string{`"templateUID":"` + rootAppsUID + `"`, rootAppsRevisionName},
 		},
@@ -104,7 +119,7 @@ func TestRootCmdAppsCommandsUseScopedFactoryAndPreserveWritePreconditions(t *tes
 			name: "history for deleted template by UID",
 			args: []string{"apps", "templates", "history", "--uid", "retired-template-uid", "--project", rootAppsProject},
 			expect: []rootAppsExpectedRequest{
-				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/factory-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", status: http.StatusOK, body: `{"items":[` + rootAppsRevisionJSON + `]}`},
+				{method: http.MethodGet, path: "/apis/resourcemanager.miloapis.com/v1alpha1/projects/factory-project/control-plane/apis/apps.miloapis.com/v1alpha1/apptemplaterevisions", query: "labelSelector=apps.miloapis.com%2Ftemplate-uid%3Dretired-template-uid&limit=1", status: http.StatusOK, body: `{"items":[]}`},
 			},
 			wantOutput: []string{`"templateUID":"retired-template-uid"`, `"revisions":[]`},
 		},
@@ -391,7 +406,10 @@ func checkRootAppsRestoreBody(t *testing.T, request *http.Request) {
 			UID             string `json:"uid"`
 			ResourceVersion string `json:"resourceVersion"`
 		} `json:"metadata"`
-		Spec json.RawMessage `json:"spec"`
+		Spec struct {
+			DefinitionJSON string `json:"definitionJSON"`
+			Digest         string `json:"digest"`
+		} `json:"spec"`
 	}
 	if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 		t.Errorf("decode restore body: %v", err)
@@ -400,8 +418,9 @@ func checkRootAppsRestoreBody(t *testing.T, request *http.Request) {
 	if body.Metadata.UID != rootAppsUID || body.Metadata.ResourceVersion != rootAppsRV {
 		t.Errorf("restore preconditions changed: UID=%q RV=%q", body.Metadata.UID, body.Metadata.ResourceVersion)
 	}
-	if !bytes.Contains(body.Spec, []byte("9007199254740993")) {
-		t.Errorf("restore changed raw JSON numeric value: %s", body.Spec)
+	if body.Spec.DefinitionJSON != rootAppsRevisionDefinition ||
+		body.Spec.Digest != rootAppsDigest(rootAppsRevisionDefinition) {
+		t.Errorf("restore changed exact definition envelope: %#v", body.Spec)
 	}
 }
 

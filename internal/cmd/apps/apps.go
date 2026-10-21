@@ -4,13 +4,14 @@ package apps
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 
 const apiPath = "/apis/apps.miloapis.com/v1alpha1/"
 const maxResponseBytes = 8 << 20
+const maxTemplateRevisions = 1000
+const maxContinueTokenBytes = 4096
 
 type Options struct {
 	// RESTConfig must resolve an authenticated project scope, never the platform or an organization.
@@ -36,18 +39,26 @@ type Options struct {
 type template struct {
 	metav1.TypeMeta `json:",inline"`
 	Metadata        metav1.ObjectMeta `json:"metadata"`
-	Spec            json.RawMessage   `json:"spec"`
+	Spec            templateSpec      `json:"spec"`
+}
+
+// templateSpec is the native exact-definition envelope. DefinitionJSON is
+// treated as opaque bytes after JSON and digest validation; decoding the
+// definition into interface{} would lose large integers and decimal spelling.
+type templateSpec struct {
+	DefinitionJSON string `json:"definitionJSON"`
+	Digest         string `json:"digest"`
 }
 
 type revision struct {
 	Metadata metav1.ObjectMeta `json:"metadata"`
 	Spec     struct {
-		TemplateUID       string          `json:"templateUID"`
-		Sequence          uint64          `json:"sequence"`
-		Digest            string          `json:"digest"`
-		EffectiveActorUID string          `json:"effectiveActorUID"`
-		AcceptedAt        string          `json:"acceptedAt"`
-		Definition        json.RawMessage `json:"definition"`
+		TemplateUID       string `json:"templateUID"`
+		Sequence          uint64 `json:"sequence"`
+		Digest            string `json:"digest"`
+		EffectiveActorUID string `json:"effectiveActorUID"`
+		AcceptedAt        string `json:"acceptedAt"`
+		DefinitionJSON    string `json:"definitionJSON"`
 	} `json:"spec"`
 }
 
@@ -79,13 +90,24 @@ func newClient(o Options) (*apiClient, error) {
 }
 
 func (c *apiClient) request(ctx context.Context, method, resource, name string, body any, dry bool, out any) error {
+	return c.requestWithQuery(ctx, method, resource, name, body, dry, nil, out)
+}
+
+func (c *apiClient) requestWithQuery(ctx context.Context, method, resource, name string, body any, dry bool, query url.Values, out any) error {
 	u := *c.base
 	u.Path = strings.TrimRight(u.Path, "/") + apiPath + resource
 	if name != "" {
 		u.Path += "/" + name
 	}
-	if dry {
-		u.RawQuery = "dryRun=All"
+	if dry || len(query) != 0 {
+		values := make(url.Values, len(query)+1)
+		for key, entries := range query {
+			values[key] = append([]string(nil), entries...)
+		}
+		if dry {
+			values.Set("dryRun", "All")
+		}
+		u.RawQuery = values.Encode()
 	}
 	var input io.Reader
 	if body != nil {
@@ -120,6 +142,8 @@ func (c *apiClient) request(ctx context.Context, method, resource, name string, 
 			return customerrors.NewUserErrorWithHint("The template API or selected resource is unavailable in this project.", "Check the project, template name and revision. For deleted template history, use --uid.")
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return customerrors.NewUserErrorWithHint("Access to this template operation was denied.", "Check your signed-in account and project permissions.")
+		case http.StatusGone:
+			return customerrors.NewUserErrorWithHint("The selected history page expired.", "Run the history command again to start a fresh read.")
 		default:
 			if resp.StatusCode >= 500 {
 				return responseFailure(method, fmt.Sprintf("The template API returned HTTP %d.", resp.StatusCode))
@@ -131,6 +155,75 @@ func (c *apiClient) request(ctx context.Context, method, resource, name string, 
 		return responseFailure(method, "The template API returned an invalid response.")
 	}
 	return nil
+}
+
+type historyEntry struct {
+	Name       string
+	Sequence   uint64
+	Digest     string
+	ActorUID   string
+	AcceptedAt string
+}
+
+func readRevisionHistory(ctx context.Context, c *apiClient, templateUID string) ([]historyEntry, error) {
+	query := url.Values{"limit": {"1"}, "labelSelector": {"apps.miloapis.com/template-uid=" + templateUID}}
+	seenTokens := make(map[string]struct{})
+	seenNames := make(map[string]struct{})
+	seenUIDs := make(map[string]struct{})
+	seenSequences := make(map[uint64]struct{})
+	items := make([]historyEntry, 0)
+	for page := 0; ; page++ {
+		if page >= maxTemplateRevisions {
+			return nil, customerrors.NewUserError("Template history exceeds the supported 1000 revisions.")
+		}
+		var list struct {
+			Items    []revision      `json:"items"`
+			Metadata metav1.ListMeta `json:"metadata"`
+		}
+		if err := c.requestWithQuery(ctx, http.MethodGet, "apptemplaterevisions", "", nil, false, query, &list); err != nil {
+			return nil, err
+		}
+		if len(list.Items) > 1 {
+			return nil, customerrors.NewUserError("The history API exceeded the requested page size.")
+		}
+		for _, item := range list.Items {
+			name, uid := item.Metadata.Name, string(item.Metadata.UID)
+			if item.Spec.TemplateUID != templateUID || !validName(name) || !validUID(uid) ||
+				item.Spec.Sequence == 0 || item.Spec.Sequence > maxTemplateRevisions ||
+				!validDefinition(item.Spec.DefinitionJSON, item.Spec.Digest) {
+				return nil, customerrors.NewUserError("The history API returned an invalid revision identity or definition.")
+			}
+			if _, ok := seenNames[name]; ok {
+				return nil, customerrors.NewUserError("The history API returned a duplicate revision identity.")
+			}
+			if _, ok := seenUIDs[uid]; ok {
+				return nil, customerrors.NewUserError("The history API returned a duplicate revision identity.")
+			}
+			if _, ok := seenSequences[item.Spec.Sequence]; ok {
+				return nil, customerrors.NewUserError("The history API returned a duplicate revision sequence.")
+			}
+			seenNames[name], seenUIDs[uid], seenSequences[item.Spec.Sequence] = struct{}{}, struct{}{}, struct{}{}
+			// Keep only the fields that the history output needs. In particular,
+			// do not retain definition strings, annotations, labels or managed fields
+			// while reading up to 1000 pages.
+			items = append(items, historyEntry{
+				Name: name, Sequence: item.Spec.Sequence, Digest: item.Spec.Digest,
+				ActorUID: item.Spec.EffectiveActorUID, AcceptedAt: item.Spec.AcceptedAt,
+			})
+		}
+		if list.Metadata.Continue == "" {
+			break
+		}
+		if len(list.Metadata.Continue) > maxContinueTokenBytes {
+			return nil, customerrors.NewUserError("The history API returned an oversized continuation token.")
+		}
+		if _, ok := seenTokens[list.Metadata.Continue]; ok {
+			return nil, customerrors.NewUserError("The history API repeated a continuation token.")
+		}
+		seenTokens[list.Metadata.Continue] = struct{}{}
+		query.Set("continue", list.Metadata.Continue)
+	}
+	return items, nil
 }
 
 func responseFailure(method, message string) error {
@@ -148,7 +241,10 @@ func writeResult(method string, result template, name, uid string) error {
 
 func validName(s string) bool { return len(validation.IsDNS1123Subdomain(s)) == 0 }
 func validUID(s string) bool {
-	return s != "" && len(s) <= 256 && !strings.ContainsAny(s, "/\\?#% \t\r\n")
+	return s != "" && len(validation.IsValidLabelValue(s)) == 0
+}
+func validResourceVersion(s string) bool {
+	return s != "" && len(s) <= 256 && !strings.ContainsAny(s, "\x00\r\n")
 }
 func dryRun(s string) (bool, error) {
 	if s != "none" && s != "server" {
@@ -164,7 +260,7 @@ func readTemplate(ctx context.Context, c *apiClient, name string) (template, err
 	if err := c.request(ctx, http.MethodGet, "apptemplates", name, nil, false, &t); err != nil {
 		return t, err
 	}
-	if t.Metadata.Name != name || !validUID(string(t.Metadata.UID)) || t.Metadata.ResourceVersion == "" || !json.Valid(t.Spec) {
+	if t.Metadata.Name != name || !validUID(string(t.Metadata.UID)) || t.Metadata.ResourceVersion == "" || !validDefinition(t.Spec.DefinitionJSON, t.Spec.Digest) {
 		return t, customerrors.NewUserError("The template response has incomplete identity or definition.")
 	}
 	return t, nil
@@ -177,10 +273,27 @@ func readRevision(ctx context.Context, c *apiClient, name, uid string) (revision
 	if err := c.request(ctx, http.MethodGet, "apptemplaterevisions", name, nil, false, &r); err != nil {
 		return r, err
 	}
-	if r.Metadata.Name != name || r.Spec.TemplateUID != uid || !json.Valid(r.Spec.Definition) {
-		return r, customerrors.NewUserError("The revision does not belong to the current template UID.")
+	if r.Metadata.Name != name || r.Spec.TemplateUID != uid || !validDefinition(r.Spec.DefinitionJSON, r.Spec.Digest) {
+		return r, customerrors.NewUserError("The revision identity, definition or digest is invalid for the current template UID.")
 	}
 	return r, nil
+}
+
+// validDefinition checks the exact bytes served by the API. It never parses
+// numbers into float64 and deliberately exposes no response content in errors.
+func validDefinition(definitionJSON, digest string) bool {
+	if len(definitionJSON) == 0 || len(definitionJSON) > maxResponseBytes || !json.Valid([]byte(definitionJSON)) {
+		return false
+	}
+	if len(digest) != len("sha256:")+sha256.Size*2 || !strings.HasPrefix(digest, "sha256:") {
+		return false
+	}
+	encoded := digest[len("sha256:"):]
+	if _, err := hex.DecodeString(encoded); err != nil || strings.ToLower(encoded) != encoded {
+		return false
+	}
+	sum := sha256.Sum256([]byte(definitionJSON))
+	return digest == "sha256:"+hex.EncodeToString(sum[:])
 }
 
 // Command constructs commands without touching credentials or the network until execution.
@@ -213,18 +326,14 @@ func historyCommand(o Options) *cobra.Command {
 			}
 			selected = string(t.Metadata.UID)
 		}
-		var list struct {
-			Items []revision `json:"items"`
-		}
-		if e = c.request(cmd.Context(), http.MethodGet, "apptemplaterevisions", "", nil, false, &list); e != nil {
+		list, e := readRevisionHistory(cmd.Context(), c, selected)
+		if e != nil {
 			return e
 		}
-		sort.Slice(list.Items, func(i, j int) bool { return list.Items[i].Spec.Sequence < list.Items[j].Spec.Sequence })
+		sort.Slice(list, func(i, j int) bool { return list[i].Sequence < list[j].Sequence })
 		rows := make([]map[string]any, 0)
-		for _, r := range list.Items {
-			if r.Spec.TemplateUID == selected {
-				rows = append(rows, map[string]any{"name": r.Metadata.Name, "sequence": r.Spec.Sequence, "digest": r.Spec.Digest, "actorUID": r.Spec.EffectiveActorUID, "acceptedAt": r.Spec.AcceptedAt})
-			}
+		for _, r := range list {
+			rows = append(rows, map[string]any{"name": r.Name, "sequence": r.Sequence, "digest": r.Digest, "actorUID": r.ActorUID, "acceptedAt": r.AcceptedAt})
 		}
 		return json.NewEncoder(o.Out).Encode(map[string]any{"templateUID": selected, "revisions": rows})
 	}}
@@ -259,10 +368,10 @@ func revisionCommand(o Options, restore bool) *cobra.Command {
 		}
 		if !restore {
 			var a, b bytes.Buffer
-			if e = json.Indent(&a, current.Spec, "", "  "); e != nil {
+			if e = json.Indent(&a, []byte(current.Spec.DefinitionJSON), "", "  "); e != nil {
 				return e
 			}
-			if e = json.Indent(&b, r.Spec.Definition, "", "  "); e != nil {
+			if e = json.Indent(&b, []byte(r.Spec.DefinitionJSON), "", "  "); e != nil {
 				return e
 			}
 			diff, e := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{A: difflib.SplitLines(a.String() + "\n"), B: difflib.SplitLines(b.String() + "\n"), FromFile: "current", ToFile: "selected revision", Context: 3})
@@ -273,7 +382,7 @@ func revisionCommand(o Options, restore bool) *cobra.Command {
 			return e
 		}
 		// Preserve the exact current UID/version. A concurrent update or name reuse fails once.
-		current.Spec = append(json.RawMessage(nil), r.Spec.Definition...)
+		current.Spec = templateSpec{DefinitionJSON: r.Spec.DefinitionJSON, Digest: r.Spec.Digest}
 		var result template
 		if e = c.request(cmd.Context(), http.MethodPut, "apptemplates", args[0], current, preview, &result); e != nil {
 			return e
@@ -298,9 +407,8 @@ func deleteCommand(o Options) *cobra.Command {
 		if e != nil {
 			return e
 		}
-		n, e := strconv.ParseInt(version, 10, 64)
-		if !validName(args[0]) || !validUID(uid) || e != nil || n <= 0 || strconv.FormatInt(n, 10) != version {
-			return customerrors.NewUserError("Provide the inspected template name, --uid and positive --resource-version.")
+		if !validName(args[0]) || !validUID(uid) || !validResourceVersion(version) {
+			return customerrors.NewUserError("Provide the inspected template name, --uid and --resource-version.")
 		}
 		c, e := newClient(o)
 		if e != nil {
