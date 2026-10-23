@@ -19,7 +19,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/zalando/go-keyring v0.2.8
-	go.miloapis.com/activity v0.7.1
+	go.miloapis.com/activity v0.7.4
 	go.miloapis.com/milo v0.36.3-0.20261013234308-e25b0132272f
 	go.miloapis.com/service-catalog v0.14.4-0.20261014211434-17c8e80b103b
 	golang.org/x/mod v0.40.0
