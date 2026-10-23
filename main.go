@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.datum.net/datumctl/internal/cmd"
 	customerrors "go.datum.net/datumctl/internal/errors"
+	datumversion "go.datum.net/datumctl/internal/version"
 	"go.miloapis.com/service-catalog/pkg/activation"
 	"k8s.io/component-base/cli"
 	"k8s.io/component-base/logs"
@@ -21,6 +22,8 @@ import (
 )
 
 func main() {
+	datumversion.ApplyFallback()
+
 	logs.GlogSetter(kubectlcmd.GetLogVerbosity(os.Args))
 	rootCmd := cmd.RootCmd()
 
