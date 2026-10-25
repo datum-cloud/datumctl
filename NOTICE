@@ -9361,7 +9361,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 ## go.miloapis.com/milo/pkg/apis/resourcemanager/v1alpha1
 
 * Name: go.miloapis.com/milo/pkg/apis/resourcemanager/v1alpha1
-* Version: v0.36.10
+* Version: v0.36.9
 * License: AGPL-3.0
 
 ```
