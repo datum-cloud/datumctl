@@ -1,6 +1,6 @@
 module github.com/datum-cloud/datumctl-examples/plugin-dns
 
-go 1.25.8
+go 1.26.0
 
 require (
 	github.com/spf13/cobra v1.10.2
