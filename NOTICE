@@ -11579,7 +11579,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/sync/errgroup
 
 * Name: golang.org/x/sync/errgroup
-* Version: v0.21.0
+* Version: v0.22.0
 * License: BSD-3-Clause
 
 ```
@@ -11727,7 +11727,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/text
 
 * Name: golang.org/x/text
-* Version: v0.39.0
+* Version: v0.41.0
 * License: BSD-3-Clause
 
 ```
