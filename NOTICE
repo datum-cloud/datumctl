@@ -11489,7 +11489,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/net
 
 * Name: golang.org/x/net
-* Version: v0.60.0
+* Version: v0.62.0
 * License: BSD-3-Clause
 
 ```
@@ -11563,7 +11563,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/sync/errgroup
 
 * Name: golang.org/x/sync/errgroup
-* Version: v0.23.0
+* Version: v0.24.0
 * License: BSD-3-Clause
 
 ```
@@ -11600,7 +11600,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/sys/unix
 
 * Name: golang.org/x/sys/unix
-* Version: v0.48.0
+* Version: v0.49.0
 * License: BSD-3-Clause
 
 ```
@@ -11637,7 +11637,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/sys/windows
 
 * Name: golang.org/x/sys/windows
-* Version: v0.48.0
+* Version: v0.49.0
 * License: BSD-3-Clause
 
 ```
@@ -11674,7 +11674,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/term
 
 * Name: golang.org/x/term
-* Version: v0.46.0
+* Version: v0.47.0
 * License: BSD-3-Clause
 
 ```
@@ -11711,7 +11711,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/text
 
 * Name: golang.org/x/text
-* Version: v0.42.0
+* Version: v0.43.0
 * License: BSD-3-Clause
 
 ```
