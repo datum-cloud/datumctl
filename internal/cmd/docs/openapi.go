@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"go.datum.net/datumctl/internal/authutil"
+	"go.datum.net/datumctl/internal/datumconfig"
 )
 
 //go:embed templates/*
@@ -122,14 +123,25 @@ func runOpenAPI(ctx context.Context, cmd *cobra.Command, opts *openAPIOptions) e
 }
 
 func buildRESTConfig(ctx context.Context, opts *openAPIOptions) (*rest.Config, error) {
-	tknSrc, err := authutil.GetTokenSource(ctx)
+	userKey, session, err := authutil.GetUserKeyForCurrentSession()
+	if err != nil {
+		return nil, fmt.Errorf("get user key: %w", err)
+	}
+
+	tknSrc, err := authutil.GetTokenSourceForUser(ctx, userKey)
 	if err != nil {
 		return nil, fmt.Errorf("get token source: %w", err)
 	}
 
-	apiHostname, err := authutil.GetAPIHostname()
-	if err != nil {
-		return nil, fmt.Errorf("get API hostname: %w", err)
+	// Prefer the session's own endpoint, falling back to stored credentials.
+	var apiHostname string
+	if session != nil && session.Endpoint.Server != "" {
+		apiHostname = datumconfig.StripScheme(session.Endpoint.Server)
+	} else {
+		apiHostname, err = authutil.GetAPIHostnameForUser(userKey)
+		if err != nil {
+			return nil, fmt.Errorf("get API hostname: %w", err)
+		}
 	}
 
 	var host string

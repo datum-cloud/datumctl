@@ -10,7 +10,6 @@ import (
 func ResolveOrgID(
 	projectID, organizationID string,
 	ctxEntry *datumconfig.DiscoveredContext,
-	cfg *datumconfig.ConfigV1Beta1,
 ) string {
 	if organizationID != "" {
 		return organizationID
@@ -18,13 +17,6 @@ func ResolveOrgID(
 	if projectID != "" {
 		if ctxEntry != nil && ctxEntry.ProjectID == projectID && ctxEntry.OrganizationID != "" {
 			return ctxEntry.OrganizationID
-		}
-		if cfg != nil {
-			for _, p := range cfg.Cache.Projects {
-				if p.ID == projectID && p.OrgID != "" {
-					return p.OrgID
-				}
-			}
 		}
 		return ""
 	}
@@ -45,7 +37,7 @@ func ResolveEffectiveOrgID(cfg *datumconfig.ConfigV1Beta1, envProject, envOrgani
 		ctxEntry = cfg.CurrentContextEntry()
 	}
 	if envProject != "" {
-		return ResolveOrgID(envProject, "", ctxEntry, cfg)
+		return ResolveOrgID(envProject, "", ctxEntry)
 	}
-	return ResolveOrgID("", "", ctxEntry, cfg)
+	return ResolveOrgID("", "", ctxEntry)
 }

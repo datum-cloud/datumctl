@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"go.datum.net/datumctl/internal/datumconfig"
+	"go.datum.net/datumctl/internal/discovery"
 )
 
 // TUIContext holds the display-ready context fields for the TUI header.
@@ -45,11 +46,20 @@ func FromConfig(cfg *datumconfig.ConfigV1Beta1) TUIContext {
 		tc.UserName = session.UserName
 	}
 
-	tc.OrgName = cfg.OrgDisplayName(ctx.Session, ctx.OrganizationID)
-
-	if ctx.ProjectID != "" {
-		tc.ProjectName = cfg.ProjectDisplayName(ctx.Session, ctx.ProjectID)
-	}
+	tc.OrgName = ctx.OrganizationID
+	tc.ProjectName = ctx.ProjectID
 
 	return tc
+}
+
+// ApplyNames replaces the org and project IDs with their display names from a
+// live directory listing, when it has them.
+func (tc *TUIContext) ApplyNames(dir *discovery.Directory) {
+	if tc.ActiveCtx == nil || dir == nil {
+		return
+	}
+	tc.OrgName = dir.OrgDisplayName(tc.ActiveCtx.OrganizationID)
+	if tc.ActiveCtx.ProjectID != "" {
+		tc.ProjectName = dir.ProjectDisplayName(tc.ActiveCtx.ProjectID)
+	}
 }

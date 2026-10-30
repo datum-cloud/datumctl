@@ -268,26 +268,7 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 	}
 	warnDisabledCatalogs(cmd.ErrOrStderr(), reg)
 
-	// Lazily load+refresh each catalog index, memoized by catalog name.
-	indexCache := map[string]*pluginstore.CachedIndex{}
-	getIndex := func(catalogName string) (*pluginstore.CachedIndex, error) {
-		if idx, ok := indexCache[catalogName]; ok {
-			return idx, nil
-		}
-		cat := reg.Find(catalogName)
-		if cat == nil {
-			return nil, fmt.Errorf("catalog %q is no longer registered", catalogName)
-		}
-		if cat.Disabled {
-			return nil, fmt.Errorf("catalog %q is disabled: %s", catalogName, cat.DisabledReason)
-		}
-		idx, loadErr := loadOrRefreshCatalog(cmd, pluginsDir, *cat)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		indexCache[catalogName] = idx
-		return idx, nil
-	}
+	getIndex := catalogIndexLoader(cmd, pluginsDir, reg)
 
 	var errs []string
 	for name, entry := range manifest.Plugins {

@@ -43,6 +43,9 @@ func Command(factory *client.DatumCloudFactory) *cobra.Command {
 			# Upgrade the dns plugin
 			datumctl plugin upgrade dns
 
+			# Upgrade every installed plugin
+			datumctl plugin upgrade --all
+
 			# Remove the dns plugin
 			datumctl plugin remove dns
 

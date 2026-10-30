@@ -37,21 +37,33 @@ or project) so subsequent commands do not require --project or --organization
 flags.
 
 By default, opens your browser for OAuth2 PKCE authentication. Use
---no-browser in headless environments (SSH, CI, containers) to authenticate
-via a device-code flow that does not need a browser on this machine.
+--no-browser on a machine without a browser (SSH, containers) to sign in
+with a device code from another device.
 
-Use --credentials to authenticate as a service account (non-interactive).`,
+CI and automation: pass --credentials with a service account credentials
+JSON file to sign in with no browser and no prompts. Create the service
+account in the Datum Cloud portal and download its credentials file from
+there; human accounts cannot use this path. Set DATUM_PROJECT or
+DATUM_ORGANIZATION on later commands to pick the scope without a context.
+
+Login makes the new session active, so it rejects the global --session flag
+and ignores DATUM_SESSION.`,
+		Annotations: map[string]string{
+			datumconfig.SessionOverrideAnnotation: datumconfig.SessionOverrideRejected,
+		},
 		Example: `  # Log in (opens browser, then picks a context)
   datumctl login
 
-  # Log in without a browser (device-code flow for headless/CI)
+  # CI / automation: log in as a service account, then scope each command
+  datumctl login --credentials ./key.json
+  DATUM_PROJECT=my-project datumctl get dnszones
+
+  # Log in without a browser (device code, for SSH sessions and containers)
   datumctl login --no-browser
 
   # Log in to a staging environment
   datumctl login --hostname auth.staging.env.datum.net
-
-  # Log in with a service account credentials file
-  datumctl login --credentials ./my-key.json --hostname auth.staging.env.datum.net`,
+  datumctl login --credentials ./key.json --hostname auth.staging.env.datum.net`,
 		RunE: runLogin,
 	}
 
@@ -59,7 +71,7 @@ Use --credentials to authenticate as a service account (non-interactive).`,
 	cmd.Flags().StringVar(&apiHostnameFlag, "api-hostname", "", "Hostname of the Datum Cloud API server (derived from auth hostname if omitted)")
 	cmd.Flags().StringVar(&clientIDFlag, "client-id", "", "Override the OAuth2 Client ID")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Use the device authorization flow instead of opening a browser")
-	cmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a service account credentials JSON file")
+	cmd.Flags().StringVar(&credentialsFile, "credentials", "", "Path to a service account credentials JSON file (non-interactive login for CI)")
 	cmd.Flags().BoolVar(&debugCredentials, "debug", false, "Print JWT claims and token request details (credentials flow only)")
 
 	return cmd
@@ -113,7 +125,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 	apiHostname := result.APIHostname
 
 	fmt.Print("Discovering organizations and projects...\n\n")
-	orgs, projects, err := discovery.FetchOrgsAndProjects(ctx, apiHostname, tknSrc, result.Subject)
+	dir, err := discovery.List(ctx, discovery.NewAPI(apiHostname, tknSrc, result.Subject), sessionName)
 	if err != nil {
 		fmt.Printf("Warning: could not discover contexts: %v\n", err)
 		fmt.Println("\nYou can set a context manually with 'datumctl ctx use'.")
@@ -122,39 +134,9 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		}
 		return nil
 	}
+	dir.WarnFailures(cmd.ErrOrStderr())
 
-	if len(orgs) > 0 {
-		fmt.Printf("You have access to %d organization(s):\n\n", len(orgs))
-		for _, o := range orgs {
-			projCount := 0
-			for _, p := range projects {
-				if p.OrgName == o.Name {
-					projCount++
-				}
-			}
-			fmt.Printf("  %s (%d project(s))\n", o.DisplayName, projCount)
-		}
-		fmt.Println()
-	}
-
-	discovery.UpdateConfigCache(cfg, sessionName, orgs, projects)
-
-	if len(orgs) == 0 {
-		onboardingResult, err := onboarding.NoOrgsResult(apiHostname)
-		if err != nil {
-			return fmt.Errorf("derive portal URL: %w", err)
-		}
-		if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-		if err := browser.OpenURL(onboardingResult.ActionURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "\nWe couldn't open your browser. Head to %s to create an organization.\n", onboardingResult.ActionURL)
-		}
-		return onboarding.UserError(onboardingResult)
-	}
-
-	sessionContexts := cfg.ContextsForSession(sessionName)
-	if len(sessionContexts) == 0 {
+	if len(dir.Orgs) == 0 {
 		onboardingResult, err := onboarding.NoOrgsResult(apiHostname)
 		if err != nil {
 			return fmt.Errorf("derive portal URL: %w", err)
@@ -168,51 +150,52 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		return onboarding.UserError(onboardingResult)
 	}
 
-	selected, err := picker.SelectContext(sessionContexts, cfg)
+	fmt.Printf("You have access to %d organization(s):\n\n", len(dir.Orgs))
+	for _, o := range dir.Orgs {
+		projCount := 0
+		for _, p := range dir.Projects {
+			if p.OrgName == o.Name {
+				projCount++
+			}
+		}
+		fmt.Printf("  %s (%d project(s))\n", o.DisplayName, projCount)
+	}
+	fmt.Println()
+
+	selected, err := picker.SelectContext(dir, cfg.CurrentContextName())
 	if err != nil {
 		return err
 	}
 
-	selectedCtx := cfg.ContextByName(selected)
-	if selectedCtx != nil {
-		onboardingResult, err := onboarding.CheckOrg(
-			ctx,
-			apiHostname,
-			tknSrc,
-			result.Subject,
-			selectedCtx.OrganizationID,
-			cfg.OrgDisplayName(selectedCtx.Session, selectedCtx.OrganizationID),
+	onboardingResult, err := onboarding.CheckOrg(
+		ctx,
+		apiHostname,
+		tknSrc,
+		result.Subject,
+		selected.OrganizationID,
+		dir.OrgDisplayName(selected.OrganizationID),
+	)
+	if err != nil {
+		return customerrors.WrapUserErrorWithHint(
+			"We couldn't check whether your organization is ready yet.",
+			"Try again in a moment, or finish setup in the portal.",
+			err,
 		)
-		if err != nil {
-			return customerrors.WrapUserErrorWithHint(
-				"We couldn't check whether your organization is ready yet.",
-				"Try again in a moment, or finish setup in the portal.",
-				err,
-			)
+	}
+	if onboardingResult.State != onboarding.Complete {
+		if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
+			return fmt.Errorf("save config: %w", saveErr)
 		}
-		if onboardingResult.State != onboarding.Complete {
-			if saveErr := datumconfig.SaveV1Beta1(cfg); saveErr != nil {
-				return fmt.Errorf("save config: %w", saveErr)
-			}
-			return onboarding.UserError(onboardingResult)
-		}
+		return onboarding.UserError(onboardingResult)
 	}
 
-	cfg.CurrentContext = selected
-	if s := cfg.SessionByName(sessionName); s != nil {
-		s.LastContext = selected
-	}
+	cfg.SelectContext(*selected)
 
 	if err := datumconfig.SaveV1Beta1(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	ctxEntry := cfg.ContextByName(selected)
-	if ctxEntry != nil {
-		fmt.Printf("\n\u2713 Context set to %s\n", cfg.ContextDescription(ctxEntry))
-	} else {
-		fmt.Printf("\n\u2713 Context set to %s\n", selected)
-	}
+	fmt.Printf("\n\u2713 Context set to %s\n", dir.Describe(selected))
 	return nil
 }
 

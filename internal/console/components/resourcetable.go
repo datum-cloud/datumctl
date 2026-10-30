@@ -84,8 +84,6 @@ type ResourceTableModel struct {
 	bucketUnauthorized bool
 	bucketConfigured   bool // FB-074: true when a BucketClient is wired; false means quota service not configured
 	registrations      []data.ResourceRegistration
-	staleBanner        bool
-	staleAge           string
 	forceDashboard     bool // FB-041: show welcome panel even when typeName != ""
 
 	// FB-042: enhanced welcome dashboard inputs.
@@ -206,19 +204,8 @@ func (m ResourceTableModel) welcomePanel() string {
 	showS4 := contentH >= 18 && wideEnough
 	showS2List := contentH >= 18
 	showS6 := contentH >= 12
-	showStaleBanner := m.staleBanner && contentH >= 12
 
 	var regions []string
-
-	// Stale-context banner.
-	if showStaleBanner {
-		warnBold := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Warning).Bold(true)
-		warn := lipgloss.NewStyle().Background(styles.Surface).Foreground(styles.Warning)
-		regions = append(regions,
-			warnBold.Render("⚠ ")+warn.Render(
-				fmt.Sprintf("Context cache last refreshed %s ago — press `c` to switch or `r` to refresh", m.staleAge)),
-			"")
-	}
 
 	// S1: identity + greeting.
 	regions = append(regions, m.renderHeaderBand(contentW), "")
@@ -964,13 +951,6 @@ func (m *ResourceTableModel) SetBucketConfigured(configured bool) {
 // the platform-health top-3 rows.
 func (m *ResourceTableModel) SetRegistrations(r []data.ResourceRegistration) {
 	m.registrations = r
-}
-
-// SetStaleCacheAge gates the stale-context banner. showBanner==false hides it
-// regardless of ageText.
-func (m *ResourceTableModel) SetStaleCacheAge(showBanner bool, ageText string) {
-	m.staleBanner = showBanner
-	m.staleAge = ageText
 }
 
 func (m *ResourceTableModel) SetForceDashboard(show bool) {

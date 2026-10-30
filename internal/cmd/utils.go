@@ -15,7 +15,11 @@ func WrapResourceCommand(cmd *cobra.Command) *cobra.Command {
 		// This mapping helps user during the getting started phase
 		if args[0] == "organizations" || args[0] == "organization" {
 			args[0] = "organizationmemberships"
-			cmd.Flag("all-namespaces").Value.Set("true")
+			// Not every wrapped command has this flag (edit and patch do
+			// not); skip it rather than dereference a nil flag.
+			if f := cmd.Flag("all-namespaces"); f != nil {
+				_ = f.Value.Set("true")
+			}
 		}
 		return nil
 	}

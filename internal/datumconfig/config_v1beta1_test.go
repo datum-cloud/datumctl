@@ -3,6 +3,7 @@ package datumconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -89,8 +90,10 @@ func TestConfigV1Beta1RoundTrip(t *testing.T) {
 	if s.LastContext != currentCtx {
 		t.Errorf("Session.LastContext=%q, want %q", s.LastContext, currentCtx)
 	}
-	if len(loaded.Contexts) != 2 {
-		t.Fatalf("Contexts len=%d, want 2", len(loaded.Contexts))
+	// Only the selected context survives a save; the unselected org context
+	// is dropped.
+	if len(loaded.Contexts) != 1 || loaded.Contexts[0].Name != currentCtx {
+		t.Fatalf("Contexts=%+v, want only %q", loaded.Contexts, currentCtx)
 	}
 }
 
@@ -415,42 +418,6 @@ func TestSessionNameGeneration(t *testing.T) {
 	}
 }
 
-// TestContextsForSession verifies that only contexts belonging to the given
-// session are returned.
-func TestContextsForSession(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "acme-corp", Session: "sess-1"},
-		{Name: "acme-corp/web", Session: "sess-1"},
-		{Name: "other-org", Session: "sess-2"},
-	}
-
-	result := cfg.ContextsForSession("sess-1")
-	if len(result) != 2 {
-		t.Fatalf("ContextsForSession(sess-1) len=%d, want 2", len(result))
-	}
-	for _, ctx := range result {
-		if ctx.Session != "sess-1" {
-			t.Errorf("unexpected session %q in results for sess-1", ctx.Session)
-		}
-	}
-
-	result2 := cfg.ContextsForSession("sess-2")
-	if len(result2) != 1 {
-		t.Fatalf("ContextsForSession(sess-2) len=%d, want 1", len(result2))
-	}
-	if result2[0].Name != "other-org" {
-		t.Errorf("context name=%q, want %q", result2[0].Name, "other-org")
-	}
-
-	empty := cfg.ContextsForSession("nonexistent")
-	if len(empty) != 0 {
-		t.Errorf("expected empty slice for nonexistent session, got %d entries", len(empty))
-	}
-}
-
 // TestLoadV1Beta1FromPath_MissingFile verifies that a missing file returns a
 // fresh default config (not an error).
 func TestLoadV1Beta1FromPath_MissingFile(t *testing.T) {
@@ -507,226 +474,6 @@ func TestRef(t *testing.T) {
 	}
 }
 
-// TestResolveContext verifies all six matching strategies.
-func TestResolveContext(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "datum", OrganizationID: "datum"},
-		{Name: "datum/datum-cloud", OrganizationID: "datum", ProjectID: "datum-cloud"},
-		{Name: "datum/other-proj", OrganizationID: "datum", ProjectID: "other-proj"},
-		{Name: "staging", OrganizationID: "staging"},
-		{Name: "staging/my-app", OrganizationID: "staging", ProjectID: "my-app"},
-		// A context with a legacy display-name-style name but correct IDs.
-		{Name: "Acme Corp/Web App", OrganizationID: "acme", ProjectID: "web-app"},
-	}
-
-	tests := []struct {
-		name    string
-		query   string
-		wantRef string // empty means nil expected
-	}{
-		// 1. Exact name match.
-		{name: "exact org name", query: "datum", wantRef: "datum"},
-		{name: "exact project name", query: "datum/datum-cloud", wantRef: "datum/datum-cloud"},
-		{name: "exact legacy name", query: "Acme Corp/Web App", wantRef: "acme/web-app"},
-
-		// 2. orgID/projectID match (when name differs).
-		{name: "orgID/projectID for legacy context", query: "acme/web-app", wantRef: "acme/web-app"},
-
-		// 3. orgID-only match for org contexts.
-		{name: "orgID only", query: "staging", wantRef: "staging"},
-
-		// 4. projectID-only match (unambiguous).
-		{name: "unique projectID", query: "my-app", wantRef: "staging/my-app"},
-		{name: "unique projectID web-app", query: "web-app", wantRef: "acme/web-app"},
-
-		// Ambiguous projectID — appears in zero project contexts with that exact ID.
-		// (datum-cloud is unique, so it resolves)
-		{name: "unique projectID datum-cloud", query: "datum-cloud", wantRef: "datum/datum-cloud"},
-
-		// No match.
-		{name: "no match", query: "nonexistent", wantRef: ""},
-		{name: "no match with slash", query: "foo/bar", wantRef: ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := cfg.ResolveContext(tt.query)
-			if tt.wantRef == "" {
-				if got != nil {
-					t.Errorf("ResolveContext(%q) = %q, want nil", tt.query, got.Ref())
-				}
-				return
-			}
-			if got == nil {
-				t.Fatalf("ResolveContext(%q) = nil, want %q", tt.query, tt.wantRef)
-			}
-			if got.Ref() != tt.wantRef {
-				t.Errorf("ResolveContext(%q).Ref() = %q, want %q", tt.query, got.Ref(), tt.wantRef)
-			}
-		})
-	}
-}
-
-// TestResolveContext_AmbiguousProjectID verifies that ambiguous projectID
-// returns nil.
-func TestResolveContext_AmbiguousProjectID(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "org-a/shared", OrganizationID: "org-a", ProjectID: "shared"},
-		{Name: "org-b/shared", OrganizationID: "org-b", ProjectID: "shared"},
-	}
-
-	got := cfg.ResolveContext("shared")
-	if got != nil {
-		t.Errorf("ResolveContext(\"shared\") should return nil for ambiguous match, got %q", got.Ref())
-	}
-
-	// But orgID/projectID should still resolve.
-	got = cfg.ResolveContext("org-a/shared")
-	if got == nil {
-		t.Fatal("ResolveContext(\"org-a/shared\") should resolve")
-	}
-	if got.Ref() != "org-a/shared" {
-		t.Errorf("got %q, want %q", got.Ref(), "org-a/shared")
-	}
-}
-
-// TestResolveContext_DisplayNameMatching verifies display-name resolution.
-func TestResolveContext_DisplayNameMatching(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Cache.Organizations = []CachedOrg{
-		{ID: "org-acme", DisplayName: "Acme Corp"},
-		{ID: "org-datum", DisplayName: "Datum Technology, Inc."},
-	}
-	cfg.Cache.Projects = []CachedProject{
-		{ID: "proj-infra", DisplayName: "Infrastructure", OrgID: "org-acme"},
-		{ID: "proj-web", DisplayName: "Web App", OrgID: "org-acme"},
-		{ID: "proj-dc", DisplayName: "datum-cloud", OrgID: "org-datum"},
-	}
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "org-acme", OrganizationID: "org-acme"},
-		{Name: "org-acme/proj-infra", OrganizationID: "org-acme", ProjectID: "proj-infra"},
-		{Name: "org-acme/proj-web", OrganizationID: "org-acme", ProjectID: "proj-web"},
-		{Name: "org-datum", OrganizationID: "org-datum"},
-		{Name: "org-datum/proj-dc", OrganizationID: "org-datum", ProjectID: "proj-dc"},
-	}
-
-	tests := []struct {
-		name    string
-		query   string
-		wantRef string
-	}{
-		{name: "org display name only", query: "Acme Corp", wantRef: "org-acme"},
-		{name: "project display name only", query: "Infrastructure", wantRef: "org-acme/proj-infra"},
-		{name: "org/project both display names", query: "Acme Corp/Infrastructure", wantRef: "org-acme/proj-infra"},
-		{name: "orgID/project display name", query: "org-acme/Web App", wantRef: "org-acme/proj-web"},
-		{name: "org display name/projectID", query: "Acme Corp/proj-web", wantRef: "org-acme/proj-web"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := cfg.ResolveContext(tt.query)
-			if got == nil {
-				t.Fatalf("ResolveContext(%q) = nil, want %q", tt.query, tt.wantRef)
-			}
-			if got.Ref() != tt.wantRef {
-				t.Errorf("ResolveContext(%q).Ref() = %q, want %q", tt.query, got.Ref(), tt.wantRef)
-			}
-		})
-	}
-}
-
-// TestResolveContext_AmbiguousDisplayName verifies that ambiguous org/project
-// display names return nil instead of silently picking the first match.
-func TestResolveContext_AmbiguousDisplayName(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Cache.Organizations = []CachedOrg{
-		{ID: "org-a", DisplayName: "Production"},
-		{ID: "org-b", DisplayName: "Production"},
-	}
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "org-a", OrganizationID: "org-a"},
-		{Name: "org-b", OrganizationID: "org-b"},
-	}
-
-	got := cfg.ResolveContext("Production")
-	if got != nil {
-		t.Errorf("ambiguous org display name should return nil, got %q", got.Ref())
-	}
-}
-
-// TestResolveContext_IDWinsOverDisplayName verifies that resource IDs always
-// take precedence over display names, even when both could match.
-func TestResolveContext_IDWinsOverDisplayName(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Cache.Projects = []CachedProject{
-		// Project B's DISPLAY NAME collides with project A's ID.
-		{ID: "proj-a", DisplayName: "something-else", OrgID: "org-1"},
-		{ID: "proj-b", DisplayName: "proj-a", OrgID: "org-1"},
-	}
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "org-1/proj-a", OrganizationID: "org-1", ProjectID: "proj-a"},
-		{Name: "org-1/proj-b", OrganizationID: "org-1", ProjectID: "proj-b"},
-	}
-
-	// "proj-a" should match proj-a by ID, not proj-b by display name.
-	got := cfg.ResolveContext("proj-a")
-	if got == nil {
-		t.Fatal("ResolveContext(\"proj-a\") = nil, want proj-a")
-	}
-	if got.ProjectID != "proj-a" {
-		t.Errorf("ResolveContext(\"proj-a\") = %q, want proj-a (ID should win over display name)", got.ProjectID)
-	}
-}
-
-// TestResolveContext_ProjectDisplayNameScopedToOrg verifies that a query like
-// "someorg/projname" doesn't match a project with that display name in a
-// different org.
-func TestResolveContext_ProjectDisplayNameScopedToOrg(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Cache.Projects = []CachedProject{
-		{ID: "proj-a", DisplayName: "shared", OrgID: "org-a"},
-		{ID: "proj-b", DisplayName: "shared", OrgID: "org-b"},
-	}
-	cfg.Contexts = []DiscoveredContext{
-		{Name: "org-a/proj-a", OrganizationID: "org-a", ProjectID: "proj-a"},
-		{Name: "org-b/proj-b", OrganizationID: "org-b", ProjectID: "proj-b"},
-	}
-
-	// "org-a/shared" should resolve to proj-a, not proj-b.
-	got := cfg.ResolveContext("org-a/shared")
-	if got == nil {
-		t.Fatal("ResolveContext(\"org-a/shared\") = nil, want proj-a")
-	}
-	if got.ProjectID != "proj-a" {
-		t.Errorf("got %q, want proj-a (display-name resolution must be org-scoped)", got.ProjectID)
-	}
-
-	// And "org-b/shared" should resolve to proj-b.
-	got = cfg.ResolveContext("org-b/shared")
-	if got == nil {
-		t.Fatal("ResolveContext(\"org-b/shared\") = nil, want proj-b")
-	}
-	if got.ProjectID != "proj-b" {
-		t.Errorf("got %q, want proj-b", got.ProjectID)
-	}
-}
-
 // TestFormatWithID verifies the FormatWithID helper.
 func TestFormatWithID(t *testing.T) {
 	t.Parallel()
@@ -749,35 +496,6 @@ func TestFormatWithID(t *testing.T) {
 				t.Errorf("FormatWithID(%q, %q) = %q, want %q", tt.displayName, tt.resourceID, got, tt.want)
 			}
 		})
-	}
-}
-
-// TestDisplayRef verifies the DisplayRef helper.
-func TestDisplayRef(t *testing.T) {
-	t.Parallel()
-
-	cfg := NewV1Beta1()
-	cfg.Cache.Organizations = []CachedOrg{
-		{ID: "org-1", DisplayName: "Acme Corp"},
-	}
-	cfg.Cache.Projects = []CachedProject{
-		{ID: "proj-1", DisplayName: "Infra", OrgID: "org-1"},
-	}
-
-	orgCtx := &DiscoveredContext{OrganizationID: "org-1"}
-	if got := cfg.DisplayRef(orgCtx); got != "Acme Corp" {
-		t.Errorf("org DisplayRef = %q, want %q", got, "Acme Corp")
-	}
-
-	projCtx := &DiscoveredContext{OrganizationID: "org-1", ProjectID: "proj-1"}
-	if got := cfg.DisplayRef(projCtx); got != "Acme Corp/Infra" {
-		t.Errorf("project DisplayRef = %q, want %q", got, "Acme Corp/Infra")
-	}
-
-	// Missing display names — fall back to IDs.
-	orphan := &DiscoveredContext{OrganizationID: "unknown-org", ProjectID: "unknown-proj"}
-	if got := cfg.DisplayRef(orphan); got != "unknown-org/unknown-proj" {
-		t.Errorf("orphan DisplayRef = %q, want IDs", got)
 	}
 }
 
@@ -832,95 +550,10 @@ func TestActiveSessionEntry_FallbackWhenNoContext(t *testing.T) {
 	}
 }
 
-// TestResolveContextInSession_ScopedAddressing verifies that a ref is resolved
-// only within the active session, and that a ref living solely in another
-// session is not silently borrowed — instead FindContextOwner names the owner.
-func TestResolveContextInSession_ScopedAddressing(t *testing.T) {
-	t.Parallel()
-
-	const staging = "user@example.com@api.staging.datum.net"
-	const prod = "user@example.com@api.datum.net"
-
-	cfg := NewV1Beta1()
-	cfg.Sessions = []Session{
-		{Name: staging, UserEmail: "user@example.com", Endpoint: Endpoint{Server: "https://api.staging.datum.net"}},
-		{Name: prod, UserEmail: "user@example.com", Endpoint: Endpoint{Server: "https://api.datum.net"}},
-	}
-	cfg.Contexts = []DiscoveredContext{
-		// Both environments share the identical ref.
-		{Name: QualifiedContextName(staging, "datum/datum-cloud"), Session: staging, OrganizationID: "datum", ProjectID: "datum-cloud"},
-		{Name: QualifiedContextName(prod, "datum/datum-cloud"), Session: prod, OrganizationID: "datum", ProjectID: "datum-cloud"},
-		// A ref that exists only in prod.
-		{Name: QualifiedContextName(prod, "datum/prod-only"), Session: prod, OrganizationID: "datum", ProjectID: "prod-only"},
-	}
-
-	// Shared ref resolves within the active (staging) session to staging's entry.
-	got := cfg.ResolveContextInSession("datum/datum-cloud", staging)
-	if got == nil || got.Session != staging {
-		t.Fatalf("ResolveContextInSession(shared, staging) = %+v, want staging entry", got)
-	}
-
-	// A prod-only ref is NOT resolvable while staging is active.
-	if got := cfg.ResolveContextInSession("datum/prod-only", staging); got != nil {
-		t.Errorf("ResolveContextInSession(prod-only, staging) = %+v, want nil", got)
-	}
-
-	// FindContextOwner points at the prod session so the command can tell the
-	// user to switch first.
-	owner := cfg.FindContextOwner("datum/prod-only", staging)
-	if owner == nil {
-		t.Fatal("FindContextOwner(prod-only, staging) = nil, want prod session")
-	}
-	if owner.Name != prod {
-		t.Errorf("owner = %q, want %q", owner.Name, prod)
-	}
-
-	// A ref that exists nowhere has no owner.
-	if owner := cfg.FindContextOwner("datum/nope", staging); owner != nil {
-		t.Errorf("FindContextOwner(nope) = %+v, want nil", owner)
-	}
-}
-
-// TestResolveContextInSession_DisplayNamesScopedToSession verifies that display
-// names collide across environments but resolve within the correct session.
-func TestResolveContextInSession_DisplayNamesScopedToSession(t *testing.T) {
-	t.Parallel()
-
-	const staging = "s@api.staging.datum.net"
-	const prod = "s@api.datum.net"
-
-	cfg := NewV1Beta1()
-	// Same org ID "datum" in both, but different display names per environment.
-	cfg.Cache.Organizations = []CachedOrg{
-		{ID: "datum", DisplayName: "Datum Staging", Session: staging},
-		{ID: "datum", DisplayName: "Datum Production", Session: prod},
-	}
-	cfg.Contexts = []DiscoveredContext{
-		{Name: QualifiedContextName(staging, "datum"), Session: staging, OrganizationID: "datum"},
-		{Name: QualifiedContextName(prod, "datum"), Session: prod, OrganizationID: "datum"},
-	}
-
-	if got := cfg.OrgDisplayName(staging, "datum"); got != "Datum Staging" {
-		t.Errorf("OrgDisplayName(staging) = %q, want %q", got, "Datum Staging")
-	}
-	if got := cfg.OrgDisplayName(prod, "datum"); got != "Datum Production" {
-		t.Errorf("OrgDisplayName(prod) = %q, want %q", got, "Datum Production")
-	}
-
-	// Resolving the production display name while staging is active must fail —
-	// it belongs to a different environment.
-	if got := cfg.ResolveContextInSession("Datum Production", staging); got != nil {
-		t.Errorf("ResolveContextInSession(Datum Production, staging) = %+v, want nil", got)
-	}
-	if got := cfg.ResolveContextInSession("Datum Production", prod); got == nil || got.Session != prod {
-		t.Errorf("ResolveContextInSession(Datum Production, prod) = %+v, want prod entry", got)
-	}
-}
-
 // TestMigrateSessionScoping verifies that a config written before session
 // qualification is upgraded on load: context names become session-qualified,
-// the current-context and last-context pointers follow, contexts stay intact,
-// and un-sessioned display-cache entries are dropped.
+// the current-context and last-context pointers follow, and contexts stay
+// intact.
 func TestMigrateSessionScoping(t *testing.T) {
 	t.Parallel()
 
@@ -987,11 +620,6 @@ cache:
 	if cfg.CurrentContextEntry() == nil {
 		t.Error("current context does not resolve after migration")
 	}
-	// Un-sessioned cache dropped.
-	if len(cfg.Cache.Organizations) != 0 || len(cfg.Cache.Projects) != 0 {
-		t.Errorf("un-sessioned cache not dropped: orgs=%d projects=%d",
-			len(cfg.Cache.Organizations), len(cfg.Cache.Projects))
-	}
 
 	// Migration is idempotent: running it again changes nothing.
 	before := cfg.CurrentContext
@@ -1003,5 +631,101 @@ cache:
 		if cfg.Contexts[i].Name != cfg.Contexts[i].QualifiedName() {
 			t.Errorf("context %d not stable under re-migration: %q", i, cfg.Contexts[i].Name)
 		}
+	}
+}
+
+// TestLoadLegacyCacheConfig verifies that a config written by a release that
+// stored every discovered context and a display-name cache still loads, keeps
+// the selection, and drops the cache and unselected contexts on save.
+func TestLoadLegacyCacheConfig(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config")
+	const sess = "user@example.com@api.datum.net"
+	const current = sess + "/datum/datum-cloud"
+	legacy := `apiVersion: datumctl.config.datum.net/v1beta1
+kind: DatumctlConfig
+current-context: ` + current + `
+active-session: ` + sess + `
+sessions:
+- name: ` + sess + `
+  user-key: k1
+  user-email: user@example.com
+  endpoint:
+    server: https://api.datum.net
+    auth-hostname: auth.datum.net
+  last-context: ` + current + `
+contexts:
+- name: ` + sess + `/datum
+  session: ` + sess + `
+  organization-id: datum
+- name: ` + current + `
+  session: ` + sess + `
+  organization-id: datum
+  project-id: datum-cloud
+  namespace: custom
+cache:
+  organizations:
+  - id: datum
+    display-name: Datum Technology
+    session: ` + sess + `
+  projects:
+  - id: datum-cloud
+    display-name: Datum Cloud
+    org-id: datum
+    session: ` + sess + `
+  last-refreshed: "2026-01-02T03:04:05Z"
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg, err := LoadV1Beta1FromPath(path)
+	if err != nil {
+		t.Fatalf("LoadV1Beta1FromPath: %v", err)
+	}
+	got := cfg.CurrentContextEntry()
+	if got == nil || got.ProjectID != "datum-cloud" || got.Namespace != "custom" {
+		t.Fatalf("CurrentContextEntry = %+v, want datum/datum-cloud in namespace custom", got)
+	}
+
+	if err := SaveV1Beta1ToPath(cfg, path); err != nil {
+		t.Fatalf("SaveV1Beta1ToPath: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	for _, gone := range []string{"cache:", "last-refreshed", "display-name", "name: " + sess + "/datum\n"} {
+		if strings.Contains(string(saved), gone) {
+			t.Errorf("saved config still contains %q:\n%s", gone, saved)
+		}
+	}
+	if !strings.Contains(string(saved), "current-context: "+current) {
+		t.Errorf("saved config lost the current context:\n%s", saved)
+	}
+}
+
+// TestSelectContext verifies that selecting a context records it as current,
+// as its session's last context, and makes its session active.
+func TestSelectContext(t *testing.T) {
+	t.Parallel()
+
+	const sess = "user@example.com@api.datum.net"
+	cfg := NewV1Beta1()
+	cfg.Sessions = []Session{{Name: sess}}
+	ctx := DiscoveredContext{Session: sess, OrganizationID: "datum", ProjectID: "new-proj"}
+	ctx.Name = ctx.QualifiedName()
+
+	cfg.SelectContext(ctx)
+
+	if cfg.CurrentContext != ctx.Name || cfg.ActiveSession != sess {
+		t.Errorf("CurrentContext=%q ActiveSession=%q", cfg.CurrentContext, cfg.ActiveSession)
+	}
+	if cfg.SessionByName(sess).LastContext != ctx.Name {
+		t.Errorf("LastContext=%q, want %q", cfg.SessionByName(sess).LastContext, ctx.Name)
+	}
+	if cfg.CurrentContextEntry() == nil {
+		t.Error("current context entry not stored")
 	}
 }

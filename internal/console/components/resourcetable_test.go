@@ -516,48 +516,6 @@ func TestResourceTableModel_Welcome_ResolverLabel(t *testing.T) {
 	}
 }
 
-// TestResourceTableModel_Welcome_StaleBanner_Shown verifies AC#15 (non-boundary):
-// stale banner appears when staleBanner=true and contentH >= 12 (tableHeight=20 → contentH=16).
-func TestResourceTableModel_Welcome_StaleBanner_Shown(t *testing.T) {
-	t.Parallel()
-	m := newWelcomeModel(100, 20) // contentH = 16
-	m.SetStaleCacheAge(true, "26h")
-
-	got := stripANSI(m.View())
-	if !strings.Contains(got, "Context cache last refreshed") {
-		t.Errorf("AC#15: want stale banner when staleBanner=true and contentH>=12, got: %q", got)
-	}
-	if !strings.Contains(got, "26h") {
-		t.Errorf("AC#15: want age '26h' in stale banner, got: %q", got)
-	}
-}
-
-// TestResourceTableModel_Welcome_StaleBanner_Absent_WhenFlagFalse verifies AC#15 (input-changed):
-// stale banner absent when staleBanner=false even at sufficient height.
-func TestResourceTableModel_Welcome_StaleBanner_Absent_WhenFlagFalse(t *testing.T) {
-	t.Parallel()
-	m := newWelcomeModel(100, 30)
-	m.SetStaleCacheAge(false, "26h")
-
-	got := stripANSI(m.View())
-	if strings.Contains(got, "Context cache last refreshed") {
-		t.Errorf("AC#15: want stale banner absent when staleBanner=false, got: %q", got)
-	}
-}
-
-// TestResourceTableModel_Welcome_StaleBanner_Absent_TooShort verifies AC#15 (input-changed):
-// stale banner absent when contentH < 12 (tableHeight=15 → contentH=11).
-func TestResourceTableModel_Welcome_StaleBanner_Absent_TooShort(t *testing.T) {
-	t.Parallel()
-	m := newWelcomeModel(100, 15) // contentH = 11, gate is >= 12
-	m.SetStaleCacheAge(true, "26h")
-
-	got := stripANSI(m.View())
-	if strings.Contains(got, "Context cache last refreshed") {
-		t.Errorf("AC#15: want stale banner absent when contentH<12, got: %q", got)
-	}
-}
-
 // TestResourceTableModel_Welcome_KeybindStrip_Shown verifies AC#17: keybind strip
 // appears when contentH >= 18 (tableHeight=22 → contentH=18).
 func TestResourceTableModel_Welcome_KeybindStrip_Shown(t *testing.T) {

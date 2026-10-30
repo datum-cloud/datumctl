@@ -53,7 +53,7 @@ func TestForwardCompletion_untrustedPathPlugin_returnsNil(t *testing.T) {
 	t.Cleanup(func() { os.Args = orig })
 
 	// No trust entry in plugins.json — IsTrusted must return false.
-	err := ForwardCompletion(managedDir, nil)
+	err := ForwardCompletion(managedDir, buildMinimalCobraTree(), nil)
 	if err != nil {
 		t.Errorf("ForwardCompletion untrusted PATH plugin: want nil, got %v", err)
 	}
@@ -75,7 +75,7 @@ func TestForwardHelp_untrustedPathPlugin_returnsError(t *testing.T) {
 	os.Args = []string{"datumctl", "myext", "--help"}
 	t.Cleanup(func() { os.Args = orig })
 
-	err := ForwardHelp(managedDir)
+	err := ForwardHelp(managedDir, buildMinimalCobraTree())
 	if err == nil {
 		t.Fatal("ForwardHelp untrusted PATH plugin: want error, got nil")
 	}
@@ -103,7 +103,7 @@ func TestForwardHelp_untrustedPathPlugin_shortFlag(t *testing.T) {
 	os.Args = []string{"datumctl", "myext", "-h"}
 	t.Cleanup(func() { os.Args = orig })
 
-	err := ForwardHelp(managedDir)
+	err := ForwardHelp(managedDir, buildMinimalCobraTree())
 	if err == nil {
 		t.Fatal("ForwardHelp untrusted PATH plugin (-h): want error, got nil")
 	}
@@ -236,7 +236,7 @@ func TestForwardHelp_noHelpFlag_returnsNil(t *testing.T) {
 	os.Args = []string{"datumctl", "myext", "subcommand"}
 	t.Cleanup(func() { os.Args = orig })
 
-	err := ForwardHelp(managedDir)
+	err := ForwardHelp(managedDir, buildMinimalCobraTree())
 	if err != nil {
 		t.Errorf("ForwardHelp without --help flag: want nil, got %v", err)
 	}

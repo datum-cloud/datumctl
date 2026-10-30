@@ -8,7 +8,7 @@ Use `datumctl` to manage your Datum Cloud resources, authenticate securely, and 
 
 ## Features
 
-*   **Secure Authentication:** Modern OAuth 2.0 / OIDC PKCE with device-code fallback for headless environments. No static API keys.
+*   **Secure Authentication:** Modern OAuth 2.0 / OIDC PKCE with device-code fallback for headless environments, and service-account credentials for CI. No static API keys.
 *   **Context Discovery:** After login, `datumctl` fetches the organizations and projects you can access and lets you pick a default context — no more passing `--organization` or `--project` on every command.
 *   **Multi-User Support:** Manage credentials for multiple Datum Cloud accounts and switch between them with `datumctl auth switch`.
 *   **Resource Management:** Interact with Datum Cloud resources with a kubectl-style interface (`get`, `apply`, `describe`, `delete`, ...).
@@ -55,16 +55,34 @@ See the [Installation Guide](https://www.datum.net/docs/quickstart/datumctl/) fo
     ```
     kubectl then uses `datumctl auth get-token` automatically to refresh credentials.
 
-### CI and scripting
+### CI and headless use
 
-For non-interactive use, environment variables override the active context per-invocation:
+In CI, sign in as a **service account** — no browser, no prompts, no human account involved. Create the service account in the [Datum Cloud portal](https://cloud.datum.net), download its credentials JSON file, store it as a CI secret, then:
 
 ```bash
-DATUM_PROJECT=my-project datumctl get dnszones
-DATUM_ORGANIZATION=my-org datumctl get projects
+datumctl login --credentials ./key.json
+DATUM_PROJECT=my-project datumctl diff -f manifest.yaml
+DATUM_PROJECT=my-project datumctl apply -f manifest.yaml
 ```
 
-`--project` and `--organization` flags work too. For machine-to-machine auth, see `datumctl login --credentials` for the machine-account flow.
+`DATUM_PROJECT` or `DATUM_ORGANIZATION` sets the scope of each command, so CI never needs to pick a context. `--project` and `--organization` flags work too. The session renews its own token for as long as the key is valid; sign in again with the same file if the runner's keyring is wiped. See [Service accounts](./docs/authentication.md#service-accounts-ci-and-automation) for details.
+
+On a machine without a browser (SSH session, container) where a human is present, use the device-code flow instead:
+
+```bash
+datumctl login --no-browser
+```
+
+It prints a short code and a URL to open on any device.
+
+To run one command as another signed-in account without switching the active one, name its session with `--session` or `DATUM_SESSION`. The value is a session name (`email@api-host`) or an email signed in on only one endpoint. The command uses that session's last context unless you pass a scope:
+
+```bash
+datumctl get dnszones --session alice@example.com@api.staging.env.datum.net
+DATUM_SESSION=alice@example.com datumctl get projects
+```
+
+This works on plugin commands too (`datumctl dns zones list --session alice@example.com@api.datum.net`): datumctl takes the flag itself and sets `DATUM_SESSION` for the plugin it runs, so the plugin's own `datumctl` calls act as the same session. A stale `DATUM_SESSION` — left over from a previous logout, or inherited this way from a plugin — only affects commands that need a session; `datumctl version`, `datumctl plugin list`, and similar commands are unaffected.
 
 ## Agent Skills
 

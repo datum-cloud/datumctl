@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	componentversion "k8s.io/component-base/version"
+	"k8s.io/kubectl/pkg/cmd/annotate"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
 	kubeauth "k8s.io/kubectl/pkg/cmd/auth"
@@ -24,13 +25,14 @@ import (
 	"k8s.io/kubectl/pkg/cmd/edit"
 	"k8s.io/kubectl/pkg/cmd/explain"
 	"k8s.io/kubectl/pkg/cmd/get"
+	"k8s.io/kubectl/pkg/cmd/label"
+	"k8s.io/kubectl/pkg/cmd/patch"
 	"k8s.io/kubectl/pkg/cmd/version"
 	utilcomp "k8s.io/kubectl/pkg/util/completion"
 
 	autoupdatecmd "go.datum.net/datumctl/internal/cmd/autoupdate"
 
 	"go.datum.net/datumctl/internal/client"
-	aicmd "go.datum.net/datumctl/internal/cmd/ai"
 	apicmd "go.datum.net/datumctl/internal/cmd/api"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/console"
@@ -81,16 +83,6 @@ func RootCmd() *cobra.Command {
 		panic(err)
 	}
 
-	// ForwardCompletion and ForwardHelp must run before cobra.Execute() because
-	// Cobra intercepts both __complete and --help before RunE fires, and plugin
-	// names are not registered as Cobra subcommands.
-	if err := plugindispatch.ForwardCompletion(earlyPluginsDir, factory); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: completion forwarding error: %v\n", err)
-	}
-	if err := plugindispatch.ForwardHelp(earlyPluginsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: help forwarding error: %v\n", err)
-	}
-
 	rootCmd := &cobra.Command{
 		Use:   "datumctl",
 		Short: "The official CLI for Datum Cloud",
@@ -104,7 +96,19 @@ terminal. No knowledge of Kubernetes or kubectl required.
 Get started:
   datumctl login
   datumctl get organizations
-  datumctl get dnszones`,
+  datumctl get dnszones
+
+In CI, sign in as a service account instead:
+  datumctl login --credentials ./key.json
+
+Run one command as another signed-in account, leaving the active one as is:
+  datumctl get dnszones --session user@example.com@api.staging.env.datum.net
+  DATUM_SESSION=user@example.com datumctl get dnszones
+
+datumctl also sets DATUM_SESSION for plugins it runs, so a plugin's own
+datumctl calls act as the same session. A stale DATUM_SESSION only affects
+commands that need a session — version, plugin list, and similar commands
+are unaffected.`,
 		// ArbitraryArgs allows unknown subcommand names to reach RunE so the
 		// plugin dispatch logic can handle them before Cobra rejects them.
 		Args: cobra.ArbitraryArgs,
@@ -123,6 +127,9 @@ Get started:
 					"Allowed values: human, json, yaml.",
 				)
 			}
+			if err := applySessionOverride(cmd); err != nil {
+				return err
+			}
 			startUpdateCheck(cmd)
 			handleUpdateCheck(cmd)
 			return nil
@@ -133,6 +140,13 @@ Get started:
 				return nil
 			}
 			name := args[0]
+
+			// Reached when the plugin is not installed yet; the forward path
+			// already handled the case where it is.
+			if plugin, aliased := plugindispatch.ResolveLegacyAlias(name); aliased {
+				plugindispatch.NoticeLegacyAlias(cmd.ErrOrStderr(), name, plugin)
+				name = plugin
+			}
 
 			// Built-in commands should have been dispatched by Cobra already.
 			// If we reach here with a built-in name it means something is wrong.
@@ -223,6 +237,8 @@ Get started:
 	rootCmd.PersistentFlags().Bool("warnings-as-errors", false, "Treat warnings as errors")
 	rootCmd.PersistentFlags().String("error-format", customerrors.FormatHuman,
 		"Error output format on failure. One of: human, json, yaml.")
+	rootCmd.PersistentFlags().String(sessionFlag, "",
+		"Run this command as another signed-in session without changing the active one: a session name (email@api-host) or an email signed in on one endpoint. Overrides DATUM_SESSION.")
 	ioStreams := genericclioptions.IOStreams{
 		In:     rootCmd.InOrStdin(),
 		Out:    rootCmd.OutOrStdout(),
@@ -247,6 +263,18 @@ Get started:
 		"log-flush-frequency", "v", "vmodule", "disable-compression",
 		"warnings-as-errors",
 	)
+
+	// ForwardCompletion and ForwardHelp must run before cobra.Execute() because
+	// Cobra intercepts both __complete and --help before RunE fires, and plugin
+	// names are not registered as Cobra subcommands. They run here, once the
+	// persistent flags exist, so that global flags typed before the plugin name
+	// ("datumctl --project P compute --help") are recognized as datumctl's.
+	if err := plugindispatch.ForwardCompletion(earlyPluginsDir, rootCmd, factory); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: completion forwarding error: %v\n", err)
+	}
+	if err := plugindispatch.ForwardHelp(earlyPluginsDir, rootCmd); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: help forwarding error: %v\n", err)
+	}
 
 	// Plugins dispatch dynamically instead of registering as Cobra commands, so
 	// the help listing has to be taught about them explicitly.
@@ -340,7 +368,7 @@ does not require an --organization or --project flag. It also shows each
 organization's setup status. All other resource types require one of
 these flags (or an active context) to specify the target context.
 The 'organizations' shorthand also works with 'datumctl delete', 'datumctl edit',
-and 'datumctl describe'.`
+'datumctl describe', 'datumctl patch', 'datumctl annotate', and 'datumctl label'.`
 	getCmd.Example = `  # List your organization memberships (no context required)
   datumctl get organizations
 
@@ -378,21 +406,31 @@ by providing a resource manifest file.
 Resources can be specified as TYPE NAME pairs, or from a YAML/JSON file
 with -f. JSON and YAML formats are accepted.
 
+Deletion runs in the project or organization chosen by --project or
+--organization. When neither flag is given, the active context's project
+or organization is used instead. Either way, the chosen scope is printed
+before anything is deleted, so check that line if you are unsure which
+context is active. Deletion is immediate and cannot be undone: pass
+-i/--interactive to review the resources and confirm before each one is
+deleted, or --dry-run=client to preview without deleting.
+
 Note: this command does not perform a version check before deletion. If
 someone has updated a resource between when you fetched it and when you
-delete it, the deletion still proceeds. Use --dry-run=client to preview
-what would be deleted before committing.`
+delete it, the deletion still proceeds.`
 	deleteCmd.Example = `  # Delete a project by name
   datumctl delete project my-project-id --organization <org-id>
 
   # Delete a DNS zone by name
   datumctl delete dnszone my-zone --project <project-id> --namespace default
 
+  # Confirm each deletion before it happens
+  datumctl delete dnszone my-zone --project <project-id> -i
+
   # Delete resources defined in a manifest file
   datumctl delete -f ./my-resource.yaml --organization <org-id>
 
-  # Delete resources matching a label selector
-  datumctl delete dnszones -l app=my-app --project <project-id>
+  # Delete resources matching a label selector, confirming first
+  datumctl delete dnszones -l app=my-app --project <project-id> --interactive
 
   # Preview what would be deleted without actually deleting
   datumctl delete project my-project-id --organization <org-id> --dry-run=client`
@@ -401,7 +439,7 @@ what would be deleted before committing.`
 		"output-watch-events", "raw", "server-print", "show-managed-fields",
 		"subresource", "template",
 	)
-	rootCmd.AddCommand(WrapResourceCommand(deleteCmd))
+	rootCmd.AddCommand(WrapDeleteCommand(deleteCmd, factory))
 
 	createCmd := create.NewCmdCreate(factory, ioStreams)
 	createCmd.Short = "Create a Datum Cloud resource from a file or stdin"
@@ -494,6 +532,124 @@ datumctl saves your changes to a temporary file so you can reconcile them.`
 	)
 	rootCmd.AddCommand(WrapResourceCommand(editCmd))
 
+	patchCmd := patch.NewCmdPatch(factory, ioStreams)
+	patchCmd.Short = "Update individual fields of a live Datum Cloud resource"
+	patchCmd.Long = `Change one or more fields of a live Datum Cloud resource in a single
+command, without rendering and applying a full manifest.
+
+Give the patch inline with -p, or from a file with --patch-file. JSON and
+YAML formats are accepted. Two patch types are supported:
+
+  merge (default)  A JSON merge patch: a partial document whose fields
+                   replace the matching fields of the live resource. The
+                   right choice for nearly every change.
+  json             A JSON patch: an ordered list of operations (add,
+                   replace, remove, ...) with explicit paths. Use this
+                   for precise edits to items inside lists.
+
+Use --dry-run=server to validate the patch against the API server and
+preview the result without persisting any changes.`
+	patchCmd.Example = `  # Change a single field with a merge patch
+  datumctl patch workload my-app -p '{"spec":{"replicas":2}}' --project <project-id>
+
+  # Write the patch as YAML
+  datumctl patch workload my-app -p $'spec:\n  replicas: 2' --project <project-id>
+
+  # Patch a resource identified by a manifest file
+  datumctl patch -f ./workload.yaml -p '{"spec":{"replicas":2}}' --project <project-id>
+
+  # Use a JSON patch for precise, positional edits
+  datumctl patch workload my-app --type=json -p '[{"op":"replace","path":"/spec/replicas","value":2}]' --project <project-id>
+
+  # Preview the patched resource without persisting it
+  datumctl patch workload my-app -p '{"spec":{"replicas":2}}' --project <project-id> --dry-run=server -o yaml`
+	// Every Datum Cloud resource is a custom resource, and the API server
+	// rejects strategic merge patches for those. Default to a JSON merge
+	// patch so the plain '-p {...}' form works out of the box.
+	if f := patchCmd.Flags().Lookup("type"); f != nil {
+		_ = f.Value.Set("merge")
+		f.DefValue = "merge"
+		f.Usage = "The type of patch being provided; one of [json merge]"
+	}
+	hideFlags(patchCmd,
+		"allow-missing-template-keys", "kustomize",
+		"show-managed-fields", "subresource", "template",
+	)
+	rootCmd.AddCommand(WrapResourceCommand(patchCmd))
+
+	annotateCmd := annotate.NewCmdAnnotate("datumctl", factory, ioStreams)
+	annotateCmd.Short = "Add, change, or remove annotations on a Datum Cloud resource"
+	annotateCmd.Long = `Update the annotations on one or more live Datum Cloud resources.
+
+Annotations are free-form key/value metadata attached to a resource. They
+are not used to select resources (use labels for that), which makes them a
+handy way to record notes or to nudge a resource — for example, setting a
+fresh annotation on a workload to trigger a rollout.
+
+Pass KEY=VALUE pairs to add or update annotations, and KEY- (a trailing
+dash) to remove one. By default an annotation that already exists is left
+untouched; pass --overwrite to replace it.
+
+Use --dry-run=server to preview the result without persisting any changes.`
+	annotateCmd.Example = `  # Add an annotation to a workload
+  datumctl annotate workload my-app restart=now --project <project-id>
+
+  # Change an annotation that already exists
+  datumctl annotate workload my-app restart=again --project <project-id> --overwrite
+
+  # Remove an annotation
+  datumctl annotate workload my-app restart- --project <project-id>
+
+  # Annotate every DNS zone matching a label selector
+  datumctl annotate dnszones -l team=platform owner=platform-team --project <project-id>
+
+  # Show the annotations on a resource
+  datumctl annotate project my-project-id --list --organization <org-id>
+
+  # Preview the result without persisting it
+  datumctl annotate workload my-app restart=now --project <project-id> --dry-run=server -o yaml`
+	hideFlags(annotateCmd,
+		"allow-missing-template-keys", "kustomize",
+		"show-managed-fields", "template",
+	)
+	rootCmd.AddCommand(WrapResourceCommand(annotateCmd))
+
+	labelCmd := label.NewCmdLabel(factory, ioStreams)
+	labelCmd.Short = "Add, change, or remove labels on a Datum Cloud resource"
+	labelCmd.Long = `Update the labels on one or more live Datum Cloud resources.
+
+Labels are key/value metadata used to organize and select resources, for
+example with the -l flag of 'datumctl get' and 'datumctl delete'. For
+free-form notes that are not used for selection, use annotations instead.
+
+Pass KEY=VALUE pairs to add or update labels, and KEY- (a trailing dash)
+to remove one. By default a label that already exists is left untouched;
+pass --overwrite to replace it.
+
+Use --dry-run=server to preview the result without persisting any changes.`
+	labelCmd.Example = `  # Add a label to a workload
+  datumctl label workload my-app tier=frontend --project <project-id>
+
+  # Change a label that already exists
+  datumctl label workload my-app tier=backend --project <project-id> --overwrite
+
+  # Remove a label
+  datumctl label workload my-app tier- --project <project-id>
+
+  # Label every DNS zone matching a label selector
+  datumctl label dnszones -l team=platform env=prod --project <project-id>
+
+  # Show the labels on a resource
+  datumctl label project my-project-id --list --organization <org-id>
+
+  # Preview the result without persisting it
+  datumctl label workload my-app tier=frontend --project <project-id> --dry-run=server -o yaml`
+	hideFlags(labelCmd,
+		"allow-missing-template-keys", "kustomize",
+		"show-managed-fields", "template",
+	)
+	rootCmd.AddCommand(WrapResourceCommand(labelCmd))
+
 	describeCmd := describe.NewCmdDescribe("datumctl", factory, ioStreams)
 	describeCmd.Short = "Show detailed information about a Datum Cloud resource"
 	describeCmd.Long = `Print a detailed, human-readable description of one or more Datum Cloud
@@ -524,16 +680,35 @@ is not reaching a ready state.`
 	)
 	rootCmd.AddCommand(WrapResourceCommand(describeCmd))
 
-	diffCmd := diff.NewCmdDiff(factory, ioStreams)
+	// The diff tool names the temporary files it compared; diffOut rewrites
+	// those headers to live/<resource> and merged/<resource> on the way out.
+	diffOut := newDiffHeaderRewriter(ioStreams.Out)
+	diffCmd := diff.NewCmdDiff(factory, genericclioptions.IOStreams{
+		In:     ioStreams.In,
+		Out:    diffOut,
+		ErrOut: ioStreams.ErrOut,
+	})
+	runDiff := diffCmd.Run
+	diffCmd.Run = func(cmd *cobra.Command, args []string) {
+		// The diff program is chosen from KUBECTL_EXTERNAL_DIFF; honour the
+		// documented DATUMCTL_EXTERNAL_DIFF name as well.
+		if v := os.Getenv("DATUMCTL_EXTERNAL_DIFF"); v != "" && os.Getenv("KUBECTL_EXTERNAL_DIFF") == "" {
+			_ = os.Setenv("KUBECTL_EXTERNAL_DIFF", v)
+		}
+		defer func() { _ = diffOut.Flush() }()
+		runDiff(cmd, args)
+	}
 	diffCmd.Short = "Preview changes a manifest would make to live resources"
 	diffCmd.Long = `Show the difference between what is currently deployed on the Datum Cloud
 platform and what would be applied from a given manifest file.
 
 The output is always YAML. The diff uses the 'diff' tool in your PATH
 with -u (unified) and -N (treat absent files as empty) flags by default.
+Each resource appears as live/<group>.<version>.<Kind>.<namespace>.<name>
+(what is deployed) against merged/... (what would be applied).
 
 Set the DATUMCTL_EXTERNAL_DIFF environment variable to use a different diff
-tool (KUBECTL_EXTERNAL_DIFF is also supported for kubectl workflow compatibility).
+tool (KUBECTL_EXTERNAL_DIFF is also honoured).
 Example: DATUMCTL_EXTERNAL_DIFF="colordiff -N -u"
 
 Exit codes:
@@ -658,10 +833,6 @@ the server.`
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
 
-	aiCmd := aicmd.Command()
-	aiCmd.GroupID = "other"
-	rootCmd.AddCommand(aiCmd)
-
 	activityCmd := activity.NewActivityCommand(activity.ActivityCommandOptions{
 		Factory:   factory,
 		IOStreams: ioStreams,
@@ -770,7 +941,22 @@ Specify the resource type and name to view its history.`
 	// ForwardPlugin replaces the process for managed plugins before cobra
 	// parses flags. If it fails (e.g. integrity check), execution falls
 	// through to cobra and the RunE path re-enforces the same checks.
-	_ = plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory)
+	//
+	// A --session or DATUM_SESSION value that names no single session, or
+	// conflicting scope flags (--project with --organization), are the failures
+	// reported here: falling through would run cobra over the plugin's own flags
+	// and bury the real error under "unknown flag". ForwardPlugin has already
+	// applied the global flags, so --error-format is honored.
+	if err := plugindispatch.ForwardPlugin(earlyPluginsDir, rootCmd, factory); err != nil {
+		if _, ok := customerrors.IsUserError(err); ok {
+			format := customerrors.FormatHuman
+			if f := rootCmd.PersistentFlags().Lookup("error-format"); f != nil {
+				format = f.Value.String()
+			}
+			customerrors.Format(os.Stderr, err, format, 0)
+			os.Exit(1)
+		}
+	}
 
 	return rootCmd
 }

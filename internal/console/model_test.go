@@ -4288,7 +4288,6 @@ func TestAppModel_ContextSwitchedMsg_ClearsRegistrationsAndInvalidatesCache(t *t
 // 12  | TestAppModel_ContextSwitchedMsg_WelcomePanel_ReRendersWithNewOrg | old OrgName absent, new OrgName present       | n/a                                               | stripANSI(appM.table.View()) contains "new-org"
 // 13  | TestAppModel_NavPane_JKey_WelcomePanel_HoveredTypeUpdates | left block shows hovered Kind after 'j' press         | old Kind absent in view2                          | stripANSI(appM.table.View()) contains "Deployment"
 // 14  | TestAppModel_BucketsLoadedMsg_WelcomePanel_ShowsHealthSummary | spinner→summary transition after BucketsLoadedMsg | n/a                                               | "Platform health" present; bucketLoading=false
-// 15  | TestStaleContextAgeDisplay: >24h→(true,"Nd"); TestStaleContextAgeDisplay_Boundary: 24h+1ns→stale | ≤24h strict→(false,"") | nil cfg/nil LastRefreshed→(false,"") | return values from staleContextAgeDisplay
 // 16  | TestAppModel_YKey_NavPane_NoOp: y/m/b inert in NavPane   | n/a                                                    | yamlMode unchanged, pane stays NavPane            | appM.activePane==NavPane, appM.yamlMode==false
 // 17  | n/a (component test in resourcetable_test.go §6b)        | keybind absent at contentH<18; strip absent AC#17      | keybind present at contentH≥18                    | resourcetable_test.go: §6b height bands
 // 18  | TestAppModel_Init_DispatchesBucketsAndRegistrations       | n/a                                                    | n/a                                               | BucketsLoadedMsg + ResourceRegistrationsLoadedMsg
@@ -4297,76 +4296,6 @@ func TestAppModel_ContextSwitchedMsg_ClearsRegistrationsAndInvalidatesCache(t *t
 // 21  | n/a (unit tests in data/platformhealth_test.go)           | n/a                                                    | n/a                                               | data/platformhealth_test.go: ComputePlatformHealthSummary
 // 22  | TestAppModel_WelcomePanel_Integration: Init→ContextSwitchedMsg→BucketsLoadedMsg | buckets cleared on step 1, health shown on step 2 | n/a | stripANSI(View()) contains "beta-corp" / "Platform health"
 // 23  | n/a (component test in resourcetable_test.go AC#23)       | six-boundary width-band sweep (AC#23 WidthBands test)  | barsMode absent at contentW<80                    | resourcetable_test.go: TestResourceTableModel_Welcome_WidthBands
-
-// TestStaleContextAgeDisplay covers AC#15: the unexported staleContextAgeDisplay
-// function returns (false,"") for fresh/nil configs and (true, age) for stale ones.
-func TestStaleContextAgeDisplay(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
-
-	newCfg := func(lastRefreshed time.Time) *datumconfig.ConfigV1Beta1 {
-		cfg := &datumconfig.ConfigV1Beta1{}
-		cfg.Cache.LastRefreshed = &lastRefreshed
-		return cfg
-	}
-
-	tests := []struct {
-		name      string
-		cfg       *datumconfig.ConfigV1Beta1
-		wantStale bool
-		wantAge   string
-	}{
-		{
-			name:      "nil config → fresh",
-			cfg:       nil,
-			wantStale: false,
-			wantAge:   "",
-		},
-		{
-			name:      "nil LastRefreshed → fresh",
-			cfg:       &datumconfig.ConfigV1Beta1{},
-			wantStale: false,
-			wantAge:   "",
-		},
-		{
-			name:      "exactly 24h ago → fresh (strict boundary)",
-			cfg:       newCfg(now.Add(-24 * time.Hour)),
-			wantStale: false,
-			wantAge:   "",
-		},
-		{
-			name:      "25h ago → stale (rounds to 1d)",
-			cfg:       newCfg(now.Add(-25 * time.Hour)),
-			wantStale: true,
-			wantAge:   "1d",
-		},
-		{
-			name:      "2 days ago → stale (days format)",
-			cfg:       newCfg(now.Add(-48 * time.Hour)),
-			wantStale: true,
-			wantAge:   "2d",
-		},
-		{
-			name:      "3 days ago → stale (days format)",
-			cfg:       newCfg(now.Add(-72 * time.Hour)),
-			wantStale: true,
-			wantAge:   "3d",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			gotStale, gotAge := staleContextAgeDisplay(tt.cfg, now)
-			if gotStale != tt.wantStale {
-				t.Errorf("stale = %v, want %v", gotStale, tt.wantStale)
-			}
-			if gotAge != tt.wantAge {
-				t.Errorf("age = %q, want %q", gotAge, tt.wantAge)
-			}
-		})
-	}
-}
 
 // TestAppModel_YKey_NavPane_NoOp verifies AC#16: pressing y, m, or b while in
 // NavPane does not change pane, overlay, or yamlMode (anti-behavior).
@@ -4500,102 +4429,6 @@ func TestAppModel_WelcomePanel_Integration(t *testing.T) {
 }
 
 // ==================== End FB-015 ==========================================
-
-// ==================== FB-015: AC#15 stale-banner boundary (clock-injected) ====================
-
-// makeConfigWithRefresh builds a minimal ConfigV1Beta1 whose cache LastRefreshed
-// is set to the given timestamp. Passing a zero time.Time means nil (never refreshed).
-func makeConfigWithRefresh(lastRefreshed time.Time) *datumconfig.ConfigV1Beta1 {
-	cfg := &datumconfig.ConfigV1Beta1{}
-	if !lastRefreshed.IsZero() {
-		cfg.Cache.LastRefreshed = &lastRefreshed
-	}
-	return cfg
-}
-
-// TestStaleContextAgeDisplay_Boundary verifies AC#15 gating rules with a frozen
-// clock so the `age <= 24h` boundary is deterministically assertable.
-//
-// Contract: age <= 24h → banner absent (show=false); age > 24h → banner shown.
-// The strict `>` means "exactly 24h 0m 0s" must be absent; "24h + 1ns" must be shown.
-func TestStaleContextAgeDisplay_Boundary(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name          string
-		lastRefreshed time.Time // zero = nil (never)
-		wantShow      bool
-		wantAgePrefix string // non-empty prefix that ageText must start with when wantShow
-	}{
-		{
-			name:          "nil LastRefreshed (never refreshed)",
-			lastRefreshed: time.Time{}, // zero → nil
-			wantShow:      false,
-		},
-		{
-			name:          "1h ago (clearly fresh)",
-			lastRefreshed: now.Add(-1 * time.Hour),
-			wantShow:      false,
-		},
-		{
-			name:          "23h59m ago (near boundary, fresh)",
-			lastRefreshed: now.Add(-23*time.Hour - 59*time.Minute),
-			wantShow:      false,
-		},
-		{
-			name:          "exactly 24h ago (boundary — strict > contract: absent)",
-			lastRefreshed: now.Add(-24 * time.Hour),
-			wantShow:      false,
-		},
-		{
-			name:          "24h+1ns ago (boundary — strict > contract: shown)",
-			lastRefreshed: now.Add(-24*time.Hour - 1),
-			wantShow:      true,
-			wantAgePrefix: "1",
-		},
-		{
-			name:          "25h ago (clearly stale, 1d)",
-			lastRefreshed: now.Add(-25 * time.Hour),
-			wantShow:      true,
-			wantAgePrefix: "1d",
-		},
-		{
-			name:          "72h ago (clearly stale, 3d)",
-			lastRefreshed: now.Add(-72 * time.Hour),
-			wantShow:      true,
-			wantAgePrefix: "3d",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			cfg := makeConfigWithRefresh(tt.lastRefreshed)
-			show, ageText := staleContextAgeDisplay(cfg, now)
-			if show != tt.wantShow {
-				t.Errorf("show = %v, want %v", show, tt.wantShow)
-			}
-			if tt.wantShow && tt.wantAgePrefix != "" && !strings.HasPrefix(ageText, tt.wantAgePrefix) {
-				t.Errorf("ageText = %q, want prefix %q", ageText, tt.wantAgePrefix)
-			}
-			if !tt.wantShow && ageText != "" {
-				t.Errorf("ageText = %q, want empty when show=false", ageText)
-			}
-		})
-	}
-}
-
-// TestStaleContextAgeDisplay_NilConfig verifies AC#15: nil config yields show=false.
-func TestStaleContextAgeDisplay_NilConfig(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
-	show, age := staleContextAgeDisplay(nil, now)
-	if show {
-		t.Error("nil config: show = true, want false")
-	}
-	if age != "" {
-		t.Errorf("nil config: age = %q, want empty", age)
-	}
-}
 
 // ==================== FB-015: model-level Init / ContextSwitchedMsg / TickMsg ====================
 

@@ -71,6 +71,35 @@ func loadOrRefreshCatalog(cmd *cobra.Command, pluginsDir string, cat pluginstore
 	return fresh, nil
 }
 
+// catalogIndexLoader returns a function that loads (and refreshes when stale)
+// the index of a registered catalog by name. Results are memoized so each
+// catalog is fetched at most once per command, which matters for the commands
+// that walk every installed plugin ('plugin install' with no arguments and
+// 'plugin upgrade --all'). A catalog that is no longer registered, or that an
+// allow-list has disabled, is reported as an error rather than silently
+// skipped.
+func catalogIndexLoader(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry) func(catalogName string) (*pluginstore.CachedIndex, error) {
+	indexCache := map[string]*pluginstore.CachedIndex{}
+	return func(catalogName string) (*pluginstore.CachedIndex, error) {
+		if idx, ok := indexCache[catalogName]; ok {
+			return idx, nil
+		}
+		cat := reg.Find(catalogName)
+		if cat == nil {
+			return nil, fmt.Errorf("catalog %q is no longer registered", catalogName)
+		}
+		if cat.Disabled {
+			return nil, fmt.Errorf("catalog %q is disabled: %s", catalogName, cat.DisabledReason)
+		}
+		idx, err := loadOrRefreshCatalog(cmd, pluginsDir, *cat)
+		if err != nil {
+			return nil, err
+		}
+		indexCache[catalogName] = idx
+		return idx, nil
+	}
+}
+
 // resolveBareName finds every catalog that contains a plugin with the given
 // name. The default catalog is checked first. A catalog that cannot be reached
 // is skipped with a warning rather than failing the whole resolution.
