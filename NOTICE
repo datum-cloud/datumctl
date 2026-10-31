@@ -11895,7 +11895,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/api
 
 * Name: k8s.io/api
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -12107,7 +12107,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/apimachinery/pkg
 
 * Name: k8s.io/apimachinery/pkg
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -12319,7 +12319,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/apimachinery/third_party/forked/golang
 
 * Name: k8s.io/apimachinery/third_party/forked/golang
-* Version: v0.37.1
+* Version: v0.37.2
 * License: BSD-3-Clause
 
 ```
@@ -12568,7 +12568,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/cli-runtime/pkg
 
 * Name: k8s.io/cli-runtime/pkg
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -12780,7 +12780,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/client-go
 
 * Name: k8s.io/client-go
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -12992,7 +12992,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/client-go/third_party/forked/golang/template
 
 * Name: k8s.io/client-go/third_party/forked/golang/template
-* Version: v0.37.1
+* Version: v0.37.2
 * License: BSD-3-Clause
 
 ```
@@ -13029,7 +13029,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/client-go/third_party/forked/httpcache
 
 * Name: k8s.io/client-go/third_party/forked/httpcache
-* Version: v0.37.1
+* Version: v0.37.2
 * License: MIT
 
 ```
@@ -13045,7 +13045,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 ## k8s.io/component-base
 
 * Name: k8s.io/component-base
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -13257,7 +13257,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 ## k8s.io/component-helpers
 
 * Name: k8s.io/component-helpers
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -14131,7 +14131,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/kubectl/pkg
 
 * Name: k8s.io/kubectl/pkg
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -14342,7 +14342,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/metrics/pkg
 
 * Name: k8s.io/metrics/pkg
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
@@ -14553,7 +14553,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/streaming/pkg
 
 * Name: k8s.io/streaming/pkg
-* Version: v0.37.1
+* Version: v0.37.2
 * License: Apache-2.0
 
 ```
