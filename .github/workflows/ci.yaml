@@ -11,3 +11,5 @@ permissions:
 jobs:
   ci:
     uses: datum-cloud/actions/.github/workflows/ci-basic.yaml@v1.26.0
+    with:
+      run: go mod verify
