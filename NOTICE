@@ -1380,7 +1380,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## github.com/go-jose/go-jose/v4
 
 * Name: github.com/go-jose/go-jose/v4
-* Version: v4.1.4
+* Version: v4.1.6
 * License: Apache-2.0
 
 ```
@@ -1592,7 +1592,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## github.com/go-jose/go-jose/v4/json
 
 * Name: github.com/go-jose/go-jose/v4/json
-* Version: v4.1.4
+* Version: v4.1.6
 * License: BSD-3-Clause
 
 ```
