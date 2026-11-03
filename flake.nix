@@ -45,7 +45,7 @@
       in
       {
         packages = {
-          default = (pkgs.buildGoModule.override { go = pkgs.go_1_26; }) {
+          default = (pkgs.buildGoModule.override { go = pkgs.go_1_27; }) {
             pname = "datumctl";
             version = gitVersion;
 
@@ -80,7 +80,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            go_1_26
+            go_1_27
             gopls
             gotools
             go-task
