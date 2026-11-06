@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -414,6 +415,12 @@ func (c *CustomConfigFlags) resolveScope(ctxEntry *datumconfig.DiscoveredContext
 		return Scope{}, fmt.Errorf("exactly one of --project or --organization must be provided")
 	}
 
+	if source == ScopeSourceFlag || source == ScopeSourceEnv {
+		if err := validateProjectName(projectID, source); err != nil {
+			return Scope{}, err
+		}
+	}
+
 	return Scope{
 		Project:             projectID,
 		Organization:        organizationID,
@@ -514,4 +521,24 @@ func NewDatumFactory(ctx context.Context) (*DatumCloudFactory, error) {
 		Factory:     f,
 		ConfigFlags: configFlags,
 	}, nil
+}
+
+// validateProjectName rejects a project given in the "org/project" form that
+// 'datumctl ctx list' prints. Project names never contain "/".
+func validateProjectName(project string, source ScopeSource) error {
+	if !strings.Contains(project, "/") {
+		return nil
+	}
+	name := "<project>"
+	if parts := strings.Split(project, "/"); len(parts) == 2 && parts[1] != "" {
+		name = parts[1]
+	}
+	setting, use := "--project", "--project "+name
+	if source == ScopeSourceEnv {
+		setting, use = "DATUM_PROJECT", "DATUM_PROJECT="+name
+	}
+	return customerrors.NewUserErrorWithHint(
+		fmt.Sprintf("%s takes a project name, not org/project: %q", setting, project),
+		fmt.Sprintf("Use %s", use),
+	)
 }

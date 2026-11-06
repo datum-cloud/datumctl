@@ -42,13 +42,17 @@ func main() {
 	// re-encode the message inside the JSON/YAML envelope.
 	util.BehaviorOnFatal(func(msg string, code int) {
 		msg = strings.TrimSuffix(msg, "\n")
+		hint := cmd.FatalHint(msg)
 		format := formatFor(rootCmd)
 		if format == customerrors.FormatHuman {
 			fmt.Fprintln(os.Stderr, msg)
+			if hint != "" {
+				fmt.Fprintln(os.Stderr, hint)
+			}
 			os.Exit(code)
 		}
 		clean := strings.TrimPrefix(msg, "error: ")
-		customerrors.Format(os.Stderr, errors.New(clean), format, verbosity())
+		customerrors.Format(os.Stderr, customerrors.NewUserErrorWithHint(clean, hint), format, verbosity())
 		os.Exit(code)
 	})
 

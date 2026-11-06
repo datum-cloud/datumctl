@@ -1,9 +1,11 @@
 package client
 
 import (
+	"strings"
 	"testing"
 
 	"go.datum.net/datumctl/internal/datumconfig"
+	customerrors "go.datum.net/datumctl/internal/errors"
 )
 
 func TestResolvedScopeDetails(t *testing.T) {
@@ -89,6 +91,40 @@ func TestResolvedScopeDetails(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("scope = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolvedScopeRejectsOrgProjectForm(t *testing.T) {
+	tests := []struct {
+		name       string
+		project    string
+		envProject string
+		wantHint   string
+	}{
+		{name: "flag in the org/project form", project: "acme/web", wantHint: "Use --project web"},
+		{name: "flag with an empty project segment", project: "acme/", wantHint: "Use --project <project>"},
+		{name: "flag with too many segments", project: "a/b/c", wantHint: "Use --project <project>"},
+		{name: "environment in the org/project form", envProject: "acme/web", wantHint: "Use DATUM_PROJECT=web"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := setupFactoryOverrideEnv(t)
+			t.Setenv("DATUM_PROJECT", tt.envProject)
+			t.Setenv("DATUM_ORGANIZATION", "")
+			*f.ConfigFlags.Project = tt.project
+
+			_, err := f.ConfigFlags.ResolvedScopeDetails()
+			userErr, ok := customerrors.IsUserError(err)
+			if !ok {
+				t.Fatalf("err = %v, want a UserError", err)
+			}
+			if userErr.Hint != tt.wantHint {
+				t.Errorf("hint = %q, want %q", userErr.Hint, tt.wantHint)
+			}
+			if !strings.Contains(userErr.Message, "takes a project name, not org/project") {
+				t.Errorf("message = %q", userErr.Message)
 			}
 		})
 	}

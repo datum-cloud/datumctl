@@ -381,8 +381,8 @@ The 'organizations' shorthand also works with 'datumctl delete', 'datumctl edit'
   # List DNS zones in a project namespace
   datumctl get dnszones --project <project-id> --namespace default
 
-  # List all resources of a type across all namespaces
-  datumctl get dnszones --organization <org-id> --all-namespaces
+  # List all resources of a type across every namespace in a project
+  datumctl get dnszones --project <project-id> --all-namespaces
 
   # Output as YAML
   datumctl get project my-project-id --organization <org-id> -o yaml
