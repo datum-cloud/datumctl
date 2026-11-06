@@ -26,7 +26,7 @@ keyring.
 To authenticate with Datum Cloud, use the `login` command:
 
 ```
-datumctl login [--hostname <auth-hostname>] [--no-browser] [--credentials <file>] [-v]
+datumctl login [--hostname <auth-hostname>] [--no-browser] [--credentials <file>] [--project <project> | --organization <org>] [-v]
 ```
 
 *   `--hostname <auth-hostname>`: (Optional) Specify the hostname of the Datum
@@ -37,6 +37,10 @@ datumctl login [--hostname <auth-hostname>] [--no-browser] [--credentials <file>
 *   `--credentials <file>`: (Optional) Sign in as a service account using its
     credentials JSON file. Non-interactive; see
     [Service accounts](#service-accounts-ci-and-automation).
+*   `--project <project>` / `--organization <org>`: (Optional) The context to
+    switch to after signing in, instead of choosing one in the picker. A
+    project can be given as `<org>/<project>`. `DATUM_PROJECT` and
+    `DATUM_ORGANIZATION` work the same way when neither flag is set.
 *   `-v, --verbose`: (Optional) Print the full ID token claims after successful
     login.
 
@@ -53,6 +57,19 @@ Running this command will:
 
 Your credentials (including refresh tokens) are stored securely in the system
 keyring, associated with your user identifier (typically your email address).
+
+### Choosing a context
+
+After signing in, `datumctl login` switches to a default context:
+
+*   With `--project`, `--organization`, `DATUM_PROJECT` or `DATUM_ORGANIZATION`,
+    it switches to that context. If none of your organizations or projects
+    match, login keeps the session and exits with an error naming the value.
+*   With a single organization and no projects, it switches to that one.
+*   Otherwise it shows a picker. The picker needs an interactive terminal.
+    Without one (a coding agent's shell, a script), login still signs you in
+    and saves the session, but leaves the context unset. Choose one afterwards
+    with `datumctl ctx use <org>/<project>`; `datumctl ctx` lists them.
 
 ## Service accounts (CI and automation)
 

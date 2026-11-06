@@ -28,7 +28,7 @@ See the [Installation Guide](https://www.datum.net/docs/quickstart/datumctl/) fo
     ```bash
     datumctl login
     ```
-    Opens your browser for authentication, then fetches your organizations and projects and prompts you to pick a default context. If you only have a single project, the picker is skipped.
+    Opens your browser for authentication, then fetches your organizations and projects and prompts you to pick a default context. If you only have a single project, the picker is skipped. To skip it yourself, name the context: `datumctl login --project my-org/my-project`.
 
 2.  **Work with resources:**
     ```bash
@@ -74,6 +74,8 @@ datumctl login --no-browser
 ```
 
 It prints a short code and a URL to open on any device.
+
+Coding agents and other tools that run `datumctl` without a terminal can sign a person in too: `datumctl login --project <project>` (or with `DATUM_PROJECT` set) chooses the context without the picker. With no context named and no terminal, login still signs in and saves the session, and leaves the context for `datumctl ctx use <org>/<project>`.
 
 To run one command as another signed-in account without switching the active one, name its session with `--session` or `DATUM_SESSION`. The value is a session name (`email@api-host`) or an email signed in on only one endpoint. The command uses that session's last context unless you pass a scope:
 
