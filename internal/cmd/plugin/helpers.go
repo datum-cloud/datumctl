@@ -91,15 +91,30 @@ func pluginAssetName(pluginName, _ string) (string, error) {
 	return fmt.Sprintf("%s_%s_%s.%s", pluginName, osName, arch, ext), nil
 }
 
-// fetchLatestTag resolves the latest GitHub Release tag via redirect.
-// It issues a HEAD request to releases/latest and parses the tag from the final URL.
 // FetchLatestTag resolves the latest release tag for a GitHub owner/repo.
 // Exported so callers outside this package can pass it to pluginstore.RefreshIndex.
 func FetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
 	return fetchLatestTag(ctx, owner, repo)
 }
 
+var githubAPIBaseURL = "https://api.github.com"
+
+const releaseTagFormat = "a semantic version such as v1.2.3 or v1.2.3-rc.1"
+
+// fetchLatestTag returns the tag GitHub marks as the latest release. GitHub
+// never marks a pre-release as latest, so a repository that has published only
+// pre-releases falls back to its highest pre-release tag.
 func fetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
+	tag, err := fetchLatestStableTag(ctx, owner, repo)
+	if err != nil || tag != "" {
+		return tag, err
+	}
+	return fetchNewestReleaseTag(ctx, owner, repo)
+}
+
+// fetchLatestStableTag follows the releases/latest redirect and returns the tag
+// it lands on, or "" when the repository has no release marked as latest.
+func fetchLatestStableTag(ctx context.Context, owner, repo string) (string, error) {
 	url := fmt.Sprintf("https://github.com/%s/%s/releases/latest", owner, repo)
 
 	client := &http.Client{
@@ -122,16 +137,115 @@ func fetchLatestTag(ctx context.Context, owner, repo string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	// After following redirect, the final URL has the tag at the end.
-	finalURL := resp.Request.URL.String()
-	tag := filepath.Base(finalURL)
-	if tag == "" || tag == "." || tag == "/" {
-		return "", fmt.Errorf("could not parse release tag from URL %q", finalURL)
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("no GitHub repository %s/%s with published releases was found", owner, repo)
 	}
-	if !strings.HasPrefix(tag, "v") {
-		return "", fmt.Errorf("unexpected release tag format %q (expected vX.Y.Z)", tag)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch latest release tag: HTTP %s", resp.Status)
+	}
+	return tagFromLatestReleaseURL(resp.Request.URL.String())
+}
+
+// tagFromLatestReleaseURL extracts the tag from the URL that releases/latest
+// redirects to. GitHub redirects to .../releases/tag/<tag> when a latest
+// release exists and to .../releases when none does; the latter returns "".
+func tagFromLatestReleaseURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("could not parse release tag from URL %q: %w", rawURL, err)
+	}
+	if strings.HasSuffix(strings.TrimSuffix(u.EscapedPath(), "/"), "/releases") {
+		return "", nil
+	}
+	_, escapedTag, ok := strings.Cut(u.EscapedPath(), "/releases/tag/")
+	if !ok || escapedTag == "" {
+		return "", fmt.Errorf("could not parse release tag from URL %q", rawURL)
+	}
+	tag, err := url.PathUnescape(escapedTag)
+	if err != nil {
+		return "", fmt.Errorf("could not parse release tag from URL %q: %w", rawURL, err)
+	}
+	if !semver.IsValid(tag) {
+		return "", fmt.Errorf("release tag %q is not a semantic version; expected %s", tag, releaseTagFormat)
 	}
 	return tag, nil
+}
+
+// githubRelease is the subset of the GitHub REST release object datumctl reads.
+type githubRelease struct {
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+// fetchNewestReleaseTag lists the repository's releases through the GitHub API
+// and returns the highest semantic-version tag, pre-releases included.
+func fetchNewestReleaseTag(ctx context.Context, owner, repo string) (string, error) {
+	listURL := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", githubAPIBaseURL, owner, repo)
+	pinHint := fmt.Sprintf("install a specific release with %s/%s@<tag>", owner, repo)
+
+	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: pluginstore.SafeCheckRedirect}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "datumctl-plugin-install")
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("list releases for %s/%s: %w; %s", owner, repo, err, pinHint)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("list releases for %s/%s: HTTP %s; %s", owner, repo, resp.Status, pinHint)
+	}
+
+	body, err := pluginstore.ReadCapped(resp.Body, pluginstore.MaxManifestBytes)
+	if err != nil {
+		return "", fmt.Errorf("read release list for %s/%s: %w", owner, repo, err)
+	}
+	var releases []githubRelease
+	if err := json.Unmarshal(body, &releases); err != nil {
+		return "", fmt.Errorf("parse release list for %s/%s: %w", owner, repo, err)
+	}
+	return newestReleaseTag(owner, repo, releases)
+}
+
+// newestReleaseTag returns the highest semantic-version tag among published
+// releases. Drafts and tags that are not semantic versions are ignored.
+func newestReleaseTag(owner, repo string, releases []githubRelease) (string, error) {
+	var newest string
+	var rejected []string
+	for _, r := range releases {
+		if r.Draft {
+			continue
+		}
+		if !semver.IsValid(r.TagName) {
+			rejected = append(rejected, r.TagName)
+			continue
+		}
+		if newest == "" || semver.Compare(r.TagName, newest) > 0 {
+			newest = r.TagName
+		}
+	}
+	if newest != "" {
+		return newest, nil
+	}
+	if len(rejected) == 0 {
+		return "", fmt.Errorf("%s/%s has no published releases", owner, repo)
+	}
+	const maxListed = 5
+	if len(rejected) > maxListed {
+		rejected = rejected[:maxListed]
+	}
+	quoted := make([]string, len(rejected))
+	for i, tag := range rejected {
+		quoted[i] = fmt.Sprintf("%q", tag)
+	}
+	return "", fmt.Errorf("no release of %s/%s has an installable tag (found %s); expected %s",
+		owner, repo, strings.Join(quoted, ", "), releaseTagFormat)
 }
 
 // fetchChecksums downloads and parses checksums.txt from a GitHub Release.
