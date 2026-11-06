@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bufio"
 	"fmt"
 	"strings"
 
@@ -59,7 +60,10 @@ func planCatalogInstall(catalogName string, idx *pluginstore.CachedIndex, manife
 // catalog unless catalogName names another), upgrading any that are behind and
 // leaving the rest alone. It carries on past a failed plugin and reports every
 // failure at the end.
-func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVersion string) error {
+//
+// A third-party catalog needs confirmation first, because it installs plugins
+// nobody named one by one: a y/N prompt, or assumeYes (--yes) for scripts.
+func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVersion string, assumeYes bool) error {
 	reg, err := pluginstore.LoadRegistry(pluginsDir)
 	if err != nil {
 		return fmt.Errorf("load catalog registry: %w", err)
@@ -102,6 +106,22 @@ func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVer
 		fmt.Fprintf(out, "Skipped %s: %s\n", s.name, s.reason)
 	}
 
+	if len(plan.install) > 0 && !cat.IsOfficial() && !assumeYes {
+		answered, ok := confirmThirdPartyInstallAll(cmd, cat.Name, plan.install)
+		if !answered {
+			// Nobody answered (a script, CI, a coding agent's shell). Fail
+			// rather than install third-party code nobody agreed to.
+			return customerrors.NewUserErrorWithHint(
+				fmt.Sprintf("installing every plugin from third-party catalog %q requires confirmation", cat.Name),
+				"Re-run with --yes to confirm without a prompt, or install the plugins you want one at a time.",
+			)
+		}
+		if !ok {
+			fmt.Fprintln(out, "Aborted. No plugins were installed.")
+			return nil
+		}
+	}
+
 	var errs []string
 	installed := 0
 	for _, name := range plan.install {
@@ -125,4 +145,26 @@ func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVer
 		return customerrors.NewUserError("some plugins failed to install:\n  " + strings.Join(errs, "\n  "))
 	}
 	return nil
+}
+
+// confirmThirdPartyInstallAll lists the plugins a third-party --all-available
+// would install and reads a y/N answer from stdin. answered is false when no
+// one responds (EOF, non-interactive), so the caller can tell that apart from
+// an explicit "no". The prompt goes to stderr to keep stdout clean.
+func confirmThirdPartyInstallAll(cmd *cobra.Command, catalogName string, plugins []string) (answered, confirmed bool) {
+	out := cmd.ErrOrStderr()
+	fmt.Fprintf(out, "\n  You're installing every plugin from the third-party catalog %q:\n\n", catalogName)
+	for _, name := range plugins {
+		fmt.Fprintf(out, "    %s\n", name)
+	}
+	fmt.Fprintln(out, "\n  Datum does not review, verify, or endorse plugins from this catalog.")
+	fmt.Fprintln(out, "  Plugins are programs that run on your machine with your Datum credentials.")
+	fmt.Fprint(out, "\n  Install all of them? [y/N] ")
+
+	line, readErr := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if readErr != nil && line == "" {
+		return false, false
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return true, answer == "y" || answer == "yes"
 }

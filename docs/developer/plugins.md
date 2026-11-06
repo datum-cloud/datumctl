@@ -90,6 +90,9 @@ catalog, or in the catalog named by `--index`. It upgrades plugins that are
 behind the catalog, leaves up-to-date ones alone, and skips a plugin whose name
 is already installed from another catalog or from GitHub rather than replace
 it. A plugin that fails is reported at the end without stopping the rest.
+With a third-party catalog it first lists the plugins it would install and asks
+to confirm; pass `--yes` to skip the prompt. Without a terminal and without
+`--yes`, it exits with an error rather than install anything.
 
 `plugin search -o json` prints an array of `{name, index, version, trust,
 description}` objects, and `-o name` prints one plugin name per line, for

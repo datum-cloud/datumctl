@@ -21,6 +21,7 @@ func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
 	var (
 		allAvailable bool
 		indexName    string
+		assumeYes    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install [name | owner/repo[@version]]",
@@ -46,7 +47,9 @@ With --all-available, installs every plugin in the official datum catalog (or
 the catalog named by --index), upgrades any that are behind, and leaves the rest
 alone. A plugin of the same name installed from another catalog or from GitHub
 is skipped, not replaced. One failed plugin does not stop the others; failures
-are listed at the end and the command exits non-zero.
+are listed at the end and the command exits non-zero. A third-party catalog
+asks for confirmation first, listing the plugins it would install; pass --yes
+to confirm without the prompt.
 
 The plugin binary is written to the managed plugins directory
 (~/.datumctl/plugins/ by default).`,
@@ -72,8 +75,11 @@ The plugin binary is written to the managed plugins directory
   # Install every plugin in the official datum catalog
   datumctl plugin install --all-available
 
-  # Install every plugin in another registered catalog
-  datumctl plugin install --all-available --index acme`,
+  # Install every plugin in another registered catalog (asks to confirm)
+  datumctl plugin install --all-available --index acme
+
+  # The same, without the prompt (scripts, CI)
+  datumctl plugin install --all-available --index acme --yes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
 			if err != nil {
@@ -86,7 +92,10 @@ The plugin binary is written to the managed plugins directory
 				if len(args) > 0 {
 					return customerrors.NewUserError("--all-available installs a whole catalog; it does not take a plugin name")
 				}
-				return installAllAvailable(cmd, pluginsDir, indexName, currentVersion)
+				return installAllAvailable(cmd, pluginsDir, indexName, currentVersion, assumeYes)
+			}
+			if assumeYes {
+				return customerrors.NewUserError("--yes only applies with --all-available")
 			}
 			if indexName != "" {
 				return customerrors.NewUserErrorWithHint(
@@ -122,6 +131,7 @@ The plugin binary is written to the managed plugins directory
 	}
 	cmd.Flags().BoolVar(&allAvailable, "all-available", false, "Install every plugin in a catalog (the official datum catalog unless --index is set)")
 	cmd.Flags().StringVar(&indexName, "index", "", "Catalog to install from with --all-available")
+	cmd.Flags().BoolVar(&assumeYes, "yes", false, "With --all-available, install from a third-party catalog without the confirmation prompt")
 	return cmd
 }
 
