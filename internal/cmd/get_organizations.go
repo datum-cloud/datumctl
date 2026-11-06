@@ -43,6 +43,8 @@ func WrapGetCommand(cmd *cobra.Command, factory *datumclient.DatumCloudFactory, 
 			factory.ConfigFlags.ForceUserControlPlane = true
 			defer func() { factory.ConfigFlags.ForceUserControlPlane = prev }()
 			_ = c.Flags().Set("all-namespaces", "true")
+		} else {
+			getFatalHint = orgScopeAllNamespacesHint(c, factory, args)
 		}
 
 		if origRunE != nil {
