@@ -1,7 +1,9 @@
 package plugin
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"text/tabwriter"
 
@@ -12,8 +14,24 @@ import (
 	"go.datum.net/datumctl/internal/pluginstore"
 )
 
+// searchResult is one plugin in 'datumctl plugin search' output. Its JSON form
+// is what '-o json' prints, so scripts and agents can rely on these field names.
+type searchResult struct {
+	Name        string `json:"name"`
+	Index       string `json:"index"`
+	Version     string `json:"version"`
+	Trust       string `json:"trust"`
+	Description string `json:"description"`
+}
+
+const (
+	searchOutputTable = "table"
+	searchOutputJSON  = "json"
+	searchOutputName  = "name"
+)
+
 func searchCmd() *cobra.Command {
-	var indexName string
+	var indexName, output string
 	cmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search for available datumctl plugins",
@@ -26,7 +44,10 @@ func searchCmd() *cobra.Command {
 			you added). An optional query filters by name or description; use --index to
 			scope to one catalog.
 
-			Run 'datumctl plugin install <name>' to install a plugin listed here.`),
+			Run 'datumctl plugin install <name>' to install a plugin listed here.
+
+			Use -o json for machine-readable output, or -o name for one plugin name
+			per line.`),
 		Example: templates.Examples(`
 			# List all available plugins across catalogs
 			datumctl plugin search
@@ -35,7 +56,10 @@ func searchCmd() *cobra.Command {
 			datumctl plugin search dns
 
 			# Scope the search to one catalog
-			datumctl plugin search dns --index acme`),
+			datumctl plugin search dns --index acme
+
+			# Machine-readable output
+			datumctl plugin search --index datum -o json`),
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
@@ -65,9 +89,16 @@ func searchCmd() *cobra.Command {
 				query = strings.ToLower(args[0])
 			}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION")
-			var rows int
+			switch output {
+			case searchOutputTable, searchOutputJSON, searchOutputName:
+			default:
+				return customerrors.NewUserErrorWithHint(
+					fmt.Sprintf("invalid value %q for --output", output),
+					"Allowed values: table, json, name.",
+				)
+			}
+
+			results := []searchResult{}
 			for i := range catalogs {
 				cat := catalogs[i]
 				idx, idxErr := loadOrRefreshCatalog(cmd, pluginsDir, cat)
@@ -81,20 +112,46 @@ func searchCmd() *cobra.Command {
 						!strings.Contains(strings.ToLower(p.Spec.ShortDescription), query) {
 						continue
 					}
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-						p.Name, cat.Name, p.Spec.Version, cat.Trust(), p.Spec.ShortDescription)
-					rows++
+					results = append(results, searchResult{
+						Name:        p.Name,
+						Index:       cat.Name,
+						Version:     p.Spec.Version,
+						Trust:       cat.Trust(),
+						Description: p.Spec.ShortDescription,
+					})
 				}
 			}
-			if err := w.Flush(); err != nil {
-				return err
-			}
-			if rows == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No matching plugins found.")
-			}
-			return nil
+			return printSearchResults(cmd.OutOrStdout(), output, results)
 		},
 	}
 	cmd.Flags().StringVar(&indexName, "index", "", "Scope the search to a single catalog")
+	cmd.Flags().StringVarP(&output, "output", "o", searchOutputTable, "Output format: table, json or name")
 	return cmd
+}
+
+// printSearchResults writes search results in the requested format. JSON
+// output is always an array, empty when nothing matched.
+func printSearchResults(w io.Writer, output string, results []searchResult) error {
+	switch output {
+	case searchOutputJSON:
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(results)
+	case searchOutputName:
+		for _, r := range results {
+			fmt.Fprintln(w, r.Name)
+		}
+		return nil
+	}
+
+	if len(results) == 0 {
+		fmt.Fprintln(w, "No matching plugins found.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION")
+	for _, r := range results {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Index, r.Version, r.Trust, r.Description)
+	}
+	return tw.Flush()
 }
