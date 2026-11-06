@@ -76,12 +76,24 @@ Plugins listed there can be installed by name:
 
 ```sh
 datumctl plugin install compute
+datumctl plugin install --all-available
 datumctl plugin search
+datumctl plugin search --index datum -o json
 datumctl plugin list
 datumctl plugin upgrade compute
 datumctl plugin upgrade --all
 datumctl plugin remove compute
 ```
+
+`plugin install --all-available` installs every plugin in the official `datum`
+catalog, or in the catalog named by `--index`. It upgrades plugins that are
+behind the catalog, leaves up-to-date ones alone, and skips a plugin whose name
+is already installed from another catalog or from GitHub rather than replace
+it. A plugin that fails is reported at the end without stopping the rest.
+
+`plugin search -o json` prints an array of `{name, index, version, trust,
+description}` objects, and `-o name` prints one plugin name per line, for
+scripts and agents.
 
 `plugin upgrade` reinstalls a plugin from the catalog or GitHub repository it
 was installed from, skipping any plugin already at its latest version. With

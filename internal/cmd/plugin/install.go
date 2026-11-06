@@ -18,6 +18,10 @@ import (
 )
 
 func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
+	var (
+		allAvailable bool
+		indexName    string
+	)
 	cmd := &cobra.Command{
 		Use:   "install [name | owner/repo[@version]]",
 		Short: "Install a datumctl plugin",
@@ -38,6 +42,12 @@ With an owner/repo argument, installs directly from a GitHub Release:
   - owner/repo         installs the latest release
   - owner/repo@v1.2.0  installs a specific version
 
+With --all-available, installs every plugin in the official datum catalog (or
+the catalog named by --index), upgrades any that are behind, and leaves the rest
+alone. A plugin of the same name installed from another catalog or from GitHub
+is skipped, not replaced. One failed plugin does not stop the others; failures
+are listed at the end and the command exits non-zero.
+
 The plugin binary is written to the managed plugins directory
 (~/.datumctl/plugins/ by default).`,
 		Example: `  # Install the dns plugin from the official datum catalog
@@ -57,7 +67,13 @@ The plugin binary is written to the managed plugins directory
   datumctl plugin install acme/deploy@v2.0.0
 
   # Restore all previously installed plugins
-  datumctl plugin install`,
+  datumctl plugin install
+
+  # Install every plugin in the official datum catalog
+  datumctl plugin install --all-available
+
+  # Install every plugin in another registered catalog
+  datumctl plugin install --all-available --index acme`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pluginsDir, err := resolvePluginsDir(cmd)
 			if err != nil {
@@ -65,6 +81,19 @@ The plugin binary is written to the managed plugins directory
 			}
 
 			currentVersion := componentversion.Get().GitVersion
+
+			if allAvailable {
+				if len(args) > 0 {
+					return customerrors.NewUserError("--all-available installs a whole catalog; it does not take a plugin name")
+				}
+				return installAllAvailable(cmd, pluginsDir, indexName, currentVersion)
+			}
+			if indexName != "" {
+				return customerrors.NewUserErrorWithHint(
+					"--index only applies with --all-available",
+					"To install one plugin from a catalog, name it as <catalog>/<plugin>, e.g. 'datumctl plugin install acme/deploy'.",
+				)
+			}
 
 			if len(args) == 0 {
 				return installAllFromManifest(cmd, pluginsDir, currentVersion)
@@ -91,6 +120,8 @@ The plugin binary is written to the managed plugins directory
 		}
 		return names, cobra.ShellCompDirectiveNoFileComp
 	}
+	cmd.Flags().BoolVar(&allAvailable, "all-available", false, "Install every plugin in a catalog (the official datum catalog unless --index is set)")
+	cmd.Flags().StringVar(&indexName, "index", "", "Catalog to install from with --all-available")
 	return cmd
 }
 
