@@ -34,6 +34,7 @@ import (
 
 	"go.datum.net/datumctl/internal/client"
 	apicmd "go.datum.net/datumctl/internal/cmd/api"
+	appscmd "go.datum.net/datumctl/internal/cmd/apps"
 	"go.datum.net/datumctl/internal/cmd/auth"
 	"go.datum.net/datumctl/internal/cmd/console"
 	"go.datum.net/datumctl/internal/cmd/create"
@@ -925,6 +926,19 @@ Specify the resource type and name to view its history.`
 	consoleCmd := console.Command(factory)
 	consoleCmd.GroupID = "other"
 	rootCmd.AddCommand(consoleCmd)
+
+	appsCmd := appscmd.Command(appscmd.Options{RESTConfig: func() (*rest.Config, error) {
+		project, organization, platform, err := factory.ConfigFlags.ResolvedScope()
+		if err != nil {
+			return nil, err
+		}
+		if project == "" || organization != "" || platform {
+			return nil, customerrors.NewUserErrorWithHint("App templates belong to a project.", "Select a project context or pass --project.")
+		}
+		return factory.ConfigFlags.ToRESTConfig()
+	}, Out: ioStreams.Out})
+	appsCmd.GroupID = "resource"
+	rootCmd.AddCommand(appsCmd)
 
 	apiCmd := apicmd.Command(factory)
 	apiCmd.GroupID = "other"
