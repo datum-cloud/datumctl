@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	componentversion "k8s.io/component-base/version"
 
 	"go.datum.net/datumctl/internal/client"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/plugindispatch"
 	"go.datum.net/datumctl/internal/pluginstore"
+	datumversion "go.datum.net/datumctl/internal/version"
 )
 
 func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
@@ -86,7 +86,7 @@ The plugin binary is written to the managed plugins directory
 				return err
 			}
 
-			currentVersion := componentversion.Get().GitVersion
+			currentVersion := datumversion.Get()
 
 			if allAvailable {
 				if len(args) > 0 {

@@ -8,11 +8,11 @@ import (
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	componentversion "k8s.io/component-base/version"
 	"k8s.io/kubectl/pkg/util/templates"
 
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
+	datumversion "go.datum.net/datumctl/internal/version"
 )
 
 // browseEntry is one selectable plugin in the interactive browser, paired with
@@ -98,7 +98,7 @@ func browseCmd() *cobra.Command {
 				return nil
 			}
 
-			currentVersion := componentversion.Get().GitVersion
+			currentVersion := datumversion.Get()
 			// Empty version installs the catalog's recommended release.
 			return installFromCatalog(cmd, pluginsDir, reg, selected.catalog.Name, selected.plugin.Name, "", currentVersion)
 		},

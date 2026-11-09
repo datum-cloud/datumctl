@@ -14,7 +14,6 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
-	componentversion "k8s.io/component-base/version"
 	"k8s.io/kubectl/pkg/cmd/annotate"
 	"k8s.io/kubectl/pkg/cmd/apiresources"
 	"k8s.io/kubectl/pkg/cmd/apply"
@@ -48,6 +47,7 @@ import (
 	"go.datum.net/datumctl/internal/plugindispatch"
 	"go.datum.net/datumctl/internal/pluginstore"
 	"go.datum.net/datumctl/internal/updatecheck"
+	datumversion "go.datum.net/datumctl/internal/version"
 )
 
 // hideFlags hides the named flags from a command's flag set. Flags that do not
@@ -200,7 +200,7 @@ are unaffected.`,
 				manifest, loadErr := pluginstore.Load(pluginsDir)
 				if loadErr == nil && manifest.Plugins != nil {
 					if entry, ok := manifest.Plugins[name]; ok && entry.Manifest != nil {
-						currentVersion := componentversion.Get().GitVersion
+						currentVersion := datumversion.Get()
 						if warn, compatErr := plugindispatch.CheckCompatibilityAtInvocation(entry.Manifest, currentVersion, plugindispatch.PluginAPIVersion); compatErr != nil {
 							return customerrors.NewUserError(compatErr.Error())
 						} else if warn != "" {
@@ -830,6 +830,10 @@ the server.`
 		}
 		return nil
 	}
+	versionCmd.Run = nil
+	versionCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return runVersion(factory, ioStreams.Out, cmd)
+	}
 	versionCmd.GroupID = "other"
 	rootCmd.AddCommand(versionCmd)
 
@@ -989,7 +993,7 @@ func startUpdateCheck(cmd *cobra.Command) {
 	if updatecheck.SkipFromEnvironment() {
 		return
 	}
-	current := componentversion.Get().GitVersion
+	current := datumversion.Get()
 	checker := updatecheck.New(current)
 	checker.Start(cmd.Context())
 	activeUpdateChecker[cmd.Root()] = checker
