@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	componentversion "k8s.io/component-base/version"
 
 	plugincmd "go.datum.net/datumctl/internal/cmd/plugin"
 	"go.datum.net/datumctl/internal/client"
 	"go.datum.net/datumctl/internal/plugindispatch"
 	"go.datum.net/datumctl/internal/pluginstore"
+	datumversion "go.datum.net/datumctl/internal/version"
 )
 
 // suggestAndInstallPlugin checks the local plugin index for an exact match on
@@ -60,7 +60,7 @@ func suggestAndInstallPlugin(cmd *cobra.Command, name, pluginsDir string, origin
 	}
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "\nInstalling %s...\n", entry.Name)
-	currentVersion := componentversion.Get().GitVersion
+	currentVersion := datumversion.Get()
 	installed, _, installErr := plugincmd.InstallPlugin(cmd.Context(), pluginsDir, entry.Name, "", currentVersion, idx)
 	if installErr != nil {
 		return fmt.Errorf("install plugin: %w", installErr)

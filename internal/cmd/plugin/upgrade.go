@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	componentversion "k8s.io/component-base/version"
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"go.datum.net/datumctl/internal/client"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/pluginstore"
+	datumversion "go.datum.net/datumctl/internal/version"
 )
 
 func upgradeCmd(_ *client.DatumCloudFactory) *cobra.Command {
@@ -58,7 +58,7 @@ func upgradeCmd(_ *client.DatumCloudFactory) *cobra.Command {
 				return fmt.Errorf("load plugins manifest: %w", err)
 			}
 
-			currentVersion := componentversion.Get().GitVersion
+			currentVersion := datumversion.Get()
 
 			if all {
 				return upgradeAll(cmd, pluginsDir, manifest, currentVersion)

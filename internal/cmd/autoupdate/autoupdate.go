@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	componentversion "k8s.io/component-base/version"
 
 	"go.datum.net/datumctl/internal/datumconfig"
 	customerrors "go.datum.net/datumctl/internal/errors"
 	"go.datum.net/datumctl/internal/updatecheck"
+	datumversion "go.datum.net/datumctl/internal/version"
 )
 
 // Command returns the "auto-update" command tree.
@@ -46,7 +46,7 @@ arguments performs an upgrade immediately, regardless of that setting.`,
 }
 
 func runUpdate(cmd *cobra.Command, _ []string) error {
-	current := componentversion.Get().GitVersion
+	current := datumversion.Get()
 
 	ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 	defer cancel()
