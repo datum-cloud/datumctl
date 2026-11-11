@@ -257,6 +257,7 @@ type conditionRow struct {
 	Reason             string
 	Message            string
 	LastTransitionTime string // formatted "2006-01-02 15:04:05"; "" if missing/unparseable
+	Ancestor           string // optional Gateway API PolicyStatus ancestor label
 }
 
 // parseConditionRow extracts a conditionRow from an interface{} condition entry.
@@ -293,6 +294,8 @@ func parseConditionRow(raw interface{}) conditionRow {
 }
 
 // RenderConditionsTable parses .status.conditions from raw and renders a width-banded table.
+// When top-level conditions are absent, it falls back to Gateway API PolicyStatus
+// .status.ancestors[].conditions (e.g. TrafficProtectionPolicy Programmed).
 // Width bands: [0,40) unusable, [40,60) narrow (T/S/R), [60,80) standard (T/S/R/LTT),
 // [80,∞) wide (T/S/R/M/LTT). Non-Ready rows (status != "True") rendered in styles.Warning.
 // Returns a muted placeholder when conditions are absent, empty, or unparseable (AC#11/12/13).
@@ -302,20 +305,80 @@ func RenderConditionsTable(raw *unstructured.Unstructured, width int) string { /
 		return mutedStyle.Render("Terminal too narrow — widen to 40+ columns")
 	}
 
-	conditions, found, err := unstructuredNestedSlice(raw.Object, "status", "conditions")
-	if err != nil { // AC#13 — malformed .status structure
+	rows := collectConditionRows(raw.Object)
+	if rows == nil {
 		return mutedStyle.Render("Conditions unavailable for this resource type.")
 	}
-	if !found || len(conditions) == 0 { // AC#11 / AC#12
+	if len(rows) == 0 { // AC#11 / AC#12
 		return mutedStyle.Render("No conditions reported for this resource.")
 	}
 
-	rows := make([]conditionRow, 0, len(conditions))
-	for _, c := range conditions {
-		rows = append(rows, parseConditionRow(c))
+	return renderConditionsBody(rows, width)
+}
+
+// collectConditionRows prefers .status.conditions, then flattens PolicyStatus
+// ancestors. Returns nil only when the status structure is malformed.
+func collectConditionRows(obj map[string]interface{}) []conditionRow {
+	conditions, found, err := unstructuredNestedSlice(obj, "status", "conditions")
+	if err != nil {
+		return nil
+	}
+	if found && len(conditions) > 0 {
+		rows := make([]conditionRow, 0, len(conditions))
+		for _, c := range conditions {
+			rows = append(rows, parseConditionRow(c))
+		}
+		return rows
 	}
 
-	return renderConditionsBody(rows, width)
+	ancestors, found, err := unstructuredNestedSlice(obj, "status", "ancestors")
+	if err != nil {
+		return nil
+	}
+	if !found || len(ancestors) == 0 {
+		return []conditionRow{}
+	}
+
+	rows := make([]conditionRow, 0)
+	for _, rawAncestor := range ancestors {
+		ancestor, ok := rawAncestor.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		label := ancestorLabel(ancestor)
+		conds, _, _ := unstructured.NestedSlice(ancestor, "conditions")
+		for _, c := range conds {
+			row := parseConditionRow(c)
+			row.Ancestor = label
+			if row.Type != "" {
+				if label != "" {
+					row.Type = label + "/" + row.Type
+				}
+				rows = append(rows, row)
+			}
+		}
+	}
+	return rows
+}
+
+func ancestorLabel(ancestor map[string]interface{}) string {
+	ref, ok := ancestor["ancestorRef"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	kind, _ := ref["kind"].(string)
+	name, _ := ref["name"].(string)
+	namespace, _ := ref["namespace"].(string)
+	switch {
+	case kind != "" && namespace != "" && name != "":
+		return kind + "/" + namespace + "/" + name
+	case kind != "" && name != "":
+		return kind + "/" + name
+	case name != "":
+		return name
+	default:
+		return ""
+	}
 }
 
 // unstructuredNestedSlice is a thin wrapper around k8s unstructured helpers to
