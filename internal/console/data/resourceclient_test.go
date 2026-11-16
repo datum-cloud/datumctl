@@ -8,6 +8,8 @@ import (
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	clienttesting "k8s.io/client-go/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"go.datum.net/datumctl/internal/client"
 )
 
 // TestKubeResourceClient_DeleteResource_PropagationBackground verifies AC#14:
@@ -48,4 +50,25 @@ func TestKubeResourceClient_DeleteResource_PropagationBackground(t *testing.T) {
 		return
 	}
 	t.Fatal("AC#14: no DeleteAction recorded — DeleteResource did not call the dynamic client")
+}
+
+func TestBucketNamespace(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope client.Scope
+		want  string
+	}{
+		// A list across all namespaces is refused at organization scope for
+		// every role; the org's buckets live in its own namespace.
+		{"organization scope", client.Scope{Organization: "acme"}, "organization-acme"},
+		{"project scope lists every namespace", client.Scope{Project: "web", ProjectOrganization: "acme"}, ""},
+		{"no scope lists every namespace", client.Scope{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := bucketNamespace(tt.scope); got != tt.want {
+				t.Errorf("bucketNamespace(%+v) = %q, want %q", tt.scope, got, tt.want)
+			}
+		})
+	}
 }
