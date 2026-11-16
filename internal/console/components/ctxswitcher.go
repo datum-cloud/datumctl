@@ -117,12 +117,10 @@ func (m CtxSwitcherModel) Update(msg tea.Msg) (CtxSwitcherModel, tea.Cmd) {
 			}
 			// Under --session or DATUM_SESSION the switch lasts only for this
 			// console; the stored current context stays unchanged. The entry is
-			// held in memory only and is dropped if the config is saved.
+			// held in process memory, so the request factory, which reloads
+			// the config from disk, follows the switch too.
 			if datumconfig.HasSessionOverride() {
-				if m.cfg.ContextByName(e.ctx.Name) == nil {
-					m.cfg.UpsertContext(*e.ctx)
-				}
-				datumconfig.SetOverrideContext(e.ctx.Name)
+				datumconfig.SetOverrideContext(*e.ctx)
 				newCtx := tuictx.FromConfig(m.cfg)
 				newCtx.ApplyNames(m.dir)
 				return m, func() tea.Msg { return ContextSwitchedMsg{Ctx: newCtx} }

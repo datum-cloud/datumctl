@@ -18,6 +18,8 @@ var (
 	soProdCtx     = QualifiedContextName(soProd, "org-prod")
 	soStagingCtx  = QualifiedContextName(soStaging, "org-staging")
 	soStagingProj = QualifiedContextName(soStaging, "org-staging/proj")
+	// soStagingNew is a context the config does not store.
+	soStagingNew = QualifiedContextName(soStaging, "org-new")
 )
 
 func overrideTestConfig() *ConfigV1Beta1 {
@@ -114,7 +116,7 @@ func TestSessionOverrideLookups(t *testing.T) {
 				SetSessionOverride(tt.override, SessionOverrideFromFlag)
 			}
 			if tt.pick != "" {
-				SetOverrideContext(tt.pick)
+				SetOverrideContext(*cfg.ContextByName(tt.pick))
 			}
 			if got := cfg.ActiveSessionEntry(); got == nil || got.Name != tt.wantSession {
 				t.Errorf("ActiveSessionEntry = %v, want %q", got, tt.wantSession)
@@ -141,15 +143,14 @@ func TestSessionOverrideIsNeverSaved(t *testing.T) {
 	before, _ := os.ReadFile(path)
 
 	SetSessionOverride(soStaging, SessionOverrideFromEnv)
-	SetOverrideContext(soStagingProj)
+	// A context picked in this process is held in memory only, as the console
+	// switcher does; saving must not write it.
+	SetOverrideContext(DiscoveredContext{Name: soStagingNew, Session: soStaging, OrganizationID: "org-new"})
 	loaded, err := LoadV1Beta1FromPath(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A context picked in this process is held in memory only, as the console
-	// switcher does; saving must drop it.
-	loaded.UpsertContext(DiscoveredContext{Name: soStagingProj, Session: soStaging, OrganizationID: "org-staging", ProjectID: "proj"})
-	if loaded.CurrentContextName() != soStagingProj {
+	if loaded.CurrentContextName() != soStagingNew {
 		t.Fatalf("override not in effect")
 	}
 	if err := SaveV1Beta1ToPath(loaded, path); err != nil {
@@ -158,5 +159,58 @@ func TestSessionOverrideIsNeverSaved(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if !bytes.Equal(before, after) {
 		t.Errorf("config changed by saving under an override:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// A context picked under an override is found by every config loaded in this
+// process, not only the one the picker changed. The REST config factory
+// reloads the config from disk for each request, and the picked context is
+// not stored there.
+func TestOverrideContextNotInConfig(t *testing.T) {
+	picked := DiscoveredContext{Name: soStagingNew, Session: soStaging, OrganizationID: "org-new"}
+	tests := []struct {
+		name     string
+		override func()
+	}{
+		{"--session", func() { SetSessionOverride(soStaging, SessionOverrideFromFlag) }},
+		// Picked before anything resolved DATUM_SESSION; resolving it must
+		// not drop the pick.
+		{"pending DATUM_SESSION", func() { SetPendingSessionOverride(soStaging) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(ClearSessionOverride)
+			path := filepath.Join(t.TempDir(), "config")
+			if err := SaveV1Beta1ToPath(overrideTestConfig(), path); err != nil {
+				t.Fatal(err)
+			}
+			tt.override()
+			SetOverrideContext(picked)
+
+			fresh, err := LoadV1Beta1FromPath(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := fresh.CurrentContextEntryE()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil || got.Name != soStagingNew || got.OrganizationID != "org-new" {
+				t.Errorf("CurrentContextEntryE = %+v, want %q", got, soStagingNew)
+			}
+			if s := fresh.ActiveSessionEntry(); s == nil || s.Name != soStaging {
+				t.Errorf("ActiveSessionEntry = %v, want %q", s, soStaging)
+			}
+		})
+	}
+}
+
+// Without an override a pick is ignored, so it cannot leak into later lookups.
+func TestOverrideContextNeedsOverride(t *testing.T) {
+	t.Cleanup(ClearSessionOverride)
+	ClearSessionOverride()
+	SetOverrideContext(DiscoveredContext{Name: soStagingNew, Session: soStaging, OrganizationID: "org-new"})
+	if got := overrideContext(); got != nil {
+		t.Errorf("overrideContext = %+v, want nil without an override", got)
 	}
 }
