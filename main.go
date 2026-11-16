@@ -25,6 +25,7 @@ func main() {
 	datumversion.ApplyFallback()
 
 	logs.GlogSetter(kubectlcmd.GetLogVerbosity(os.Args))
+	cmd.RouteControllerRuntimeLogs()
 	rootCmd := cmd.RootCmd()
 
 	// Wire SIGINT/SIGTERM to a cancellable context so long interactive waits
