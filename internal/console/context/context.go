@@ -39,6 +39,12 @@ func FromConfig(cfg *datumconfig.ConfigV1Beta1) TUIContext {
 	}
 	tc.ActiveCtx = ctx
 	tc.Namespace = ctx.Namespace
+	if tc.Namespace == "" && ctx.ProjectID == "" && ctx.OrganizationID != "" {
+		// An org-wide context lists namespaced types in the organization's
+		// own namespace: a list with no namespace is refused at organization
+		// scope for every role.
+		tc.Namespace = datumconfig.OrganizationNamespace(ctx.OrganizationID)
+	}
 
 	session := cfg.ActiveSessionEntry()
 	if session != nil {
