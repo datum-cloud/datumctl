@@ -102,7 +102,7 @@ func TestResolveBareName_uniqueAndCollision(t *testing.T) {
 	cmd.SetErr(&errOut)
 
 	// Collision: deploy is in datum and acme; the official datum catalog is first.
-	matches := resolveBareName(cmd, pluginsDir, reg, "deploy")
+	matches, _ := resolveBareName(cmd, pluginsDir, reg, "deploy")
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches for deploy, got %d", len(matches))
 	}
@@ -119,13 +119,13 @@ func TestResolveBareName_uniqueAndCollision(t *testing.T) {
 	}
 
 	// Unique: solo is only in beta.
-	solo := resolveBareName(cmd, pluginsDir, reg, "solo")
+	solo, _ := resolveBareName(cmd, pluginsDir, reg, "solo")
 	if len(solo) != 1 || solo[0].catalog.Name != "beta" {
 		t.Fatalf("expected unique beta match for solo, got %+v", solo)
 	}
 
 	// Missing: nothing matches.
-	if got := resolveBareName(cmd, pluginsDir, reg, "ghost"); len(got) != 0 {
+	if got, _ := resolveBareName(cmd, pluginsDir, reg, "ghost"); len(got) != 0 {
 		t.Fatalf("expected no matches for ghost, got %+v", got)
 	}
 }
@@ -174,5 +174,94 @@ func TestSearch_unknownIndexErrors(t *testing.T) {
 	pluginsDir := t.TempDir()
 	if _, err := execPluginCmd(t, pluginsDir, searchCmd(), "--index", "nope"); err == nil {
 		t.Fatal("expected error for unknown --index")
+	}
+}
+
+func resolveWithCatalogs(t *testing.T, name string, extra []pluginstore.Catalog, seed map[string]pluginstore.Plugin) []catalogMatch {
+	t.Helper()
+	pluginsDir := t.TempDir()
+	if err := pluginstore.SaveRegistry(pluginsDir, &pluginstore.Registry{Catalogs: extra}); err != nil {
+		t.Fatal(err)
+	}
+	for cat, p := range seed {
+		seedFreshCache(t, pluginsDir, cat, p)
+	}
+	reg, err := pluginstore.LoadRegistry(pluginsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetErr(&bytes.Buffer{})
+	matches, _ := resolveBareName(cmd, pluginsDir, reg, name)
+	return matches
+}
+
+func TestResolveBareName_prefersReplacement(t *testing.T) {
+	got := resolveWithCatalogs(t, "ipam",
+		[]pluginstore.Catalog{{Name: "acme-milo", Source: "https://github.com/milo-os/cli-plugins", Type: pluginstore.CatalogTypeCustom}},
+		map[string]pluginstore.Plugin{
+			"datum":     deprecatedPlugin("ipam", "v0.1.0"),
+			"acme-milo": testPlugin("ipam", "v1.0.0", "IPAM"),
+		})
+	if len(got) != 1 || got[0].catalog.Name != "acme-milo" {
+		t.Fatalf("want one match from acme-milo, got %+v", got)
+	}
+}
+
+func TestResolveBareName_deprecatedWithoutReplacementPresent(t *testing.T) {
+	got := resolveWithCatalogs(t, "ipam",
+		[]pluginstore.Catalog{{Name: "other", Source: "https://github.com/other/repo", Type: pluginstore.CatalogTypeCustom}},
+		map[string]pluginstore.Plugin{
+			"datum": deprecatedPlugin("ipam", "v0.1.0"),
+			"other": testPlugin("ipam", "v1.0.0", "IPAM"),
+		})
+	if len(got) != 2 {
+		t.Fatalf("want 2 matches, got %+v", got)
+	}
+}
+
+func TestResolveBareName_thirdCatalogStillCollides(t *testing.T) {
+	got := resolveWithCatalogs(t, "ipam",
+		[]pluginstore.Catalog{
+			{Name: "acme-milo", Source: "https://github.com/milo-os/cli-plugins", Type: pluginstore.CatalogTypeCustom},
+			{Name: "other", Source: "https://github.com/other/repo", Type: pluginstore.CatalogTypeCustom},
+		},
+		map[string]pluginstore.Plugin{
+			"datum":     deprecatedPlugin("ipam", "v0.1.0"),
+			"acme-milo": testPlugin("ipam", "v1.0.0", "IPAM"),
+			"other":     testPlugin("ipam", "v2.0.0", "IPAM"),
+		})
+	if len(got) != 2 || got[0].catalog.Name != "acme-milo" || got[1].catalog.Name != "other" {
+		t.Fatalf("want acme-milo and other, got %+v", got)
+	}
+}
+
+func TestResolveBareName_mutuallyDeprecatedKeepsAll(t *testing.T) {
+	a := deprecatedPlugin("ipam", "v0.1.0") // replacement: milo-os/cli-plugins
+	b := deprecatedPlugin("ipam", "v0.2.0")
+	b.Spec.Deprecated.Replacement.Catalog = "datum-cloud/datumctl-plugins"
+	got := resolveWithCatalogs(t, "ipam",
+		[]pluginstore.Catalog{{Name: "acme-milo", Source: "https://github.com/milo-os/cli-plugins", Type: pluginstore.CatalogTypeCustom}},
+		map[string]pluginstore.Plugin{"datum": a, "acme-milo": b})
+	if len(got) != 2 {
+		t.Fatalf("want both matches, got %+v", got)
+	}
+}
+
+func TestDropSupersededMatches_reportsDropped(t *testing.T) {
+	dep := catalogMatch{catalog: pluginstore.Catalog{Name: "datum", Source: "datum"}, plugin: func() *pluginstore.Plugin { p := deprecatedPlugin("ipam", "v0.1.0"); return &p }()}
+	repl := catalogMatch{catalog: pluginstore.Catalog{Name: "acme-milo", Source: "https://github.com/milo-os/cli-plugins"}, plugin: func() *pluginstore.Plugin { p := testPlugin("ipam", "v1.0.0", "IPAM"); return &p }()}
+	kept, dropped := dropSupersededMatches([]catalogMatch{dep, repl})
+	if len(kept) != 1 || kept[0].catalog.Name != "acme-milo" {
+		t.Fatalf("kept = %+v", kept)
+	}
+	if len(dropped) != 1 || dropped[0].deprecated.catalog.Name != "datum" || dropped[0].replacement.catalog.Name != "acme-milo" {
+		t.Fatalf("dropped = %+v", dropped)
+	}
+	// Mutually deprecated: nothing dropped.
+	kept, dropped = dropSupersededMatches([]catalogMatch{dep})
+	if len(kept) != 1 || len(dropped) != 0 {
+		t.Fatalf("kept=%+v dropped=%+v", kept, dropped)
 	}
 }

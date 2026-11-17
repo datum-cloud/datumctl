@@ -251,11 +251,15 @@ func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 // first) and installs the unique match, or surfaces the options on a collision.
 // version pins a specific release, or "" installs the recommended version.
 func installBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name, version, currentVersion string) error {
-	matches := resolveBareName(cmd, pluginsDir, reg, name)
+	matches, dropped := resolveBareName(cmd, pluginsDir, reg, name)
 	switch len(matches) {
 	case 0:
 		return customerrors.NewUserError(fmt.Sprintf("plugin %q not found in any registered catalog; run 'datumctl plugin search %s' to look for it", name, name))
 	case 1:
+		for _, d := range dropped {
+			fmt.Fprintf(cmd.ErrOrStderr(), "note: %s in %s is deprecated; installing its replacement from %s\n",
+				name, d.deprecated.catalog.Name, d.replacement.catalog.Name)
+		}
 		return installFromCatalog(cmd, pluginsDir, reg, matches[0].catalog.Name, name, version, currentVersion)
 	default:
 		return customerrors.NewUserError(collisionError(name, matches).Error())

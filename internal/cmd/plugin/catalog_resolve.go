@@ -102,8 +102,9 @@ func catalogIndexLoader(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 
 // resolveBareName finds every catalog that contains a plugin with the given
 // name. The default catalog is checked first. A catalog that cannot be reached
-// is skipped with a warning rather than failing the whole resolution.
-func resolveBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name string) []catalogMatch {
+// is skipped with a warning rather than failing the whole resolution. It also
+// returns the deprecated matches dropped because their replacement is present.
+func resolveBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Registry, name string) ([]catalogMatch, []supersededMatch) {
 	var matches []catalogMatch
 	active := reg.Active()
 	for i := range active {
@@ -117,7 +118,44 @@ func resolveBareName(cmd *cobra.Command, pluginsDir string, reg *pluginstore.Reg
 			matches = append(matches, catalogMatch{catalog: cat, plugin: p})
 		}
 	}
-	return matches
+	return dropSupersededMatches(matches)
+}
+
+// supersededMatch is a deprecated match dropped because replacement, another
+// match, supersedes it.
+type supersededMatch struct {
+	deprecated  catalogMatch
+	replacement catalogMatch
+}
+
+// dropSupersededMatches removes a match whose plugin is deprecated when
+// another match is its replacement: same catalog source and name. Order is
+// preserved. When every match would be dropped (deprecated entries naming
+// each other), the matches are returned unchanged and nothing is dropped. The
+// dropped matches are returned with the match that replaces each.
+func dropSupersededMatches(matches []catalogMatch) (kept []catalogMatch, dropped []supersededMatch) {
+	for i, m := range matches {
+		if d := m.plugin.Spec.Deprecated; d != nil && d.Replacement != nil {
+			var replacement *catalogMatch
+			for j, other := range matches {
+				if i != j &&
+					pluginstore.SameCatalogSource(d.Replacement.Catalog, other.catalog.Source) &&
+					other.plugin.Name == d.Replacement.PluginName(m.plugin.Name) {
+					replacement = &matches[j]
+					break
+				}
+			}
+			if replacement != nil {
+				dropped = append(dropped, supersededMatch{deprecated: m, replacement: *replacement})
+				continue
+			}
+		}
+		kept = append(kept, m)
+	}
+	if len(kept) == 0 {
+		return matches, nil
+	}
+	return kept, dropped
 }
 
 // collisionError renders the "available from multiple catalogs" message that

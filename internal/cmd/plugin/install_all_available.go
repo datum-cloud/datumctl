@@ -19,7 +19,8 @@ type catalogInstallPlan struct {
 	// upToDate lists plugins already installed from this catalog at its version.
 	upToDate []string
 	// skipped lists plugins installed from another catalog or from GitHub,
-	// which --all-available leaves alone rather than replace.
+	// which --all-available leaves alone rather than replace, and deprecated
+	// plugins that are not installed.
 	skipped []skippedPlugin
 }
 
@@ -37,6 +38,10 @@ func planCatalogInstall(catalogName string, idx *pluginstore.CachedIndex, manife
 		p := &idx.Plugins[i]
 		entry := manifest.Plugins[p.Name]
 		if entry == nil {
+			if p.Spec.Deprecated != nil {
+				plan.skipped = append(plan.skipped, skippedPlugin{name: p.Name, reason: "deprecated"})
+				continue
+			}
 			plan.install = append(plan.install, p.Name)
 			continue
 		}
@@ -101,6 +106,7 @@ func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVer
 	}
 	for _, name := range plan.upToDate {
 		fmt.Fprintf(out, "%s %s is up to date\n", name, manifest.Plugins[name].Version)
+		warnIfDeprecated(cmd, reg, idx, name)
 	}
 	for _, s := range plan.skipped {
 		fmt.Fprintf(out, "Skipped %s: %s\n", s.name, s.reason)
@@ -134,6 +140,7 @@ func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVer
 		manifest.Plugins[name] = entry
 		installed++
 		fmt.Fprintf(out, "Installed %s %s from %s  [%s]\n", name, entry.Version, cat.Name, installBadge(cat.Name))
+		warnIfDeprecated(cmd, reg, idx, name)
 	}
 
 	if installed > 0 {
@@ -145,6 +152,14 @@ func installAllAvailable(cmd *cobra.Command, pluginsDir, catalogName, currentVer
 		return customerrors.NewUserError("some plugins failed to install:\n  " + strings.Join(errs, "\n  "))
 	}
 	return nil
+}
+
+// warnIfDeprecated prints the deprecation notice for name to stderr when its
+// entry in idx is deprecated.
+func warnIfDeprecated(cmd *cobra.Command, reg *pluginstore.Registry, idx *pluginstore.CachedIndex, name string) {
+	if p := pluginstore.FindInIndex(idx, name); p != nil {
+		writeDeprecationNotice(cmd.ErrOrStderr(), reg, name, p.Spec.Deprecated)
+	}
 }
 
 // confirmThirdPartyInstallAll lists the plugins a third-party --all-available

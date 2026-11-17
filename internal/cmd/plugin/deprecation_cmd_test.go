@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"go.datum.net/datumctl/internal/pluginstore"
@@ -219,5 +220,57 @@ func main() {
 	}
 	if strings.Contains(out, "beta is deprecated") {
 		t.Fatalf("beta must get no notice:\n%s", out)
+	}
+}
+
+// execPluginCmdSplit runs cmd with separate stdout and stderr buffers.
+func execPluginCmdSplit(t *testing.T, pluginsDir string, cmd *cobra.Command, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	t.Setenv("DATUMCTL_PLUGINS_DIR", pluginsDir)
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetArgs(args)
+	err = cmd.Execute()
+	return outBuf.String(), errBuf.String(), err
+}
+
+func TestInstallAllAvailable_deprecatedUpToDatePrintsNoticeOnStderr(t *testing.T) {
+	dir := t.TempDir()
+	seedManifest(t, dir, map[string]*pluginstore.InstalledPlugin{"ipam": installedEntry("datum", "v0.1.0")})
+	seedFreshCache(t, dir, pluginstore.OfficialCatalogName, deprecatedPlugin("ipam", "v0.1.0"))
+
+	stdout, stderr, err := execPluginCmdSplit(t, dir, installCmd(nil), "--all-available")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "ipam v0.1.0 is up to date") {
+		t.Fatalf("want up-to-date line on stdout:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "deprecated") {
+		t.Fatalf("notice must not be on stdout:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "warning: ipam is deprecated: use the new one") {
+		t.Fatalf("want notice on stderr:\n%s", stderr)
+	}
+}
+
+func TestInstallBareName_noteWhenReplacementSupersedes(t *testing.T) {
+	dir := t.TempDir()
+	if err := pluginstore.SaveRegistry(dir, &pluginstore.Registry{Catalogs: []pluginstore.Catalog{
+		{Name: "acme-milo", Source: "https://github.com/milo-os/cli-plugins", Type: pluginstore.CatalogTypeCustom},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	seedFreshCache(t, dir, pluginstore.OfficialCatalogName, deprecatedPlugin("ipam", "v0.1.0"))
+	// The replacement has no platform builds, so the install fails after the
+	// note is printed, before any download.
+	seedFreshCache(t, dir, "acme-milo", testPlugin("ipam", "v1.0.0", "IPAM"))
+
+	_, stderr, _ := execPluginCmdSplit(t, dir, installCmd(nil), "ipam")
+	want := "note: ipam in datum is deprecated; installing its replacement from acme-milo\n"
+	if strings.Count(stderr, want) != 1 {
+		t.Fatalf("want exactly one %q in stderr:\n%s", want, stderr)
 	}
 }

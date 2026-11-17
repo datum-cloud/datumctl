@@ -89,7 +89,8 @@ datumctl plugin remove compute
 catalog, or in the catalog named by `--index`. It upgrades plugins that are
 behind the catalog, leaves up-to-date ones alone, and skips a plugin whose name
 is already installed from another catalog or from GitHub rather than replace
-it. A plugin that fails is reported at the end without stopping the rest.
+it. It also skips deprecated plugins that aren't installed. A plugin that
+fails is reported at the end without stopping the rest.
 With a third-party catalog it first lists the plugins it would install and asks
 to confirm; pass `--yes` to skip the prompt. Without a terminal and without
 `--yes`, it exits with an error rather than install anything.
@@ -181,6 +182,20 @@ warning: ipam is deprecated: ipam moved to the Milo catalog.
 If the replacement's catalog is already registered, the notice shows only the
 `plugin install` line. Installs and upgrades still proceed. Plugins installed
 directly from GitHub have no catalog entry and get no notice.
+
+When both a deprecated plugin and a replacement with the same name are
+available, a bare-name install such as `datumctl plugin install ipam` picks the
+replacement instead of reporting that the name exists in multiple catalogs. If
+other catalogs also have a plugin with that name, the collision error lists
+only those and the replacement. A replacement with a new name isn't picked
+this way; install it with `datumctl plugin install <catalog>/<new-name>`.
+When the install proceeds from the replacement, it first prints
+`note: <name> in <catalog> is deprecated; installing its replacement from <catalog>`
+to stderr, once per deprecated match it dropped.
+
+`plugin install --all-available` skips a deprecated plugin that isn't
+installed and prints `Skipped <name>: deprecated`. It still upgrades a
+deprecated plugin that is already installed and prints the notice.
 
 To move, run `datumctl plugin install <catalog>/<name>`. The plugin is then
 recorded as installed from the new catalog, so `plugin upgrade` uses that
