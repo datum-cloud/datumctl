@@ -22,6 +22,10 @@ type PluginSpec struct {
 	Homepage         string     `json:"homepage,omitempty"`
 	Version          string     `json:"version"`
 	Platforms        []Platform `json:"platforms"`
+
+	// Deprecated marks the plugin as deprecated. Optional and additive: older
+	// datumctl releases ignore it.
+	Deprecated *Deprecation `json:"deprecated,omitempty"`
 }
 
 // Platform describes a downloadable archive for one OS/arch combination.
@@ -85,4 +89,26 @@ func (l *PluginList) HeaderFor() CatalogHeader {
 		Owner:       l.Owner,
 		Homepage:    l.Homepage,
 	}
+}
+
+// Deprecation marks a plugin as deprecated and optionally names a replacement.
+type Deprecation struct {
+	Message     string             `json:"message,omitempty"`
+	Replacement *PluginReplacement `json:"replacement,omitempty"`
+}
+
+// PluginReplacement names the plugin that supersedes a deprecated one.
+type PluginReplacement struct {
+	// Catalog is a catalog source, as `plugin index add` takes.
+	Catalog string `json:"catalog"`
+	// Name defaults to the deprecated plugin's name.
+	Name string `json:"name,omitempty"`
+}
+
+// PluginName returns r.Name, or fallback when r is nil or r.Name is empty.
+func (r *PluginReplacement) PluginName(fallback string) string {
+	if r == nil || r.Name == "" {
+		return fallback
+	}
+	return r.Name
 }

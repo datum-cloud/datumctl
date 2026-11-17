@@ -477,3 +477,40 @@ func SourceGitHubOwnerRepo(source string) (ownerRepo string, ok bool) {
 	}
 	return "", false
 }
+
+// SameCatalogSource reports whether two catalog source strings resolve to the
+// same catalog. When both resolve to GitHub, they match if their owner/repo
+// strings are equal ignoring case; the branch is ignored. Otherwise local
+// sources match by LocalPath and other remote sources by FetchURL (scheme and
+// host compared case-insensitively). A source ResolveCatalogSource rejects
+// never matches anything, including an identical invalid source.
+func SameCatalogSource(a, b string) bool {
+	ra, err := ResolveCatalogSource(a)
+	if err != nil {
+		return false
+	}
+	rb, err := ResolveCatalogSource(b)
+	if err != nil {
+		return false
+	}
+	if ga, ok := SourceGitHubOwnerRepo(a); ok {
+		if gb, ok := SourceGitHubOwnerRepo(b); ok {
+			return strings.EqualFold(ga, gb)
+		}
+	}
+	if ra.IsLocal || rb.IsLocal {
+		return ra.IsLocal && rb.IsLocal && ra.LocalPath == rb.LocalPath
+	}
+	return normalizeFetchURL(ra.FetchURL) == normalizeFetchURL(rb.FetchURL)
+}
+
+// normalizeFetchURL lowercases the scheme and host of a URL.
+func normalizeFetchURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	return u.String()
+}
