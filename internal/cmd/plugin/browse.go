@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
@@ -89,7 +90,7 @@ func browseCmd() *cobra.Command {
 				return nil
 			}
 
-			selected, ok, err := runBrowser(entries)
+			selected, ok, err := runBrowser(entries, reg)
 			if err != nil {
 				return err
 			}
@@ -110,7 +111,7 @@ func browseCmd() *cobra.Command {
 // runBrowser presents the filterable plugin picker followed by an install
 // confirmation. It returns the chosen entry and whether the user confirmed the
 // install.
-func runBrowser(entries []browseEntry) (browseEntry, bool, error) {
+func runBrowser(entries []browseEntry, reg *pluginstore.Registry) (browseEntry, bool, error) {
 	options := browseOptions(entries)
 
 	var picked string
@@ -139,7 +140,7 @@ func runBrowser(entries []browseEntry) (browseEntry, bool, error) {
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title(fmt.Sprintf("Install %s from %s?", entry.plugin.Name, entry.catalog.Name)).
-				Description(browseDetails(entry)).
+				Description(browseDetails(entry, reg)).
 				Affirmative("Install").
 				Negative("Cancel").
 				Value(&confirm),
@@ -157,15 +158,19 @@ func runBrowser(entries []browseEntry) (browseEntry, bool, error) {
 func browseOptions(entries []browseEntry) []huh.Option[string] {
 	options := make([]huh.Option[string], len(entries))
 	for i, e := range entries {
+		name := e.plugin.Name
+		if e.plugin.Spec.Deprecated != nil {
+			name += " (deprecated)"
+		}
 		label := fmt.Sprintf("%s  [%s]  %s  — %s",
-			e.plugin.Name, e.catalog.Trust(), e.catalog.Name, e.plugin.Spec.ShortDescription)
+			name, e.catalog.Trust(), e.catalog.Name, e.plugin.Spec.ShortDescription)
 		options[i] = huh.NewOption(label, strconv.Itoa(i))
 	}
 	return options
 }
 
 // browseDetails renders the inspect panel shown on the confirmation step.
-func browseDetails(e browseEntry) string {
+func browseDetails(e browseEntry, reg *pluginstore.Registry) string {
 	desc := e.plugin.Spec.ShortDescription
 	if e.plugin.Spec.Description != "" {
 		desc = e.plugin.Spec.Description
@@ -179,6 +184,11 @@ func browseDetails(e browseEntry) string {
 	}
 	if desc != "" {
 		out += "\n\n" + desc
+	}
+	if e.plugin.Spec.Deprecated != nil {
+		var b strings.Builder
+		writeDeprecationNotice(&b, reg, e.plugin.Name, e.plugin.Spec.Deprecated)
+		out += "\n\n" + strings.TrimRight(b.String(), "\n")
 	}
 	return out
 }
