@@ -56,6 +56,14 @@ func LintCatalog(list *PluginList) []string {
 		if p.Spec.Version == "" {
 			problems = append(problems, fmt.Sprintf("%s: missing spec.version", label))
 		}
+		if d := p.Spec.Deprecated; d != nil {
+			if d.Message == "" {
+				problems = append(problems, fmt.Sprintf("%s: deprecated has no message", label))
+			}
+			if d.Replacement == nil || d.Replacement.Catalog == "" {
+				problems = append(problems, fmt.Sprintf("%s: deprecated has no replacement.catalog", label))
+			}
+		}
 		if len(p.Spec.Platforms) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: no platforms declared", label))
 		}

@@ -128,6 +128,43 @@ machine.
 
 ---
 
+## Deprecating a catalog plugin
+
+A plugin can move from one catalog to another, for example when a plugin
+built for the Milo platform moves from the Datum Cloud catalog to
+`milo-os/cli-plugins`. Removing the old entry right away would break
+`plugin upgrade` for everyone who installed from it, so the old entry first
+marks itself deprecated and names its replacement:
+
+```yaml
+spec:
+  # ...version, platforms, and other fields as before
+  deprecated:
+    message: ipam moved to the Milo catalog.
+    replacement:
+      catalog: milo-os/cli-plugins   # a catalog source, as `plugin index add` takes
+      name: ipam                     # optional; defaults to this plugin's name
+```
+
+- `replacement.catalog` is a catalog source, not a catalog name. Users choose
+  their own names when they add a catalog, so datumctl recognizes the
+  replacement's catalog by resolving both sources and comparing them. For
+  example, `milo-os/cli-plugins`, `github.com/milo-os/cli-plugins`, and
+  `https://raw.githubusercontent.com/milo-os/cli-plugins/main/index.yaml` are
+  the same catalog. GitHub sources match by owner and repository regardless of
+  case or branch.
+- `plugin index validate` reports a `deprecated` block that has no `message`
+  or no `replacement.catalog`.
+- The field is additive. datumctl parses catalogs without rejecting unknown
+  fields, so releases that predate deprecation support keep installing and
+  upgrading a deprecated plugin as usual.
+
+A deprecated entry stays in its catalog and keeps receiving releases until its
+catalog removes it, so installs and upgrades keep working during the
+deprecation period.
+
+---
+
 ## plugins.json schema
 
 `plugins.json` records every managed install. It is the source of truth for
