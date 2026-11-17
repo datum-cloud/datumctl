@@ -38,7 +38,10 @@ var sessionOverride struct {
 	mu      sync.RWMutex
 	name    string
 	source  SessionOverrideSource
-	context string // context picked in this process (console switcher)
+	// context is the context picked in this process (console switcher). The
+	// whole entry is kept, not just its name: every request reloads the
+	// config from disk, where a context picked under an override is absent.
+	context *DiscoveredContext
 
 	// pending holds a DATUM_SESSION value recorded without validating it. A
 	// wrong --session value still fails immediately at the command line, but
@@ -58,7 +61,7 @@ func SetSessionOverride(name string, source SessionOverrideSource) {
 	defer sessionOverride.mu.Unlock()
 	sessionOverride.name = name
 	sessionOverride.source = source
-	sessionOverride.context = ""
+	sessionOverride.context = nil
 	sessionOverride.pending = ""
 }
 
@@ -78,7 +81,7 @@ func SetPendingSessionOverride(value string) {
 	defer sessionOverride.mu.Unlock()
 	sessionOverride.name = ""
 	sessionOverride.source = SessionOverrideFromEnv
-	sessionOverride.context = ""
+	sessionOverride.context = nil
 	sessionOverride.pending = value
 }
 
@@ -103,21 +106,28 @@ func HasSessionOverride() bool {
 }
 
 // SetOverrideContext selects a context for the rest of this process while a
-// session override is active, in place of writing current-context to disk. It
-// is ignored when no override is active or the context belongs to another
-// session.
-func SetOverrideContext(name string) {
+// session override is active, in place of writing current-context to disk.
+// The context need not be stored in the config: every config loaded in this
+// process resolves to it. It is ignored when no override is active, and
+// lookups ignore it when it belongs to another session.
+func SetOverrideContext(ctx DiscoveredContext) {
 	sessionOverride.mu.Lock()
 	defer sessionOverride.mu.Unlock()
-	if sessionOverride.name != "" {
-		sessionOverride.context = name
+	if sessionOverride.name != "" || sessionOverride.pending != "" {
+		sessionOverride.context = &ctx
 	}
 }
 
-func overrideContext() string {
+// overrideContext returns a copy of the context picked in this process, or
+// nil.
+func overrideContext() *DiscoveredContext {
 	sessionOverride.mu.RLock()
 	defer sessionOverride.mu.RUnlock()
-	return sessionOverride.context
+	if sessionOverride.context == nil {
+		return nil
+	}
+	ctx := *sessionOverride.context
+	return &ctx
 }
 
 // ActiveSessionName returns the name of the session this process acts as: the
@@ -146,7 +156,13 @@ func (c *ConfigV1Beta1) CurrentContextName() string {
 // context picked earlier in this process, else the stored current context when
 // it belongs to that session, else the session's last-used context, else nil.
 func (c *ConfigV1Beta1) overrideContextEntry(sessionName string) *DiscoveredContext {
-	candidates := []string{overrideContext(), c.CurrentContext}
+	if picked := overrideContext(); picked != nil && picked.Session == sessionName {
+		if stored := c.ContextByName(picked.Name); stored != nil && stored.Session == sessionName {
+			return stored
+		}
+		return picked
+	}
+	candidates := []string{c.CurrentContext}
 	if s := c.SessionByName(sessionName); s != nil {
 		candidates = append(candidates, s.LastContext)
 	}
@@ -230,7 +246,13 @@ func resolvePendingOverride(cfg *ConfigV1Beta1) error {
 	if err != nil {
 		return err
 	}
-	SetSessionOverride(s.Name, source)
+	// Keep a context picked while the override was pending.
+	sessionOverride.mu.Lock()
+	defer sessionOverride.mu.Unlock()
+	if sessionOverride.name == "" && sessionOverride.pending == pending {
+		sessionOverride.name = s.Name
+		sessionOverride.pending = ""
+	}
 	return nil
 }
 

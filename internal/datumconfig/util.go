@@ -12,6 +12,14 @@ const (
 	DefaultNamespace = "default"
 )
 
+// OrganizationNamespace returns the namespace that holds an organization's own
+// namespaced resources in its control plane. The authorizer refuses
+// organization-scope lists in any other namespace, and lists across all
+// namespaces, whatever the caller's role.
+func OrganizationNamespace(orgID string) string {
+	return "organization-" + orgID
+}
+
 // DefaultPath returns the canonical config file path (~/.datumctl/config).
 func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()

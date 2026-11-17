@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"go.datum.net/datumctl/internal/client"
+	"go.datum.net/datumctl/internal/datumconfig"
 )
 
 var skipGroups = map[string]bool{
@@ -491,12 +492,17 @@ func (k *KubeResourceClient) ListAllowanceBuckets(ctx context.Context) ([]Allowa
 		return nil, nil
 	}
 
+	scope, err := k.factory.ConfigFlags.ResolvedScopeDetails()
+	if err != nil {
+		return nil, fmt.Errorf("resolve scope: %w", err)
+	}
+
 	dc, err := k.factory.DynamicClient()
 	if err != nil {
 		return nil, fmt.Errorf("dynamic client: %w", err)
 	}
 
-	list, err := dc.Resource(gvr).List(ctx, metav1.ListOptions{})
+	list, err := dc.Resource(gvr).Namespace(bucketNamespace(scope)).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list allowancebuckets: %w", err)
 	}
@@ -511,6 +517,16 @@ func (k *KubeResourceClient) ListAllowanceBuckets(ctx context.Context) ([]Allowa
 	bucketCacheMu.Unlock()
 
 	return buckets, nil
+}
+
+// bucketNamespace returns the namespace to list allowance buckets in: the
+// organization's own namespace at organization scope, where a list across all
+// namespaces is refused for every role, and all namespaces otherwise.
+func bucketNamespace(scope client.Scope) string {
+	if scope.Project == "" && scope.Organization != "" {
+		return datumconfig.OrganizationNamespace(scope.Organization)
+	}
+	return ""
 }
 
 // DeleteResource deletes the named resource with explicit background propagation.
