@@ -10701,7 +10701,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 ## go.opentelemetry.io/otel
 
 * Name: go.opentelemetry.io/otel
-* Version: v1.45.0
+* Version: v1.47.0
 * License: Apache-2.0
 
 ```
@@ -10941,7 +10941,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## go.opentelemetry.io/otel/trace
 
 * Name: go.opentelemetry.io/otel/trace
-* Version: v1.45.0
+* Version: v1.47.0
 * License: Apache-2.0
 
 ```
@@ -11392,7 +11392,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## go.yaml.in/yaml/v3
 
 * Name: go.yaml.in/yaml/v3
-* Version: v3.0.4
+* Version: v3.0.5
 * License: MIT
 
 ```
