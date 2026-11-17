@@ -238,7 +238,13 @@ func installFromCatalog(cmd *cobra.Command, pluginsDir string, reg *pluginstore.
 	// Record the catalog's canonical name (cat.Name), so "default/<plugin>"
 	// is stored as "datum".
 	idxEntry.Catalog = cat.Name
-	return saveAndReport(cmd, pluginsDir, name, idxEntry, binaryPath)
+	if err := saveAndReport(cmd, pluginsDir, name, idxEntry, binaryPath); err != nil {
+		return err
+	}
+	if p := pluginstore.FindInIndex(idx, name); p != nil {
+		writeDeprecationNotice(cmd.ErrOrStderr(), reg, name, p.Spec.Deprecated)
+	}
+	return nil
 }
 
 // installBareName resolves a bare plugin name across all catalogs (default
@@ -350,6 +356,9 @@ func installAllFromManifest(cmd *cobra.Command, pluginsDir, currentVersion strin
 		newEntry.Catalog = catalogName
 		manifest.Plugins[name] = newEntry
 		fmt.Fprintf(cmd.OutOrStdout(), "Installed %s %s from %s\n", name, newEntry.Version, catalogName)
+		if p := pluginstore.FindInIndex(idx, name); p != nil {
+			writeDeprecationNotice(cmd.ErrOrStderr(), reg, name, p.Spec.Deprecated)
+		}
 	}
 
 	if saveErr := pluginstore.Save(pluginsDir, manifest); saveErr != nil {

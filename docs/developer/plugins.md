@@ -163,6 +163,29 @@ A deprecated entry stays in its catalog and keeps receiving releases until its
 catalog removes it, so installs and upgrades keep working during the
 deprecation period.
 
+### What users see
+
+`plugin install`, `plugin install` with no arguments (restore), and
+`plugin upgrade` print a notice to stderr for a deprecated plugin.
+`plugin upgrade` prints it whether the plugin was upgraded or was already up
+to date. For the entry above, a user whose registry doesn't have the
+replacement's catalog sees:
+
+```text
+warning: ipam is deprecated: ipam moved to the Milo catalog.
+  To switch to the replacement:
+    datumctl plugin index add milo-os milo-os/cli-plugins
+    datumctl plugin install milo-os/ipam
+```
+
+If the replacement's catalog is already registered, the notice shows only the
+`plugin install` line. Installs and upgrades still proceed. Plugins installed
+directly from GitHub have no catalog entry and get no notice.
+
+To move, run `datumctl plugin install <catalog>/<name>`. The plugin is then
+recorded as installed from the new catalog, so `plugin upgrade` uses that
+catalog and the notice stops.
+
 ---
 
 ## plugins.json schema

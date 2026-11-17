@@ -93,6 +93,7 @@ func upgradeOne(cmd *cobra.Command, pluginsDir string, manifest *pluginstore.Man
 		return customerrors.NewUserError(fmt.Sprintf("upgrade plugin %s: %v", name, err))
 	}
 	reportUpgrade(cmd, name, from, to, upgraded)
+	u.writeNotice(name, entry)
 	return nil
 }
 
@@ -127,6 +128,7 @@ func upgradeAll(cmd *cobra.Command, pluginsDir string, manifest *pluginstore.Man
 			continue
 		}
 		reportUpgrade(cmd, name, from, to, upgraded)
+		u.writeNotice(name, entry)
 	}
 
 	if len(errs) > 0 {
@@ -152,6 +154,7 @@ type upgrader struct {
 	cmd            *cobra.Command
 	pluginsDir     string
 	manifest       *pluginstore.Manifest
+	reg            *pluginstore.Registry
 	currentVersion string
 	getIndex       func(catalogName string) (*pluginstore.CachedIndex, error)
 }
@@ -166,9 +169,31 @@ func newUpgrader(cmd *cobra.Command, pluginsDir string, manifest *pluginstore.Ma
 		cmd:            cmd,
 		pluginsDir:     pluginsDir,
 		manifest:       manifest,
+		reg:            reg,
 		currentVersion: currentVersion,
 		getIndex:       catalogIndexLoader(cmd, pluginsDir, reg),
 	}, nil
+}
+
+// writeNotice prints the deprecation notice, if any, for a plugin that was
+// just processed without error. Direct GitHub installs have no catalog entry
+// and get none. The catalog is the one the plugin is recorded as installed
+// from, so a plugin that moved to another catalog stops getting a notice.
+func (u *upgrader) writeNotice(name string, entry *pluginstore.InstalledPlugin) {
+	if entry.Catalog == "" && strings.Contains(entry.Source, "/") {
+		return
+	}
+	catalogName := pluginstore.CanonicalCatalogName(entry.Catalog)
+	if catalogName == "" {
+		catalogName = pluginstore.OfficialCatalogName
+	}
+	idx, err := u.getIndex(catalogName)
+	if err != nil {
+		return
+	}
+	if p := pluginstore.FindInIndex(idx, name); p != nil {
+		writeDeprecationNotice(u.cmd.ErrOrStderr(), u.reg, name, p.Spec.Deprecated)
+	}
 }
 
 // upgrade brings one installed plugin to the latest version offered by the
