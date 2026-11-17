@@ -290,3 +290,59 @@ func TestInstall_yesNeedsAllAvailable(t *testing.T) {
 		t.Fatalf("error = %v, want the --yes/--all-available error", err)
 	}
 }
+
+func deprecatedIpam(version string) pluginstore.Plugin {
+	p := testPlugin("ipam", version, "IPAM")
+	p.Spec.Deprecated = &pluginstore.Deprecation{
+		Message:     "ipam moved.",
+		Replacement: &pluginstore.PluginReplacement{Catalog: "milo-os/cli-plugins"},
+	}
+	return p
+}
+
+func TestPlanCatalogInstall_skipsDeprecatedNotInstalled(t *testing.T) {
+	t.Parallel()
+	idx := &pluginstore.CachedIndex{Plugins: []pluginstore.Plugin{
+		deprecatedIpam("v0.1.0"),
+		testPlugin("dns", "v1.0.0", "DNS"),
+	}}
+	got := planCatalogInstall("datum", idx, &pluginstore.Manifest{})
+	if want := []string{"dns"}; !reflect.DeepEqual(got.install, want) {
+		t.Errorf("install = %v, want %v", got.install, want)
+	}
+	if want := []skippedPlugin{{name: "ipam", reason: "deprecated"}}; !reflect.DeepEqual(got.skipped, want) {
+		t.Errorf("skipped = %+v, want %+v", got.skipped, want)
+	}
+}
+
+func TestPlanCatalogInstall_upgradesDeprecatedInstalled(t *testing.T) {
+	t.Parallel()
+	idx := &pluginstore.CachedIndex{Plugins: []pluginstore.Plugin{deprecatedIpam("v0.2.0")}}
+	manifest := &pluginstore.Manifest{Plugins: map[string]*pluginstore.InstalledPlugin{
+		"ipam": {Source: "ipam", Catalog: "datum", Version: "v0.1.0"},
+	}}
+	got := planCatalogInstall("datum", idx, manifest)
+	if want := []string{"ipam"}; !reflect.DeepEqual(got.install, want) {
+		t.Errorf("install = %v, want %v", got.install, want)
+	}
+}
+
+func TestInstallAllAvailable_skipsDeprecatedNotInstalled(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", deprecatedIpam("v0.1.0"))
+
+	out, err := execPluginCmd(t, pluginsDir, installCmd(nil), "--all-available")
+	if err != nil {
+		t.Fatalf("install --all-available failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Skipped ipam: deprecated") {
+		t.Fatalf("expected skip line, got:\n%s", out)
+	}
+	m, err := pluginstore.Load(pluginsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Plugins["ipam"]; ok {
+		t.Fatalf("ipam must not be installed: %+v", m.Plugins)
+	}
+}
