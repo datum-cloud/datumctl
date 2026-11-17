@@ -388,7 +388,8 @@ func indexValidateCmd() *cobra.Command {
 		Long: templates.LongDesc(`
 			Lint a catalog manifest before you publish it. The validator reports
 			missing plugin names or versions, missing or non-HTTPS download URIs,
-			missing checksums, and invalid platform selectors.
+			missing checksums, invalid platform selectors, and an incomplete
+			deprecated block (no message or no replacement.catalog).
 
 			The source may be a local path, an HTTPS URL, or a GitHub owner/repo.`),
 		Example: templates.Examples(`

@@ -31,6 +31,10 @@ func installCmd(_ *client.DatumCloudFactory) *cobra.Command {
 With no arguments, restores all previously installed plugins to their recorded
 versions. Use this to reproduce a plugin set on a new machine.
 
+Installing or restoring a deprecated plugin prints a deprecation warning and,
+when the catalog names a replacement, how to switch to it. A bare name prefers
+a deprecated plugin's replacement when both are available.
+
 With a plugin name argument, installs from a registered catalog:
   - name                 resolves against the official datum catalog first, then
                          any other registered catalog; a name found in more than
@@ -49,7 +53,8 @@ alone. A plugin of the same name installed from another catalog or from GitHub
 is skipped, not replaced. One failed plugin does not stop the others; failures
 are listed at the end and the command exits non-zero. A third-party catalog
 asks for confirmation first, listing the plugins it would install; pass --yes
-to confirm without the prompt.
+to confirm without the prompt. Deprecated plugins that are not installed are
+skipped.
 
 The plugin binary is written to the managed plugins directory
 (~/.datumctl/plugins/ by default).`,

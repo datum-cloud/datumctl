@@ -29,7 +29,9 @@ func upgradeCmd(_ *client.DatumCloudFactory) *cobra.Command {
 			originally installed from, using the same flow as 'datumctl plugin
 			install': SHA256 verification, manifest check, and compatibility
 			validation. A plugin that is already at its latest version is left
-			untouched.
+			untouched. A deprecated plugin still upgrades; the command prints a
+			deprecation warning and, when the catalog names a replacement, how to
+			switch to it.
 
 			With --all, a plugin that fails to upgrade does not stop the others; the
 			failures are listed together once every plugin has been attempted.`),
