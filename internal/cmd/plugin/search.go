@@ -51,7 +51,9 @@ func searchCmd() *cobra.Command {
 			Run 'datumctl plugin install <name>' to install a plugin listed here.
 
 			Use -o json for machine-readable output, or -o name for one plugin name
-			per line.`),
+			per line. Deprecated plugins are tagged [deprecated]; table output prints a
+			warning with the replacement after the table, and -o json adds a
+			"deprecated" field to them.`),
 		Example: templates.Examples(`
 			# List all available plugins across catalogs
 			datumctl plugin search

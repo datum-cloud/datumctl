@@ -34,7 +34,8 @@ func browseCmd() *cobra.Command {
 			Type to filter, inspect a plugin's description, version, source catalog, and
 			trust badge ("official" for Datum's curated datum catalog, "third-party" for
 			catalogs you added), and install the selected plugin in place. Use --index to
-			scope the browser to a single catalog.`),
+			scope the browser to a single catalog. Deprecated plugins are tagged
+			"(deprecated)", and their details show the deprecation warning.`),
 		Example: templates.Examples(`
 			# Browse all catalogs
 			datumctl plugin browse

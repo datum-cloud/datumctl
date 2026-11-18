@@ -24,7 +24,8 @@ func listCmd() *cobra.Command {
 			Status column indicators:
 			  ok          Plugin is installed and compatible with this datumctl.
 			  update      A newer version is available in its catalog.
-			  deprecated  Its catalog marks the plugin deprecated.
+			  deprecated  Its catalog marks the plugin deprecated. A warning is printed
+			              after the table for every deprecated plugin, even if shown as ! or ?.
 			  !           Built for a different datumctl version.
 			  ?           Version info unavailable.
 

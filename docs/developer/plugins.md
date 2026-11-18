@@ -181,8 +181,10 @@ warning: ipam is deprecated: ipam moved to the Milo catalog.
 ```
 
 If the replacement's catalog is already registered, the notice shows only the
-`plugin install` line. Installs and upgrades still proceed. Plugins installed
-directly from GitHub have no catalog entry and get no notice.
+`plugin install` line. When an allow-list disables that catalog, the notice
+says the catalog is disabled and prints no commands. Installs and upgrades
+still proceed. Plugins installed directly from GitHub have no catalog entry and
+get no notice.
 
 When both a deprecated plugin and a replacement with the same name are
 available, a bare-name install such as `datumctl plugin install ipam` picks the
