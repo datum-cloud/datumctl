@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"go.datum.net/datumctl/internal/console/data"
 )
@@ -1278,3 +1279,49 @@ func TestFB123_AC7_AntiRegression_DescribeUnavailable_RHintStillPresent(t *testi
 }
 
 // ==================== End FB-123 (component layer) ====================
+
+func TestRenderConditionsTable_AncestorsFallback(t *testing.T) {
+	t.Parallel()
+	raw := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "networking.datumapis.com/v1alpha",
+		"kind":       "TrafficProtectionPolicy",
+		"metadata":   map[string]interface{}{"name": "waf"},
+		"status": map[string]interface{}{
+			"ancestors": []interface{}{
+				map[string]interface{}{
+					"ancestorRef": map[string]interface{}{
+						"kind":      "Gateway",
+						"name":      "edge-gw",
+						"namespace": "proj",
+					},
+					"conditions": []interface{}{
+						map[string]interface{}{
+							"type":               "Accepted",
+							"status":             "True",
+							"reason":             "Accepted",
+							"message":            "Policy has been accepted.",
+							"lastTransitionTime": "2026-08-04T10:00:00Z",
+						},
+						map[string]interface{}{
+							"type":               "Programmed",
+							"status":             "True",
+							"reason":             "Programmed",
+							"message":            "3/3 edges programmed generation 2",
+							"lastTransitionTime": "2026-08-04T10:00:05Z",
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	got := stripANSI(RenderConditionsTable(raw, 120))
+	for _, want := range []string{"Programmed", "Accepted", "Gateway/proj/edge-gw", "3/3 edges"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ancestors conditions table missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "No conditions reported") {
+		t.Errorf("unexpected empty placeholder for PolicyStatus ancestors:\n%s", got)
+	}
+}
