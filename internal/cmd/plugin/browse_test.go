@@ -47,7 +47,7 @@ func TestBrowseDetails_prefersLongDescriptionAndShowsHomepage(t *testing.T) {
 	e := browseEntryFor(
 		pluginstore.Catalog{Name: "acme", Type: pluginstore.CatalogTypeCustom},
 		"deploy", "v2.1.0", "short", "the long description", "https://plugins.acme.example/deploy")
-	got := browseDetails(e)
+	got := browseDetails(e, nil)
 	for _, want := range []string{"acme", "v2.1.0", "third-party", "https://plugins.acme.example/deploy", "the long description"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("details missing %q:\n%s", want, got)
@@ -69,5 +69,23 @@ func TestBrowse_requiresTerminal(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "terminal") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBrowseOptionsAndDetails_deprecated(t *testing.T) {
+	p := deprecatedPlugin("ipam", "v0.1.0")
+	e := browseEntry{catalog: pluginstore.OfficialCatalog(), plugin: p}
+	opts := browseOptions([]browseEntry{e})
+	if !strings.Contains(opts[0].Key, "ipam (deprecated)") {
+		t.Fatalf("label missing tag: %q", opts[0].Key)
+	}
+	got := browseDetails(e, &pluginstore.Registry{})
+	if !strings.Contains(got, "is deprecated") || !strings.Contains(got, "datumctl plugin install milo-os/ipam") {
+		t.Fatalf("details missing notice:\n%s", got)
+	}
+	plain := browseEntry{catalog: pluginstore.OfficialCatalog(), plugin: testPlugin("dns", "v1", "DNS")}
+	if strings.Contains(browseOptions([]browseEntry{plain})[0].Key, "deprecated") ||
+		strings.Contains(browseDetails(plain, nil), "deprecated") {
+		t.Fatal("non-deprecated entry must not be tagged")
 	}
 }

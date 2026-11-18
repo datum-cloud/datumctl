@@ -3,6 +3,7 @@ package plugin
 import (
 	"fmt"
 	"os"
+	"sort"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -21,10 +22,11 @@ func listCmd() *cobra.Command {
 			List the plugins you have installed, without running any of them.
 
 			Status column indicators:
-			  ok      Plugin is installed and compatible with this datumctl.
-			  update  A newer version is available in its catalog.
-			  !       Built for a different datumctl version.
-			  ?       Version info unavailable.
+			  ok          Plugin is installed and compatible with this datumctl.
+			  update      A newer version is available in its catalog.
+			  deprecated  Its catalog marks the plugin deprecated.
+			  !           Built for a different datumctl version.
+			  ?           Version info unavailable.
 
 			Run 'datumctl plugin search' to refresh available plugins from your
 			catalogs.`),
@@ -59,6 +61,11 @@ func listCmd() *cobra.Command {
 				return idx
 			}
 
+			// Cached indexes only; the registry is a local file. A plugin whose
+			// catalog index isn't cached is simply not marked deprecated.
+			reg, _ := pluginstore.LoadRegistry(pluginsDir)
+			deprecations := map[string]*pluginstore.Deprecation{}
+
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
 			fmt.Fprintln(w, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION\tSTATUS")
 			var anyUpdates bool
@@ -74,13 +81,19 @@ func listCmd() *cobra.Command {
 					}
 				}
 				indexLabel, trust := installedCatalogLabel(entry)
-				// Update detection only applies to catalog-sourced plugins (the
+				// Catalog lookup only applies to catalog-sourced plugins (the
 				// "(direct)" label marks a direct GitHub install with no catalog).
-				if status == "ok" && indexLabel != "(direct)" {
+				// The deprecation notice is recorded whatever the status; the
+				// STATUS column keeps "!" and "?" ahead of "deprecated".
+				if indexLabel != "(direct)" {
 					if indexEntry := pluginstore.FindInIndex(catalogIndex(indexLabel), name); indexEntry != nil {
-						if isUpdateAvailable(entry.Version, indexEntry.Spec.Version) {
-							status = "update"
-							anyUpdates = true
+						if indexEntry.Spec.Deprecated != nil {
+							deprecations[name] = indexEntry.Spec.Deprecated
+						}
+						if status == "ok" {
+							var update bool
+							status, update = listStatus(entry.Version, indexEntry)
+							anyUpdates = anyUpdates || update
 						}
 					}
 				}
@@ -88,6 +101,14 @@ func listCmd() *cobra.Command {
 			}
 			if err := w.Flush(); err != nil {
 				return err
+			}
+			names := make([]string, 0, len(deprecations))
+			for name := range deprecations {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				writeDeprecationNotice(cmd.ErrOrStderr(), reg, name, deprecations[name])
 			}
 			if anyUpdates && term.IsTerminal(int(os.Stdout.Fd())) {
 				fmt.Fprintln(cmd.ErrOrStderr(),
@@ -97,4 +118,19 @@ func listCmd() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+// listStatus returns the STATUS column value for a compatible, catalog-sourced
+// plugin, and whether a newer catalog version exists. Deprecated takes
+// precedence in the column, but the update flag is still reported because
+// 'plugin upgrade' upgrades installed deprecated plugins.
+func listStatus(installedVersion string, indexEntry *pluginstore.Plugin) (status string, updateAvailable bool) {
+	updateAvailable = isUpdateAvailable(installedVersion, indexEntry.Spec.Version)
+	switch {
+	case indexEntry.Spec.Deprecated != nil:
+		return "deprecated", updateAvailable
+	case updateAvailable:
+		return "update", true
+	}
+	return "ok", false
 }

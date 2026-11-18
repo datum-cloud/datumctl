@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -22,6 +23,9 @@ type searchResult struct {
 	Version     string `json:"version"`
 	Trust       string `json:"trust"`
 	Description string `json:"description"`
+	// Deprecated is the catalog's deprecation block; omitted when the plugin
+	// isn't deprecated.
+	Deprecated *pluginstore.Deprecation `json:"deprecated,omitempty"`
 }
 
 const (
@@ -118,15 +122,42 @@ func searchCmd() *cobra.Command {
 						Version:     p.Spec.Version,
 						Trust:       cat.Trust(),
 						Description: p.Spec.ShortDescription,
+						Deprecated:  p.Spec.Deprecated,
 					})
 				}
 			}
-			return printSearchResults(cmd.OutOrStdout(), output, results)
+			if err := printSearchResults(cmd.OutOrStdout(), output, results); err != nil {
+				return err
+			}
+			if output == searchOutputTable {
+				writeSearchNotices(cmd.ErrOrStderr(), reg, results)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&indexName, "index", "", "Scope the search to a single catalog")
 	cmd.Flags().StringVarP(&output, "output", "o", searchOutputTable, "Output format: table, json or name")
 	return cmd
+}
+
+// writeSearchNotices writes one deprecation notice per deprecated result,
+// sorted by plugin name then catalog.
+func writeSearchNotices(w io.Writer, reg *pluginstore.Registry, results []searchResult) {
+	var deprecated []searchResult
+	for _, r := range results {
+		if r.Deprecated != nil {
+			deprecated = append(deprecated, r)
+		}
+	}
+	sort.Slice(deprecated, func(i, j int) bool {
+		if deprecated[i].Name != deprecated[j].Name {
+			return deprecated[i].Name < deprecated[j].Name
+		}
+		return deprecated[i].Index < deprecated[j].Index
+	})
+	for _, r := range deprecated {
+		writeDeprecationNotice(w, reg, r.Name, r.Deprecated)
+	}
 }
 
 // printSearchResults writes search results in the requested format. JSON
@@ -151,7 +182,11 @@ func printSearchResults(w io.Writer, output string, results []searchResult) erro
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tINDEX\tVERSION\tTRUST\tDESCRIPTION")
 	for _, r := range results {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Index, r.Version, r.Trust, r.Description)
+		desc := r.Description
+		if r.Deprecated != nil {
+			desc = "[deprecated] " + desc
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Index, r.Version, r.Trust, desc)
 	}
 	return tw.Flush()
 }

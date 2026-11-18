@@ -346,3 +346,83 @@ func TestInstallAllAvailable_skipsDeprecatedNotInstalled(t *testing.T) {
 		t.Fatalf("ipam must not be installed: %+v", m.Plugins)
 	}
 }
+
+func TestSearch_deprecatedTagAndJSON(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum",
+		deprecatedPlugin("ipam", "v0.1.0"),
+		testPlugin("dns", "v1.2.3", "Manage DNS"),
+	)
+
+	table, err := execPluginCmd(t, pluginsDir, searchCmd(), "--index", "datum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(table, "[deprecated] ipam") || strings.Count(table, "[deprecated]") != 1 {
+		t.Fatalf("want one [deprecated] tag on ipam:\n%s", table)
+	}
+
+	jsonOut, err := execPluginCmd(t, pluginsDir, searchCmd(), "--index", "datum", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(jsonOut, "warning:") {
+		t.Fatalf("json output has warning text:\n%s", jsonOut)
+	}
+	var results []searchResult
+	if err := json.Unmarshal([]byte(jsonOut), &results); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, jsonOut)
+	}
+	if len(results) != 2 || results[0].Deprecated == nil ||
+		results[0].Deprecated.Replacement == nil ||
+		results[0].Deprecated.Replacement.Catalog != "milo-os/cli-plugins" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if results[1].Deprecated != nil || strings.Count(jsonOut, `"deprecated"`) != 1 {
+		t.Fatalf("non-deprecated result must omit the field:\n%s", jsonOut)
+	}
+
+	nameOut, err := execPluginCmd(t, pluginsDir, searchCmd(), "--index", "datum", "-o", "name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nameOut != "ipam\ndns\n" {
+		t.Fatalf("search -o name = %q", nameOut)
+	}
+}
+
+func TestSearch_tableNoticeOnStderrOnly(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum",
+		deprecatedPlugin("ipam", "v0.1.0"),
+		testPlugin("dns", "v1.2.3", "Manage DNS"),
+	)
+
+	stdout, stderr, err := execCmdSplitStreams(t, pluginsDir, searchCmd(), "--index", "datum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout, "warning:") {
+		t.Fatalf("notice must not be on stdout:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "warning: ipam is deprecated: use the new one") ||
+		!strings.Contains(stderr, "datumctl plugin install milo-os/ipam") ||
+		strings.Contains(stderr, "dns") {
+		t.Fatalf("want one notice for ipam on stderr:\n%s", stderr)
+	}
+}
+
+func TestSearch_jsonAndNameNoNotices(t *testing.T) {
+	pluginsDir := t.TempDir()
+	seedFreshCache(t, pluginsDir, "datum", deprecatedPlugin("ipam", "v0.1.0"))
+
+	for _, o := range []string{"json", "name"} {
+		stdout, stderr, err := execCmdSplitStreams(t, pluginsDir, searchCmd(), "--index", "datum", "-o", o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(stdout, "warning:") || strings.Contains(stderr, "warning:") {
+			t.Fatalf("-o %s must print no notices:\nstdout:\n%s\nstderr:\n%s", o, stdout, stderr)
+		}
+	}
+}

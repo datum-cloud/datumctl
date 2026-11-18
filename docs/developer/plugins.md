@@ -96,8 +96,9 @@ to confirm; pass `--yes` to skip the prompt. Without a terminal and without
 `--yes`, it exits with an error rather than install anything.
 
 `plugin search -o json` prints an array of `{name, index, version, trust,
-description}` objects, and `-o name` prints one plugin name per line, for
-scripts and agents.
+description}` objects, plus a `deprecated` object when the catalog marks the
+plugin deprecated, and `-o name` prints one plugin name per line, for scripts
+and agents.
 
 `plugin upgrade` reinstalls a plugin from the catalog or GitHub repository it
 was installed from, skipping any plugin already at its latest version. With
@@ -200,6 +201,17 @@ deprecated plugin that is already installed and prints the notice.
 To move, run `datumctl plugin install <catalog>/<name>`. The plugin is then
 recorded as installed from the new catalog, so `plugin upgrade` uses that
 catalog and the notice stops.
+
+Listings show deprecation too. `plugin list` reads only cached catalog indexes,
+shows `deprecated` in the STATUS column (it replaces `update` but not `!` or
+`?`; the upgrade hint still prints when a newer version exists), and prints the
+notice for each deprecated plugin to stderr after the table, whatever its
+STATUS. `plugin search` prefixes the description with `[deprecated]` and, in
+table output, prints the notice for each deprecated result to stderr after the
+table. With `-o json`, the result carries the catalog's `deprecated` object;
+`-o json` and `-o name` print no notice. `plugin browse`
+adds `(deprecated)` after the plugin name and appends the notice to the details
+pane.
 
 ---
 
