@@ -32,7 +32,7 @@ SOFTWARE.
 ## charm.land/bubbletea/v2
 
 * Name: charm.land/bubbletea/v2
-* Version: v2.0.8
+* Version: v2.0.10
 * License: MIT
 
 ```
@@ -94,7 +94,7 @@ SOFTWARE.
 ## charm.land/lipgloss/v2
 
 * Name: charm.land/lipgloss/v2
-* Version: v2.0.5
+* Version: v2.0.6
 * License: MIT
 
 ```
@@ -386,7 +386,7 @@ SOFTWARE.
 ## github.com/charmbracelet/ultraviolet
 
 * Name: github.com/charmbracelet/ultraviolet
-* Version: v0.0.0-20260703014108-f5a850f9c2b7
+* Version: v0.0.0-20260811164956-006e29f97886
 * License: MIT
 
 ```
@@ -417,7 +417,7 @@ SOFTWARE.
 ## github.com/charmbracelet/x/ansi
 
 * Name: github.com/charmbracelet/x/ansi
-* Version: v0.11.7
+* Version: v0.11.8
 * License: MIT
 
 ```
@@ -1380,7 +1380,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## github.com/go-jose/go-jose/v4
 
 * Name: github.com/go-jose/go-jose/v4
-* Version: v4.1.6
+* Version: v4.1.9
 * License: Apache-2.0
 
 ```
@@ -1592,7 +1592,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## github.com/go-jose/go-jose/v4/json
 
 * Name: github.com/go-jose/go-jose/v4/json
-* Version: v4.1.6
+* Version: v4.1.9
 * License: BSD-3-Clause
 
 ```
@@ -5857,7 +5857,7 @@ THE SOFTWARE.
 ## github.com/lucasb-eyer/go-colorful
 
 * Name: github.com/lucasb-eyer/go-colorful
-* Version: v1.4.0
+* Version: v1.4.1
 * License: MIT
 
 ```
@@ -7211,6 +7211,37 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ```
 
+## github.com/pandatix/go-abnf
+
+* Name: github.com/pandatix/go-abnf
+* Version: v0.5.3
+* License: MIT
+
+```
+MIT License
+
+Copyright (c) 2024 Lucas TESSON - PandatiX <lucastesson@protonmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
 ## github.com/peterbourgon/diskv
 
 * Name: github.com/peterbourgon/diskv
@@ -7313,7 +7344,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
 
 * Name: github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
-* Version: v1.24.0
+* Version: v1.25.0
 * License: BSD-3-Clause
 
 ```
@@ -7350,7 +7381,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## github.com/prometheus/client_golang/prometheus
 
 * Name: github.com/prometheus/client_golang/prometheus
-* Version: v1.24.0
+* Version: v1.25.0
 * License: Apache-2.0
 
 ```
@@ -7561,7 +7592,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## github.com/prometheus/client_model/go
 
 * Name: github.com/prometheus/client_model/go
-* Version: v0.6.2
+* Version: v0.6.3
 * License: Apache-2.0
 
 ```
@@ -7772,7 +7803,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## github.com/prometheus/common
 
 * Name: github.com/prometheus/common
-* Version: v0.70.0
+* Version: v0.73.1
 * License: Apache-2.0
 
 ```
@@ -7983,7 +8014,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## github.com/prometheus/procfs
 
 * Name: github.com/prometheus/procfs
-* Version: v0.21.1
+* Version: v0.22.0
 * License: Apache-2.0
 
 ```
@@ -9361,7 +9392,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 ## go.miloapis.com/milo/pkg/apis/resourcemanager/v1alpha1
 
 * Name: go.miloapis.com/milo/pkg/apis/resourcemanager/v1alpha1
-* Version: v0.36.9
+* Version: v0.36.29
 * License: AGPL-3.0
 
 ```
@@ -10031,7 +10062,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 ## go.miloapis.com/service-catalog
 
 * Name: go.miloapis.com/service-catalog
-* Version: v0.14.4-0.20261014211434-17c8e80b103b
+* Version: v0.14.5
 * License: AGPL-3.0
 
 ```
@@ -11526,7 +11557,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/oauth2
 
 * Name: golang.org/x/oauth2
-* Version: v0.36.0
+* Version: v0.37.0
 * License: BSD-3-Clause
 
 ```
@@ -11748,7 +11779,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## golang.org/x/time/rate
 
 * Name: golang.org/x/time/rate
-* Version: v0.15.0
+* Version: v0.16.0
 * License: BSD-3-Clause
 
 ```
@@ -11785,7 +11816,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## google.golang.org/protobuf
 
 * Name: google.golang.org/protobuf
-* Version: v1.36.12-0.20260120151049-f2248ac996af
+* Version: v1.36.12
 * License: BSD-3-Clause
 
 ```
@@ -14765,7 +14796,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/utils
 
 * Name: k8s.io/utils
-* Version: v0.0.0-20260626114624-be93311217bd
+* Version: v0.0.0-20261023123148-ca04ba58ecab
 * License: Apache-2.0
 
 ```
@@ -14977,7 +15008,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## k8s.io/utils/internal/third_party/forked/golang/net
 
 * Name: k8s.io/utils/internal/third_party/forked/golang/net
-* Version: v0.0.0-20260626114624-be93311217bd
+* Version: v0.0.0-20261023123148-ca04ba58ecab
 * License: BSD-3-Clause
 
 ```
@@ -15014,7 +15045,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## sigs.k8s.io/controller-runtime/pkg
 
 * Name: sigs.k8s.io/controller-runtime/pkg
-* Version: v0.25.2
+* Version: v0.25.3
 * License: Apache-2.0
 
 ```
