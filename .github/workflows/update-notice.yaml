@@ -14,5 +14,5 @@ permissions:
 
 jobs:
   update-notice:
-    uses: datum-cloud/actions/.github/workflows/update-notice.yaml@v1.30.0
+    uses: datum-cloud/actions/.github/workflows/update-notice.yaml@v1.31.0
     secrets: inherit
